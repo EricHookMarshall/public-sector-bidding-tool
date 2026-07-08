@@ -6,40 +6,42 @@
 
 ## Status
 
-`2026-07-08` — **Session closed via /end-session. Phase 0 complete: consolidated into one connected
-git repo, facts verified, project scaffold in place.** The three loose folders are now `discovery/`
-(working PoC), `skills/` (B00–B07 bid chain), `knowledge/` (context + reference). Two commits pushed to
-`github.com/EricHookMarshall/public-sector-bidding-tool` (`main`, HEAD `ac80d80`): (1) consolidation,
-(2) `CLAUDE.md` + this `_session/` triad + `/resume-prompt` + `/end-session` skills. Working tree clean.
+`2026-07-08` — **In the definition phase (mockups-first). Journey style approved; architecture
+direction set.** Built an interactive 6-stage journey mockup (`docs/design/journey-mockups.html`,
+published artifact) — user approved the style and shape. Architecture decided at direction level
+(`docs/design/architecture.md`): **local app now** (extend the discovery PoC), **Azure SPA is a
+budget-dependent longer-term goal**, SharePoint via a **library-provider seam** (`LocalMirror` now →
+`GraphSharePoint` later). HubSpot integration noted as a future feature. Repo: Phase 0 still stands.
 
 ## Active task
 
-**Phase 1 — wire search → triage.** Define one shared record so a discovery opportunity can be
-promoted into a bid/no-bid decision (discovery ↔ skills B01 qualification). Approach is
-**breadth-first** (thin end-to-end) per the user's steer. Not started.
+**Confirm the next definition step.** Candidates: (a) **Data model** — define the shared bid record
+that flows across the six stages (Opportunity → Qualified Bid → Answers → Evidence → Clarifications →
+Outcome); or (b) **start the local app shell** from the approved mockup (journey nav + stage routing,
+extending the discovery front end). Not started — pick with the user first. Working method: mockups-first,
+strawman → react.
 
 ## Surfaced / parked threads
 
-- **FWF strategy docs still carry .docx export artefacts** (`knowledge/01–03`): stray `*title*`
-  lines, `Page  of` footers, pipe-table headers. Readable but messy — light cleanup pass optional.
-- **Planning layer (Phase 2)** exists nowhere yet — the highest-value novel piece ("which bids, when, capacity").
-- **Third+ discovery source** — `discovery/sources.py` registry makes it a one-connector add (Scotland / Wales / TED).
+- **HubSpot integration** — future feature (pipeline ↔ CRM). Noted in `architecture.md`, not scoped.
+- **How to get SharePoint data local** (Graph export vs manual vs sample set) — decide at Stage 4.
+- **Product name** — "Bidpath" is a placeholder used in the mockup, not a real proposal.
+- **FWF strategy docs** still carry `.docx` export artefacts (`knowledge/01–03`) — optional cleanup.
 
 ## Open decisions
 
-1. **Product form** — grow the discovery UI into the whole journey, OR keep discovery separate and
-   run the bid workspace via skills + SharePoint? Shapes all downstream architecture.
-2. **SharePoint timing** — Phase 3 (AI pre-fill) is blocked on real MS Graph credentials; this
-   environment only has a Google Drive connector. Until then pre-fill can only be prototyped on samples.
+1. **Next definition step** — data model vs start building the app shell (see Active task).
+2. **SharePoint data path** — how `LocalMirror` gets seeded (parked to Stage 4).
 
-Settled: breadth-first sequencing; one connected repo with clean structure; facts verified
-(`knowledge/VERIFIED_FACTS.md`), incl. correction that RM6263 is expired → assess DOS7; RM6190 TS4 is a live candidate.
+Settled: mockups-first method; six-stage journey shape + visual style approved; **local app now, Azure
+SPA later**; library-provider seam for SharePoint; AI drives task completion; stack = FastAPI + SQLite +
+React/Vite (extend discovery). Facts verified in `knowledge/VERIFIED_FACTS.md`.
 
 ## Start-of-session checklist
 
 1. Read [CLAUDE.md](../CLAUDE.md), this file, and [todo.md](todo.md).
-2. Confirm repo state: `git -C .. status` (clean?) and `git -C .. log --oneline -3`.
-3. (Optional) Spin up discovery to sanity-check the search stage — see `discovery/CLAUDE.md`.
+2. Skim the design so far: [`docs/design/journey-mockups.html`](../docs/design/journey-mockups.html) + [`docs/design/architecture.md`](../docs/design/architecture.md).
+3. Confirm repo state: `git -C .. status` and `git -C .. log --oneline -3`.
 
 ## End-of-session checklist
 
@@ -47,6 +49,6 @@ Settled: breadth-first sequencing; one connected repo with clean structure; fact
 2. **Replace** the Status + Active task above with the new current state — don't append.
 3. **Prepend** a dated entry to [progress.md](progress.md) (most-recent-first).
 4. Update the [todo.md](todo.md) active queue.
-5. Commit only if the user asks. If committing on `main`, that's fine for this repo's solo bootstrap phase.
+5. Commit only if the user asks.
 
 Run `/end-session` to do steps 1–4 guided.

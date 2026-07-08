@@ -5,18 +5,17 @@
 
 ## Active queue
 
-- [ ] **Phase 1 — search → triage.** Define one shared record; promote a discovery opportunity into a
-      bid/no-bid decision (wire discovery ↔ skills B01). Breadth-first, thin end-to-end.
+- [ ] **Confirm next definition step** — (a) data model (shared bid record across the 6 stages), or
+      (b) start the local app shell from the approved mockup. Pick with user first.
 
 ## Surfaced / open
 
-- [ ] **Phase 2 — planning layer** (highest novel value): bid pipeline + calendar — deadline, owner,
-      effort estimate, win-probability, capacity check, deadline alerts. Exists nowhere yet.
-- [ ] **Phase 3 — SharePoint + AI pre-fill** — blocked on real MS Graph credentials (only Google Drive
-      connector available in this environment). Prototype on samples until then.
-- [ ] **Cleanse FWF strategy docs** (`knowledge/01–03`) — strip `.docx` export artefacts (`*title*`
-      lines, `Page  of` footers). Low priority; content is readable.
-- [ ] **Product-form decision** — grow discovery UI into the whole journey vs separate bid workspace.
+- [ ] **Data model** — define the record that flows Opportunity → Qualified Bid → Answers → Evidence →
+      Clarifications → Outcome. Feeds every stage.
+- [ ] **Library-provider seam** — one interface for the bid library; `LocalMirror` now → `GraphSharePoint`
+      later (see `docs/design/architecture.md`). Decide how `LocalMirror` gets seeded (parked to Stage 4).
+- [ ] **HubSpot integration** — future feature (pipeline ↔ CRM). Noted, not scoped.
+- [ ] **Cleanse FWF strategy docs** (`knowledge/01–03`) — strip `.docx` export artefacts. Low priority.
 
 ## Parked / optional
 

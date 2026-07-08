@@ -1,0 +1,676 @@
+<title>Bidpath — Journey Mockups</title>
+<style>
+  /* ============ TOKENS ============ */
+  :root {
+    --paper: #ffffff;
+    --ground: #f4f6f9;
+    --panel: #ffffff;
+    --panel-2: #eef1f6;
+    --ink: #16202e;
+    --ink-2: #46536590;
+    --muted: #5b6472;
+    --faint: #8a93a2;
+    --line: #dbe1ea;
+    --line-strong: #c3cbd7;
+    --accent: #14539a;
+    --accent-ink: #ffffff;
+    --accent-soft: #e7eef7;
+    --link: #2b6fc4;
+    --good: #1e7a46;   --good-soft: #e3f2e8;
+    --warn: #a9670a;   --warn-soft: #f7edda;
+    --crit: #b23a3a;   --crit-soft: #f7e5e5;
+    --neutral: #6a7382; --neutral-soft:#eaedf2;
+    --shadow: 0 1px 2px #16202e0d, 0 8px 24px #16202e0a;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Arial, sans-serif;
+    --r: 8px; --r-lg: 14px;
+    --step: 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10151c; --ground: #0c1016; --panel: #161d27; --panel-2: #1c2531;
+      --ink: #e7ecf3; --ink-2: #a7b2c1; --muted: #97a2b2; --faint: #6f7c8d;
+      --line: #29323f; --line-strong: #38434f;
+      --accent: #3f8ae0; --accent-ink: #08121e; --accent-soft: #172736; --link: #6db0f5;
+      --good: #48b878; --good-soft: #14261c;
+      --warn: #d69a3c; --warn-soft: #2a2214;
+      --crit: #e06767; --crit-soft: #2a1717;
+      --neutral: #8592a3; --neutral-soft:#1e2732;
+      --shadow: 0 1px 2px #0006, 0 10px 30px #0004;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper:#fff; --ground:#f4f6f9; --panel:#fff; --panel-2:#eef1f6;
+    --ink:#16202e; --ink-2:#465365; --muted:#5b6472; --faint:#8a93a2;
+    --line:#dbe1ea; --line-strong:#c3cbd7;
+    --accent:#14539a; --accent-ink:#fff; --accent-soft:#e7eef7; --link:#2b6fc4;
+    --good:#1e7a46; --good-soft:#e3f2e8; --warn:#a9670a; --warn-soft:#f7edda;
+    --crit:#b23a3a; --crit-soft:#f7e5e5; --neutral:#6a7382; --neutral-soft:#eaedf2;
+    --shadow:0 1px 2px #16202e0d, 0 8px 24px #16202e0a;
+  }
+  :root[data-theme="dark"] {
+    --paper:#10151c; --ground:#0c1016; --panel:#161d27; --panel-2:#1c2531;
+    --ink:#e7ecf3; --ink-2:#a7b2c1; --muted:#97a2b2; --faint:#6f7c8d;
+    --line:#29323f; --line-strong:#38434f;
+    --accent:#3f8ae0; --accent-ink:#08121e; --accent-soft:#172736; --link:#6db0f5;
+    --good:#48b878; --good-soft:#14261c; --warn:#d69a3c; --warn-soft:#2a2214;
+    --crit:#e06767; --crit-soft:#2a1717; --neutral:#8592a3; --neutral-soft:#1e2732;
+    --shadow:0 1px 2px #0006, 0 10px 30px #0004;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    font-size: 15px; letter-spacing: -0.006em;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+  h1,h2,h3,h4 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+  p { margin: 0; }
+  button { font-family: inherit; cursor: pointer; }
+  .mono { font-family: var(--mono); }
+  .label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; color: var(--faint); font-weight: 600; }
+
+  /* ============ TOP BAR ============ */
+  header.top {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .top-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
+  .brand { display: flex; align-items: center; gap: 11px; min-width: max-content; }
+  .brand .mark {
+    width: 30px; height: 30px; border-radius: 7px; flex: none;
+    background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px;
+    box-shadow: inset 0 0 0 1px #ffffff22;
+  }
+  .brand b { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand span { display: block; font-size: 11px; color: var(--faint); font-weight: 500; letter-spacing: 0; }
+  .top-spacer { flex: 1; }
+  .themed { display:flex; align-items:center; gap:8px; }
+  .ghost-btn {
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--muted);
+    border-radius: 7px; height: 32px; padding: 0 11px; font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .ghost-btn:hover { color: var(--ink); border-color: var(--accent); }
+
+  /* ============ STEPPER ============ */
+  .stepper { display: flex; gap: 4px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: thin; }
+  .step {
+    --dot: var(--faint);
+    flex: 1 1 0; min-width: 140px; text-align: left;
+    background: transparent; border: 0; padding: 9px 12px 10px; border-radius: 10px;
+    color: var(--muted); position: relative; transition: background .15s;
+  }
+  .step:hover { background: var(--panel-2); }
+  .step .n { font-family: var(--mono); font-size: 11px; color: var(--dot); font-weight: 700; letter-spacing: .05em; }
+  .step .t { display: block; font-weight: 650; font-size: 14px; color: var(--ink); margin-top: 1px; letter-spacing: -0.02em; }
+  .step .d { display: block; font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+  .step[aria-current="true"] { background: var(--accent-soft); --dot: var(--accent); }
+  .step[aria-current="true"] .t { color: var(--accent); }
+  .step[aria-current="true"]::after {
+    content:""; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px;
+    background: var(--accent); border-radius: 2px;
+  }
+  .step .state {
+    display:inline-block; margin-top:6px; font-family:var(--mono); font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em; padding:1px 6px; border-radius: 20px;
+  }
+  .s-live { background: var(--good-soft); color: var(--good); }
+  .s-design { background: var(--warn-soft); color: var(--warn); }
+  .s-gap { background: var(--crit-soft); color: var(--crit); }
+
+  /* ============ INTRO ============ */
+  .intro { padding: 26px 0 8px; }
+  .kicker { display:inline-flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .kicker .label { color: var(--accent); }
+  .kicker .dash { width: 26px; height: 1px; background: var(--line-strong); }
+  .intro h1 { font-size: clamp(24px, 3.4vw, 34px); font-weight: 780; line-height: 1.08; }
+  .intro .lede { color: var(--muted); font-size: 16px; max-width: 62ch; margin-top: 12px; }
+  .intro .note {
+    margin-top: 16px; font-size: 13px; color: var(--ink-2); background: var(--panel);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+    padding: 10px 14px; max-width: 74ch;
+  }
+
+  /* ============ STAGE LAYOUT ============ */
+  main { padding: 18px 0 60px; }
+  .stage { display: none; }
+  .stage.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .stage.active { animation: none; } }
+
+  .stage-head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .stage-head h2 { font-size: 22px; font-weight: 720; display:flex; align-items:center; gap:10px; }
+  .stage-head h2 .badge { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:6px; }
+  .stage-head .maps { font-size:12.5px; color:var(--faint); }
+  .stage-head .maps b { color: var(--muted); font-weight:600; }
+
+  .split { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+
+  /* ---- mock screen chrome ---- */
+  .screen { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+  .screen-bar { display:flex; align-items:center; gap:8px; padding: 9px 13px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .dots { display:flex; gap:5px; }
+  .dots i { width:9px; height:9px; border-radius:50%; background: var(--line-strong); display:block; }
+  .screen-bar .addr { font-family: var(--mono); font-size: 11.5px; color: var(--faint); background: var(--paper); border:1px solid var(--line); border-radius: 6px; padding: 3px 9px; flex:1; }
+  .screen-body { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+
+  /* toolbar / filters */
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .search-inp { flex:1; min-width: 160px; display:flex; align-items:center; gap:8px; background: var(--paper); border:1px solid var(--line-strong); border-radius: 8px; padding: 8px 11px; color: var(--faint); font-size: 13px; }
+  .chip { font-family: var(--mono); font-size: 11.5px; font-weight:600; border:1px solid var(--line-strong); background: var(--paper); color: var(--muted); border-radius: 20px; padding: 4px 10px; display:inline-flex; align-items:center; gap:6px; }
+  .chip.on { background: var(--accent-soft); border-color: color-mix(in srgb,var(--accent) 40%, transparent); color: var(--accent); }
+  .chip .x { color: var(--faint); }
+
+  /* opportunity cards */
+  .opp { border:1px solid var(--line); border-radius: 10px; padding: 12px 13px; background: var(--paper); display:grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .opp:hover { border-color: var(--line-strong); }
+  .opp .ttl { font-weight: 650; font-size: 14.5px; letter-spacing: -0.01em; }
+  .opp .sub { font-size: 12.5px; color: var(--muted); }
+  .opp .meta { grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap: 6px; margin-top: 6px; align-items:center; }
+  .tag { font-family: var(--mono); font-size: 11px; font-weight:600; padding: 2px 7px; border-radius: 5px; background: var(--panel-2); color: var(--muted); border:1px solid var(--line); }
+  .tag.src { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .tag.val { color: var(--ink); }
+  .deadline { font-family: var(--mono); font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+  .dl-soon { background: var(--warn-soft); color: var(--warn); }
+  .dl-ok { background: var(--good-soft); color: var(--good); }
+  .dl-crit { background: var(--crit-soft); color: var(--crit); }
+  .opp .act { align-self: start; }
+  .mini-btn { border:1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 7px; padding: 6px 11px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+  .mini-btn.tonal { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .mini-btn.ghost { background: transparent; color: var(--muted); border-color: var(--line-strong); }
+
+  /* gates / scorecard */
+  .gates { display:flex; flex-direction:column; gap: 7px; }
+  .gate { display:flex; align-items:center; gap: 10px; padding: 9px 11px; border:1px solid var(--line); border-radius: 8px; background: var(--paper); }
+  .gate .pill { font-family:var(--mono); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 7px; border-radius: 5px; min-width: 62px; text-align:center; }
+  .p-pass { background: var(--good-soft); color: var(--good); }
+  .p-fail { background: var(--crit-soft); color: var(--crit); }
+  .p-unk  { background: var(--warn-soft); color: var(--warn); }
+  .gate .g-txt { flex:1; font-size: 13px; }
+  .gate .g-txt b { font-weight: 640; }
+  .gate .g-txt .g-note { color: var(--faint); font-size: 11.5px; }
+
+  .econ { display:grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
+  .stat { border:1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--paper); }
+  .stat .k { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color: var(--faint); font-weight:700; }
+  .stat .v { font-size: 20px; font-weight: 740; letter-spacing:-0.02em; margin-top:3px; font-variant-numeric: tabular-nums; }
+  .stat .u { font-size: 11.5px; color: var(--muted); }
+  .decide { display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* pipeline board */
+  .board { display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 620px){ .board { grid-template-columns: repeat(2,1fr); } }
+  .col-h { font-family:var(--mono); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color: var(--muted); display:flex; justify-content:space-between; margin-bottom:7px; }
+  .col-h .c { color: var(--faint); }
+  .col { display:flex; flex-direction:column; gap:8px; }
+  .kcard { border:1px solid var(--line); border-radius: 9px; background: var(--paper); padding: 10px; border-top: 3px solid var(--neutral); }
+  .kcard.t-go { border-top-color: var(--good); }
+  .kcard.t-draft { border-top-color: var(--accent); }
+  .kcard.t-risk { border-top-color: var(--crit); }
+  .kcard .kt { font-weight: 640; font-size: 12.5px; line-height:1.3; }
+  .kcard .km { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .who { width:20px;height:20px;border-radius:50%; background: var(--accent-soft); color: var(--accent); font-size:10px; font-weight:800; display:grid; place-items:center; font-family:var(--mono); }
+  .alert-strip { display:flex; align-items:center; gap:10px; padding: 9px 12px; border-radius: 8px; background: var(--crit-soft); color: var(--crit); font-size: 12.5px; font-weight: 600; border:1px solid color-mix(in srgb, var(--crit) 25%, transparent); }
+  .cap { border:1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--paper); }
+  .bar { height: 9px; border-radius: 6px; background: var(--panel-2); overflow:hidden; margin-top:7px; }
+  .bar > i { display:block; height:100%; background: linear-gradient(90deg, var(--good), var(--warn)); }
+  .bar.over > i { background: linear-gradient(90deg, var(--warn), var(--crit)); }
+
+  /* workspace: questions + draft */
+  .ws { display:grid; grid-template-columns: 200px 1fr; gap: 12px; }
+  @media (max-width: 620px){ .ws { grid-template-columns: 1fr; } }
+  .qlist { display:flex; flex-direction:column; gap:5px; }
+  .qi { padding: 8px 10px; border:1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 12.5px; display:flex; flex-direction:column; gap:4px; }
+  .qi.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .qi .qs { display:flex; align-items:center; gap:6px; }
+  .dotp { width:7px;height:7px;border-radius:50%; flex:none; }
+  .d-drafted { background: var(--warn); } .d-review { background: var(--accent); } .d-appr { background: var(--good); } .d-todo { background: var(--line-strong); }
+  .qi .qn { font-weight:620; }
+  .draft { border:1px solid var(--line); border-radius: 10px; background: var(--paper); overflow:hidden; }
+  .draft-h { padding: 10px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:8px; background: var(--panel-2); }
+  .ai-flag { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:650; color: var(--accent); background: var(--accent-soft); padding:3px 9px; border-radius: 20px; font-family:var(--mono); letter-spacing:.02em; }
+  .draft-body { padding: 12px; font-size: 13px; color: var(--ink-2); display:flex; flex-direction:column; gap:9px; }
+  .draft-body p { line-height: 1.55; }
+  .ledger { border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .ledger .lh, .ledger .lr { display:grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap:8px; padding: 7px 10px; font-size: 11.5px; }
+  .ledger .lh { background: var(--panel-2); font-family:var(--mono); text-transform:uppercase; letter-spacing:.05em; color: var(--faint); font-weight:700; font-size:10px; }
+  .ledger .lr { border-top:1px solid var(--line); }
+  .ledger .lr .st { font-family:var(--mono); font-weight:700; font-size:10px; }
+  .src-note { font-size: 11.5px; color: var(--muted); background: var(--good-soft); border:1px solid color-mix(in srgb,var(--good) 22%, transparent); border-radius:7px; padding: 7px 10px; }
+
+  /* clarifications register */
+  .reg { border:1px solid var(--line); border-radius: 10px; overflow:hidden; }
+  .reg-row { display:grid; grid-template-columns: 1.5fr .8fr .9fr .7fr; gap:10px; padding: 10px 12px; font-size: 12.5px; align-items:center; }
+  .reg-row.h { background: var(--panel-2); font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color: var(--faint); font-weight:700; }
+  .reg-row + .reg-row { border-top:1px solid var(--line); }
+  .reg-row .q { font-weight:620; }
+  .reg-row .sub { color: var(--faint); font-size:11px; }
+  .st-pill { font-family:var(--mono); font-size:10px; font-weight:800; text-transform:uppercase; padding:2px 7px; border-radius:5px; letter-spacing:.05em; }
+  .checklist { display:flex; flex-direction:column; gap:6px; }
+  .ck { display:flex; align-items:center; gap:10px; font-size:13px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--paper); }
+  .ck .box { width:18px;height:18px;border-radius:5px; display:grid;place-items:center; font-size:11px; font-weight:800; flex:none; }
+  .ck.ok .box { background: var(--good); color:#fff; } .ck.no .box { background: var(--crit-soft); color: var(--crit); border:1px solid var(--crit); }
+  .ck .cnote { margin-left:auto; font-size:11px; color:var(--faint); font-family:var(--mono); }
+
+  /* outcome */
+  .outcome-head { display:flex; align-items:center; gap:12px; padding: 12px 14px; border-radius:10px; background: var(--good-soft); border:1px solid color-mix(in srgb,var(--good) 24%, transparent); }
+  .outcome-head .res { font-family:var(--mono); font-weight:800; text-transform:uppercase; letter-spacing:.06em; color: var(--good); font-size: 13px; }
+  .actions-l { display:flex; flex-direction:column; gap:8px; }
+  .lib-act { display:flex; align-items:center; gap:11px; padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:var(--paper); }
+  .lib-act .ic { width:26px;height:26px;border-radius:7px; display:grid;place-items:center; font-weight:800; font-size:13px; flex:none; }
+  .ic-up { background: var(--good-soft); color: var(--good); }
+  .ic-down { background: var(--crit-soft); color: var(--crit); }
+  .ic-ref { background: var(--warn-soft); color: var(--warn); }
+  .lib-act .la-t { font-size:13px; font-weight:620; }
+  .lib-act .la-s { font-size:11.5px; color: var(--faint); }
+
+  /* ---- scope card ---- */
+  .scope { position: sticky; top: 150px; display:flex; flex-direction:column; gap: 12px; }
+  @media (max-width: 900px){ .scope { position: static; } }
+  .scard { background: var(--panel); border:1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow:hidden; }
+  .scard-h { padding: 12px 15px 10px; border-bottom:1px solid var(--line); }
+  .scard-h .label { color: var(--accent); }
+  .scard-h h3 { font-size: 15.5px; font-weight: 700; margin-top: 4px; }
+  .scard-b { padding: 6px 15px 14px; display:flex; flex-direction:column; }
+  .srow { padding: 11px 0; border-bottom: 1px dashed var(--line); display:flex; gap:11px; }
+  .srow:last-child { border-bottom: 0; }
+  .srow .si { font-size: 15px; flex:none; width: 20px; text-align:center; }
+  .srow .sk { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); font-weight:700; }
+  .srow .sv { font-size: 13px; color: var(--ink-2); margin-top:2px; line-height:1.45; }
+  .srow .sv b { color: var(--ink); font-weight: 640; }
+  .scope-io { display:grid; grid-template-columns: 1fr 1fr; gap:0; border-top:1px solid var(--line); }
+  .scope-io > div { padding: 11px 15px; }
+  .scope-io .in { border-right: 1px solid var(--line); }
+  .scope-io .label { margin-bottom: 7px; display:block; }
+  .scope-io .in .label { color: var(--good); }
+  .scope-io .out .label { color: var(--crit); }
+  .scope-io ul { margin: 0; padding: 0; list-style: none; display:flex; flex-direction:column; gap:6px; }
+  .scope-io li { font-size: 12px; color: var(--ink-2); padding-left: 15px; position: relative; line-height:1.35; }
+  .scope-io .in li::before { content:"+"; position:absolute; left:0; color: var(--good); font-weight:800; }
+  .scope-io .out li::before { content:"–"; position:absolute; left:0; color: var(--crit); font-weight:800; }
+
+  .asset { display:flex; align-items:center; gap:9px; padding: 10px 13px; border-radius: 10px; border:1px dashed var(--line-strong); background: var(--panel); font-size:12px; color: var(--muted); }
+  .asset .st-dot { width:8px;height:8px;border-radius:50%; flex:none; }
+  .dot-live { background: var(--good); } .dot-design { background: var(--warn); } .dot-gap { background: var(--crit); }
+  .asset b { color: var(--ink); font-weight:640; }
+
+  /* footer nav */
+  .pager { display:flex; justify-content:space-between; gap:12px; margin-top: 26px; padding-top: 18px; border-top:1px solid var(--line); }
+  .pager button { border:1px solid var(--line-strong); background: var(--panel); color: var(--ink); border-radius: 9px; padding: 10px 15px; font-size: 13px; font-weight: 640; display:flex; flex-direction:column; gap:1px; text-align:left; min-width: 150px; }
+  .pager button:hover { border-color: var(--accent); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager .pl { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); }
+  .pager .pn { font-weight: 680; }
+  .pager .next { text-align:right; align-items:flex-end; }
+
+  .foot { color: var(--faint); font-size: 12px; text-align:center; padding: 30px 0 20px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div class="brand">
+        <div class="mark">B</div>
+        <div>
+          <b>Bidpath</b>
+          <span>Public sector bidding — working name</span>
+        </div>
+      </div>
+      <div class="top-spacer"></div>
+      <div class="themed">
+        <button class="ghost-btn" id="themeBtn" aria-label="Toggle colour theme">◐ Theme</button>
+      </div>
+    </div>
+    <nav class="stepper" id="stepper" aria-label="Journey stages"></nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="intro">
+    <div class="kicker"><span class="dash"></span><span class="label">Definition · Step 2 · Journey &amp; scope</span></div>
+    <h1>What each stage of the bidding journey looks like</h1>
+    <p class="lede">A first strawman — one screen per stage of the journey, built with real UK procurement content, so we decide by looking rather than by describing. Nothing here is built or final; it exists to be reacted to and redlined.</p>
+    <p class="note"><b>How to use this:</b> step through the six stages in the bar above. Each shows a mock screen (left) and a scope card (right): what the user does, where AI helps, where a human must decide, and what's in vs out for a first version. Tell me what's wrong, missing, or over-built — that's the point.</p>
+  </section>
+
+  <main id="main"></main>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+/* ---------------- content model ---------------- */
+const STAGES = [
+  {
+    id:"search", n:"01", t:"Search", d:"Find opportunities", state:"live", stateLabel:"Works today",
+    maps:"Discovery engine · Find a Tender + Contracts Finder",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · search</div></div>
+        <div class="screen-body">
+          <div class="toolbar">
+            <div class="search-inp">⌕ &nbsp;copilot, power platform, cloud support…</div>
+            <span class="chip on">72000000 IT services <span class="x">×</span></span>
+            <span class="chip on">Cloud support <span class="x">×</span></span>
+            <span class="chip">＋ filter</span>
+          </div>
+          <div class="toolbar">
+            <span class="chip">Source: All</span>
+            <span class="chip">Region: UK</span>
+            <span class="chip">Status: Open</span>
+            <span class="chip">Closes ≤ 60 days</span>
+          </div>
+          ${opp("NHS Greater Manchester ICB","Cloud hosting &amp; support — Microsoft 365 &amp; Azure","Find a Tender","72000000","£250k–£400k","37 days","dl-ok")}
+          ${opp("Leeds City Council","Power Platform delivery partner (Lot 3)","Contracts Finder","72212517","£120k","22 days","dl-soon")}
+          ${opp("Home Office","Copilot Studio discovery &amp; proof of value","Find a Tender","72000000","£90k","8 days","dl-crit")}
+        </div>
+      </div>`,
+    scope:{
+      does:"Search live government sources in one place and filter to what's genuinely relevant — by keyword, CPV code, buyer, region, value and how soon it closes.",
+      ai:"Suggests which CPV codes and keywords match FWF's Microsoft Practice, and flags notices that look relevant even when the wording differs.",
+      human:"Decides which opportunities are worth a closer look and clicks <b>Consider</b> to send them to Triage.",
+      inn:["Find a Tender + Contracts Finder","Filter: CPV, region, value, deadline","Keyword search + source badges","Export / “Consider” handoff"],
+      out:["Scotland / Wales / TED sources","Saved searches &amp; email alerts","Auto bid/no-bid (that's Triage)"]
+    },
+    asset:{state:"live", txt:"<b>Exists and works</b> — the discovery PoC (FastAPI + SQLite + React) already pulls, normalises and filters these two sources."}
+  },
+  {
+    id:"triage", n:"02", t:"Triage", d:"Bid or no-bid", state:"design", stateLabel:"Designed (B01)",
+    maps:"Skill B01 — qualification gates + bid economics",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · triage · NHS GM ICB</div></div>
+        <div class="screen-body">
+          <div class="label">Qualification gates — unknown blocks, it never passes by omission</div>
+          <div class="gates">
+            ${gate("fail","Fails","Economic &amp; financial standing (EFS)","FWF standalone accounts fall short — needs the Arobs parent company guarantee attached")}
+            ${gate("pass","Pass","Capability &amp; framework fit","Microsoft Practice maps to Cloud Support; deliverable by Romanian delivery team")}
+            ${gate("unk","Unknown","Bid capacity by deadline","No owner assigned yet — who writes &amp; reviews before 14 Aug?")}
+            ${gate("pass","Pass","Evidence availability","Case studies + Cyber Essentials on file; social value evidence thin")}
+          </div>
+          <div class="label" style="margin-top:4px">Bid economics</div>
+          <div class="econ">
+            ${stat("Est. effort","6.5","person-days")}
+            ${stat("Contract value","£250k+","over 48 months")}
+            ${stat("Win probability","45%","manual estimate")}
+          </div>
+          <div class="decide">
+            <button class="mini-btn">▲ Recommend BID</button>
+            <button class="mini-btn ghost">No-bid</button>
+            <button class="mini-btn tonal">Needs review</button>
+          </div>
+        </div>
+      </div>`,
+    scope:{
+      does:"Runs a consistent bid/no-bid check on one opportunity: hard gates first (knockouts), then a weighted score and a plain effort-vs-value-vs-win view.",
+      ai:"Pre-fills each gate from the notice + FWF's profile, and drafts the rationale — e.g. spotting the EFS gap and prompting for the Arobs PCG.",
+      human:"Makes the actual call — <b>Bid</b>, <b>No-bid</b>, or <b>Needs review</b> — and assigns an owner. Any <b>Unknown</b> blocks a clean “bid”.",
+      inn:["Gate checklist w/ pass/fail/unknown","EFS + PCG prompt baked in","Effort vs value vs win-probability","Decision + owner captured"],
+      out:["Trained win-probability model","Auto-pricing","Full commercial sign-off flow"]
+    },
+    asset:{state:"design", txt:"<b>Designed, not built</b> — skill B01 defines the gates + scoring; not yet wired to a real opportunity record."}
+  },
+  {
+    id:"plan", n:"03", t:"Plan", d:"Which bids, when", state:"gap", stateLabel:"Missing — highest value",
+    maps:"New — no equivalent exists yet",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · pipeline</div></div>
+        <div class="screen-body">
+          <div class="alert-strip">⚠ 2 clarification deadlines this week · Home Office closes in 8 days and has no writer assigned</div>
+          <div class="board">
+            <div class="col">
+              <div class="col-h"><span>Qualifying</span><span class="c">2</span></div>
+              ${kcard("draft","Leeds CC — Power Platform","KS","22d","£120k")}
+              ${kcard("risk","Home Office — Copilot PoV","—","8d","£90k")}
+            </div>
+            <div class="col">
+              <div class="col-h"><span>Drafting</span><span class="c">1</span></div>
+              ${kcard("draft","NHS GM — Cloud support","EH","37d","£250k")}
+            </div>
+            <div class="col">
+              <div class="col-h"><span>In review</span><span class="c">1</span></div>
+              ${kcard("go","DHSC — M365 rollout","EH","12d","£180k")}
+            </div>
+            <div class="col">
+              <div class="col-h"><span>Submitted</span><span class="c">1</span></div>
+              ${kcard("go","Gov Digital — Azure AI","KS","—","£210k")}
+            </div>
+          </div>
+          <div class="cap">
+            <div class="col-h" style="margin:0"><span>Team capacity — next 3 weeks</span><span class="c">18.5 / 15 days</span></div>
+            <div class="bar over"><i style="width:100%"></i></div>
+            <div class="sub" style="font-size:11.5px;color:var(--faint);margin-top:6px">Over-committed by 3.5 days — something has to give. Drop Home Office, or find a writer.</div>
+          </div>
+        </div>
+      </div>`,
+    scope:{
+      does:"Shows every live bid on one board with its stage, owner, deadline and effort — plus whether the team actually has the days to deliver what's committed.",
+      ai:"Estimates effort per bid, forecasts clashes, and surfaces the “this deadline will be missed” warning before it happens.",
+      human:"Decides sequencing and trade-offs — which bids to commit to, which to drop, who owns each, when work starts.",
+      inn:["Pipeline board by stage","Deadline + owner + effort per bid","Capacity vs commitment view","Deadline / clarification alerts"],
+      out:["Automatic resource levelling","Timesheet integration","Revenue forecasting"]
+    },
+    asset:{state:"gap", txt:"<b>Nothing exists yet</b> — this is the highest-value new piece and directly answers the missed-deadline failure that killed the last bid."}
+  },
+  {
+    id:"complete", n:"04", t:"Complete", d:"Draft the bid", state:"design", stateLabel:"Designed (B02–B05)",
+    maps:"Skills B02–B04 · SharePoint answer bank + evidence",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · workspace · NHS GM ICB</div></div>
+        <div class="screen-body">
+          <div class="ws">
+            <div class="qlist">
+              <div class="label" style="margin-bottom:2px">Compliance matrix</div>
+              ${qi("appr","Q1","Social value",1)}
+              ${qi("review","Q2","Technical approach",0)}
+              ${qi("drafted","Q3","Security &amp; data",0,true)}
+              ${qi("todo","Q4","Pricing schedule",0)}
+              ${qi("todo","Q5","Implementation plan",0)}
+            </div>
+            <div class="draft">
+              <div class="draft-h">
+                <b style="font-size:12.5px">Q3 — Security &amp; data handling</b>
+                <span class="ai-flag">✦ AI-drafted</span>
+              </div>
+              <div class="draft-body">
+                <p>FWF operates an ISO 27001-aligned information security management system. All data is processed within UK/EU regions under Microsoft Azure, with role-based access control and encryption in transit and at rest…</p>
+                <div class="src-note">◆ Drafted from <b>3 matches</b> in the Approved Answer Bank — 2 from won bids (DHSC, Leeds CC). Freshness OK; one certificate expiring.</div>
+                <div class="ledger">
+                  <div class="lh"><span>Claim</span><span>Evidence</span><span>Status</span></div>
+                  <div class="lr"><span>Cyber Essentials Plus</span><span>Certificate (SharePoint)</span><span class="st" style="color:var(--warn)">EXP 09/26</span></div>
+                  <div class="lr"><span>ISO 27001 aligned ISMS</span><span>Policy + audit</span><span class="st" style="color:var(--good)">OK</span></div>
+                  <div class="lr"><span>UK data residency</span><span>Azure config</span><span class="st" style="color:var(--good)">OK</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`,
+    scope:{
+      does:"Turns the tender into a tracked question list, then drafts each answer with the evidence to back every claim — so the writer edits rather than starts from a blank page.",
+      ai:"Retrieves the best past answers + evidence from the SharePoint library and drafts a first response mapped to what the evaluator scores; builds the evidence ledger.",
+      human:"Rewrites, adds the win themes, and <b>approves</b> each answer. Nothing is submitted as-is; nothing auto-approves.",
+      inn:["Compliance matrix + per-answer status","AI draft from past bids","Evidence ledger (claim → proof → expiry)","Stale-term &amp; unsupported-claim checks"],
+      out:["Live SharePoint (blocked on MS Graph)","Full document assembly / export","In-portal form filling"]
+    },
+    asset:{state:"design", txt:"<b>Designed; blocked on SharePoint</b> — skills B02–B04 exist. AI pre-fill needs the MS Graph connection stood up; can prototype on samples first."}
+  },
+  {
+    id:"manage", n:"05", t:"Manage", d:"Clarify &amp; submit", state:"design", stateLabel:"Designed (B05–B06)",
+    maps:"Skills B05–B06 · the exact failure that lost G-Cloud 15",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · clarifications &amp; preflight</div></div>
+        <div class="screen-body">
+          <div class="label">Clarification register — the step the last bid missed</div>
+          <div class="reg">
+            <div class="reg-row h"><span>Question / buyer</span><span>Owner</span><span>Buyer deadline</span><span>Status</span></div>
+            <div class="reg-row">
+              <span class="q">Confirm parent guarantee wording<div class="sub">via portal · NHS GM</div></span>
+              <span>EH <span class="sub">/ KS backup</span></span>
+              <span class="mono">14 Aug 17:00 BST</span>
+              <span><span class="st-pill p-unk">Drafting</span></span>
+            </div>
+            <div class="reg-row" style="background:var(--crit-soft)">
+              <span class="q">Provide 3 years’ accounts<div class="sub">via email · Home Office</div></span>
+              <span>— <span class="sub">unassigned</span></span>
+              <span class="mono" style="color:var(--crit)">Tomorrow 12:00</span>
+              <span><span class="st-pill p-fail">Overdue soon</span></span>
+            </div>
+          </div>
+          <div class="label" style="margin-top:4px">Pre-flight — submission gate</div>
+          <div class="checklist">
+            ${ck(1,"All mandatory questions answered &amp; approved","5 / 5")}
+            ${ck(1,"Arobs parent company guarantee attached","Schedule 5")}
+            ${ck(0,"Carbon Reduction Plan — in date","Expired 06/26")}
+            ${ck(1,"Deadline captured with time + timezone","14 Aug 17:00")}
+          </div>
+        </div>
+      </div>`,
+    scope:{
+      does:"Tracks every buyer clarification with an owner, a backup and a real deadline (date, time, timezone) — then runs a pre-flight gate before anyone submits.",
+      ai:"Watches deadlines, drafts clarification responses from the library, and blocks submission when a mandatory item is missing or a document has expired.",
+      human:"Owns each clarification, approves responses, and makes the final call to submit. The buyer's portal submission stays a human action.",
+      inn:["Clarification register w/ time + tz + escalation","Backup owner on every item","Pre-flight blocking checklist","Expiry checks on documents"],
+      out:["Live portal / mailbox integration","Auto-submitting to the buyer","Reminder scheduling off flight/award dates"]
+    },
+    asset:{state:"design", txt:"<b>Designed</b> — skills B05–B06. This directly encodes the lesson from the G-Cloud 15 disregard: a missed clarification is fatal."}
+  },
+  {
+    id:"learn", n:"06", t:"Learn", d:"Outcome &amp; library", state:"design", stateLabel:"Designed (B07)",
+    maps:"Skill B07 — feeds the library back to Stage 4",
+    screen:`
+      <div class="screen">
+        <div class="screen-bar"><div class="dots"><i></i><i></i><i></i></div><div class="addr">bidpath · outcome · DHSC M365</div></div>
+        <div class="screen-body">
+          <div class="outcome-head">
+            <span class="res">● Won</span>
+            <span style="font-size:12.5px;color:var(--muted)">DHSC — M365 rollout · scored <b>88 / 100</b> · “strong technical response, clear social value”</span>
+          </div>
+          <div class="label" style="margin-top:4px">Suggested library updates — you approve each</div>
+          <div class="actions-l">
+            ${lib("up","Promote 4 answers to the Approved Answer Bank","Technical approach &amp; social value scored highest — reuse them")}
+            ${lib("ref","Refresh 2 evidence items","Cyber Essentials + insurance certificates expire within 90 days")}
+            ${lib("down","Retire 1 answer — do not reuse","Pricing narrative the evaluator flagged as unclear")}
+          </div>
+          <div class="src-note" style="background:var(--accent-soft);border-color:transparent;color:var(--accent)">◆ Approved updates flow straight into Stage 4, so the next bid drafts from better material.</div>
+        </div>
+      </div>`,
+    scope:{
+      does:"Captures how the bid actually did — won/lost, evaluator score, feedback — and turns that into concrete improvements to the reusable library.",
+      ai:"Reads the feedback and proposes what to promote, retire or refresh, so good content compounds and weak content is flagged before it's reused.",
+      human:"Approves each library change. Nothing gets marked “reusable” without a person confirming it.",
+      inn:["Outcome + score + feedback capture","Promote / retire / refresh suggestions","Closes the loop into Stage 4","Evidence expiry surfaced"],
+      out:["Cross-bid analytics dashboards","Automated win/loss reporting","Pricing intelligence model"]
+    },
+    asset:{state:"design", txt:"<b>Designed</b> — skill B07. Without this the library slowly goes stale; with it, every bid makes the next one easier."}
+  }
+];
+
+/* ---------------- template helpers ---------------- */
+function opp(buyer,ttl,src,cpv,val,dl,dlc){
+  return `<div class="opp">
+    <div><div class="ttl">${ttl}</div><div class="sub">${buyer}</div></div>
+    <div class="act"><button class="mini-btn tonal">Consider →</button></div>
+    <div class="meta">
+      <span class="tag src">${src}</span>
+      <span class="tag">CPV ${cpv}</span>
+      <span class="tag val">${val}</span>
+      <span class="deadline ${dlc}">closes · ${dl}</span>
+    </div>
+  </div>`;
+}
+function gate(kind,pill,title,note){
+  const cls = kind==="pass"?"p-pass":kind==="fail"?"p-fail":"p-unk";
+  return `<div class="gate"><span class="pill ${cls}">${pill}</span><div class="g-txt"><b>${title}</b> <span class="g-note">— ${note}</span></div></div>`;
+}
+function stat(k,v,u){ return `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="u">${u}</div></div>`; }
+function kcard(t,ttl,who,dl,val){
+  const dlc = dl==="8d"?'style="color:var(--crit);font-weight:700"':dl==="12d"||dl==="22d"?'style="color:var(--warn)"':'';
+  const w = who==="—"?`<span class="who" style="background:var(--crit-soft);color:var(--crit)">?</span>`:`<span class="who">${who}</span>`;
+  return `<div class="kcard t-${t}"><div class="kt">${ttl}</div><div class="km">${w}<span class="tag val">${val}</span>${dl!=="—"?`<span class="mono" ${dlc}>${dl}</span>`:''}</div></div>`;
+}
+function qi(state,qn,label,sel,mark){
+  return `<div class="qi ${sel?'sel':''}"><div class="qs"><span class="dotp d-${state}"></span><span class="qn">${qn}</span></div><span style="color:var(--muted)">${label}</span></div>`;
+}
+function ck(ok,txt,note){
+  return `<div class="ck ${ok?'ok':'no'}"><span class="box">${ok?'✓':'!'}</span><span>${txt}</span><span class="cnote">${note}</span></div>`;
+}
+function lib(kind,t,s){
+  const ic = kind==="up"?"ic-up":kind==="down"?"ic-down":"ic-ref";
+  const g = kind==="up"?"▲":kind==="down"?"▼":"↻";
+  return `<div class="lib-act"><span class="ic ${ic}">${g}</span><div><div class="la-t">${t}</div><div class="la-s">${s}</div></div></div>`;
+}
+
+/* ---------------- render ---------------- */
+const stateMap = { live:["s-live","dot-live"], design:["s-design","dot-design"], gap:["s-gap","dot-gap"] };
+let cur = 0;
+
+const stepper = document.getElementById('stepper');
+STAGES.forEach((s,i)=>{
+  const b = document.createElement('button');
+  b.className = 'step'; b.setAttribute('aria-current', i===0);
+  b.innerHTML = `<span class="n">${s.n}</span><span class="t">${s.t}</span><span class="d">${s.d}</span><br><span class="state ${stateMap[s.state][0]}">${s.stateLabel}</span>`;
+  b.onclick = ()=>go(i);
+  stepper.appendChild(b);
+});
+
+const main = document.getElementById('main');
+function render(){
+  const s = STAGES[cur];
+  main.innerHTML = `
+    <div class="stage active">
+      <div class="stage-head">
+        <h2><span class="badge">${s.n}</span> ${s.t} — ${s.d}</h2>
+        <div class="maps"><b>Maps to:</b> ${s.maps}</div>
+      </div>
+      <div class="split">
+        <div>${s.screen}</div>
+        <aside class="scope">
+          <div class="scard">
+            <div class="scard-h"><span class="label">Scope of this stage</span><h3>${s.t}</h3></div>
+            <div class="scard-b">
+              <div class="srow"><span class="si">👤</span><div><div class="sk">What the user does</div><div class="sv">${s.scope.does}</div></div></div>
+              <div class="srow"><span class="si">✦</span><div><div class="sk">Where AI helps</div><div class="sv">${s.scope.ai}</div></div></div>
+              <div class="srow"><span class="si">✋</span><div><div class="sk">Human must decide</div><div class="sv">${s.scope.human}</div></div></div>
+            </div>
+            <div class="scope-io">
+              <div class="in"><span class="label">In · v1</span><ul>${s.scope.inn.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+              <div class="out"><span class="label">Out · later</span><ul>${s.scope.out.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+            </div>
+          </div>
+          <div class="asset"><span class="st-dot ${stateMap[s.state][1]}"></span><div>${s.asset.txt}</div></div>
+        </aside>
+      </div>
+      <div class="pager">
+        ${cur>0?`<button onclick="go(${cur-1})"><span class="pl">← Previous</span><span class="pn">${STAGES[cur-1].n} · ${STAGES[cur-1].t}</span></button>`:`<button disabled><span class="pl">Start</span><span class="pn">First stage</span></button>`}
+        ${cur<STAGES.length-1?`<button class="next" onclick="go(${cur+1})"><span class="pl">Next →</span><span class="pn">${STAGES[cur+1].n} · ${STAGES[cur+1].t}</span></button>`:`<button class="next" disabled><span class="pl">End</span><span class="pn">Loop closes to Stage 4</span></button>`}
+      </div>
+    </div>`;
+  [...stepper.children].forEach((b,i)=>b.setAttribute('aria-current', i===cur));
+  document.getElementById('foot').textContent = `Stage ${cur+1} of ${STAGES.length} · Bidpath journey strawman · react, redline, repeat`;
+}
+function go(i){ cur = Math.max(0, Math.min(STAGES.length-1, i)); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+window.go = go;
+document.addEventListener('keydown', e=>{ if(e.key==='ArrowRight') go(cur+1); if(e.key==='ArrowLeft') go(cur-1); });
+
+/* theme toggle */
+const root = document.documentElement;
+document.getElementById('themeBtn').onclick = ()=>{
+  const now = getComputedStyle(root).getPropertyValue('--paper').trim();
+  const isDark = now === '#10151c' || root.getAttribute('data-theme')==='dark';
+  root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+};
+
+render();
+</script>

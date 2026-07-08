@@ -3,6 +3,33 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-08 — Definition: journey mockups + architecture direction
+
+**Context.** User pushed back on jumping to build — architecture/UI/scope weren't decided. Switched to a
+definition-first process. User chose **mockups-first**, starting at **Step 2 (journey & scope)**.
+
+**Work done.**
+- Built `docs/design/journey-mockups.html` — an interactive 6-stage journey strawman (Search → Triage →
+  Plan → Complete → Manage → Learn), real FWF/procurement content, each stage = mock screen + scope card
+  (what user does / where AI helps / human decides / v1 in-out). Published as an artifact. **User approved
+  the style and shape.**
+- Captured architecture direction in `docs/design/architecture.md` (Step 3): **local app now** (extend the
+  discovery PoC — FastAPI + SQLite + React/Vite), **Azure SPA = budget-dependent longer-term goal**,
+  SharePoint via a **library-provider seam** (`LocalMirror` now → `GraphSharePoint` later, mirroring the
+  `sources.py` registry pattern). AI drives task completion.
+- Noted **HubSpot integration** as a future feature (pipeline ↔ CRM) per user request — parked, not scoped.
+- Updated handover + todo.
+
+**Decisions.** Mockups-first method; six-stage journey + visual style approved; local-app-now / Azure-later;
+library-provider seam for SharePoint; stack = extend discovery. "Bidpath" is a placeholder name only.
+
+**Open questions raised.** Next step: data model vs app shell? How does `LocalMirror` get seeded (Graph
+export vs manual vs samples — parked to Stage 4)?
+
+**Next.** Confirm the next definition step with the user (data model, or start the local app shell).
+
+---
+
 ## 2026-07-08 — Phase 0: consolidate, verify, and scaffold the project
 
 **Context.** First working session. Started from three loose, unconnected folders (a working
