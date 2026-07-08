@@ -1,0 +1,29 @@
+# --- OS / editor cruft ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Node / web ---
+node_modules/
+dist/
+*.log
+npm-debug.log*
+
+# --- Local data / secrets (never commit) ---
+# SQLite PoC database is rebuildable from the connectors; keep it out of git.
+discovery/bids.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+secrets.*
+credentials.*

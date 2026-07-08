@@ -1,0 +1,4 @@
+# Public Sector Bidding API PoC — Python dependencies.
+# Standard library covers the connectors and db.py; these are for the JSON API.
+fastapi>=0.110
+uvicorn[standard]>=0.29
