@@ -6,11 +6,11 @@
 
 ## Status
 
-`2026-07-08` — **Phase 0 complete: consolidated into one connected git repo, facts verified,
-project scaffold in place.** The three loose folders are now `discovery/` (working PoC),
-`skills/` (B00–B07 bid chain), `knowledge/` (context + reference). Pushed to
-`github.com/EricHookMarshall/public-sector-bidding-tool` (`main`). This session also added the
-top-level `CLAUDE.md`, this `_session/` triad, and the `/resume-prompt` + `/end-session` skills.
+`2026-07-08` — **Session closed via /end-session. Phase 0 complete: consolidated into one connected
+git repo, facts verified, project scaffold in place.** The three loose folders are now `discovery/`
+(working PoC), `skills/` (B00–B07 bid chain), `knowledge/` (context + reference). Two commits pushed to
+`github.com/EricHookMarshall/public-sector-bidding-tool` (`main`, HEAD `ac80d80`): (1) consolidation,
+(2) `CLAUDE.md` + this `_session/` triad + `/resume-prompt` + `/end-session` skills. Working tree clean.
 
 ## Active task
 

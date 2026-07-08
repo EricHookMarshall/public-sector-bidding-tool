@@ -24,9 +24,15 @@ FWF strategy docs. Goal: understand the whole, then consolidate into one useful,
   is stale. RM6190 Technology Services 4 (live Dec 2025) is a strong live candidate.
 - Wrote `README.md` (the journey spine), then `CLAUDE.md` (working spine), this `_session/` triad
   (cleansed from the wa_poc reference project), and the `/resume-prompt` + `/end-session` skills.
+  Second commit `ac80d80` pushed to `main`; working tree clean. Closed the session via `/end-session`.
+- **Verification this session:** doc/scaffold work only — nothing code-executable to run beyond git
+  (verified: clean tree, 2 commits on `main`, no `bids.db`/`node_modules`/secrets staged). The earlier
+  fact-verification used live web search (recorded in `knowledge/VERIFIED_FACTS.md`). Discovery code
+  was **not** re-run this session.
 
 **Decisions.** Breadth-first (thin end-to-end) sequencing. One flattened repo (not submodules).
-Clean lowercase folder names. Keep discovery's own sub-spine (`discovery/CLAUDE.md` + `_session/`).
+Clean lowercase folder names. Keep discovery's own sub-spine (`discovery/CLAUDE.md` + `_session/`)
+alongside the new top-level project spine (two-tier, coexisting).
 
 **Open questions raised.** Product form (grow discovery UI vs separate bid workspace)? SharePoint
 timing — Phase 3 blocked on MS Graph credentials (only Google Drive connector available here).
