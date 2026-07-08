@@ -6,6 +6,62 @@
 
 ---
 
+## 2026-07-09 — Discovery UI extended into the 6-stage journey shell
+
+**Context.** Resumed the top-level project via `/resume-prompt`; the open decision was "data model
+vs. app shell first" — user chose app shell. Per the approved architecture direction
+(`docs/design/architecture.md`), the shell extends this discovery PoC rather than starting a new app.
+First pass built a shell with Search live + generic scope-only placeholders for the other 5 stages;
+user feedback ("not enough mock data for future stages to get a clear picture") drove a second pass
+that ported the mockup's fully populated mock screens in too.
+
+**Work done.**
+
+- Added `web/src/journey.js`: single source of truth for the 6 stages (id, stepper metadata, build
+  `state`, `maps`-to, full scope content), ported from `docs/design/journey-mockups.html`.
+- Rewrote `web/src/App.jsx` from a Search-only page into the journey shell: sticky top bar, 6-stage
+  stepper nav, hash-based routing (`#plan`, deep-linkable, back/forward works), ←/→ keyboard stepping,
+  light/dark theme toggle, `VIEWS` map dispatching to per-stage components.
+- Added `web/src/stages/`: `SearchStage.jsx` (old App.jsx logic, unchanged, lifted out),
+  `MockStage.jsx` + `ScopeCard.jsx` (shared preview-screen chrome + scope card),
+  `TriageStage.jsx` / `PlanStage.jsx` / `CompleteStage.jsx` / `ManageStage.jsx` / `LearnStage.jsx`
+  (one populated mock screen per stage — qualification gates, pipeline board + capacity, compliance
+  matrix + AI draft + evidence ledger, clarification register + pre-flight checklist, outcome +
+  library updates — all with realistic UK-procurement-style data ported from the mockup).
+  `StagePlaceholder.jsx` also exists from the first pass but is now unused/dead code.
+- Rewrote `web/src/styles.css`: adopted the mockup's full design-token system (light + dark +
+  `data-theme` override), added shell/stepper/scope/pager/mock-screen CSS; aliased legacy variable
+  names (`--bg`, `--open`, etc.) so the original search CSS needed no changes.
+- `web/index.html` title → "Bidpath — Public Sector Bidding".
+
+**Verification (real runs).**
+
+- `npm run build`: `✓ 31 modules transformed` (Search + shell + placeholders, first pass), then
+  `✓ 38 modules transformed` (after adding the 5 mock stages) — both no errors.
+- Backend + dev server both started for real: `python3 db.py` → 21 rows (FTS 19, CF 2);
+  `uvicorn api:app --port 8000` up; `npm run dev` up; `curl :8000/api/meta` → `total: 21`;
+  `curl :5173/api/opportunities` via Vite proxy → `count: 21`; page `<title>` confirmed via curl.
+  Every new/changed module fetched from the dev server individually → HTTP 200, no Vite transform
+  errors logged.
+- Services stopped cleanly at session end; confirmed no leftover `uvicorn`/`vite` processes.
+- **Not verified:** no browser tool available in this environment, so no actual click-through of the
+  stepper/routing/theme-toggle was observed — only compile/transform/data-plumbing success. User was
+  handed the running URL to check visually; that check has not yet happened as of this entry.
+
+**Decisions.** Journey shell built as an extension of this discovery app (not a new codebase), per
+the already-agreed architecture direction. Stage selection lives in the URL hash rather than adding a
+router dependency. The 5 not-yet-built stages show fully populated, clearly-labelled preview screens
+(not abstract scope text) so their intended shape is legible before they're wired to real data —
+prompted directly by user feedback that scope cards alone didn't give "a clear picture."
+
+**Open questions raised.** None new beyond what the top-level project already has open (shared data
+model across the 6 stages — still not decided, and now the concrete blocker for wiring Triage/Plan/
+etc. to real records instead of illustrative data).
+
+**Next.** User to look at the running shell and flag anything wrong. `StagePlaceholder.jsx` is now
+dead code — decide whether to delete or repurpose. Otherwise unchanged from before: `.gitignore`,
+cross-source dedupe (both low priority).
+
 ## 2026-06-29 — UI rebuilt: live search, export, CPV dropdown, region labels, description on cards
 
 **Context.** Resumed from refresh/cleanup session. Full pipeline working (FTS + CF → SQLite → FastAPI → React/Vite), DB had 14 rows. User asked for seven new features: add/remove CPV codes to searches, toggle sources, more result detail (description), adjust stages, region code definitions (UKM50 vs UK), export of results, date range controls.

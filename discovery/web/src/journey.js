@@ -1,0 +1,202 @@
+// The six-stage bidding journey — single source of truth for the shell.
+// Metadata + scope content ported from the approved mockup
+// (docs/design/journey-mockups.html). The stepper nav and the stage
+// placeholders both read from here, so the journey shape lives in one place.
+//
+// `state` reflects honest build status, not aspiration:
+//   live   — works today (the discovery engine)
+//   design — designed as a skill (B0x) but not yet wired to a real record
+//   gap    — nothing exists yet
+//
+// `component` names which stage view to render. Only "search" is real; the
+// rest render the scoped placeholder until their stage is built.
+
+export const STAGES = [
+  {
+    id: "search",
+    n: "01",
+    t: "Search",
+    d: "Find opportunities",
+    state: "live",
+    stateLabel: "Works today",
+    maps: "Discovery engine · Find a Tender + Contracts Finder",
+    component: "search",
+    scope: {
+      does: "Search live government sources in one place and filter to what's genuinely relevant — by keyword, CPV code, buyer, region, value and how soon it closes.",
+      ai: "Suggests which CPV codes and keywords match FWF's Microsoft Practice, and flags notices that look relevant even when the wording differs.",
+      human: "Decides which opportunities are worth a closer look and sends them to Triage.",
+      inn: [
+        "Find a Tender + Contracts Finder",
+        "Filter: CPV, region, value, deadline",
+        "Keyword search + source badges",
+        "Export / “Consider” handoff",
+      ],
+      out: [
+        "Scotland / Wales / TED sources",
+        "Saved searches & email alerts",
+        "Auto bid/no-bid (that's Triage)",
+      ],
+    },
+    asset: {
+      state: "live",
+      txt: "<b>Exists and works</b> — the discovery PoC (FastAPI + SQLite + React) already pulls, normalises and filters these two sources.",
+    },
+  },
+  {
+    id: "triage",
+    n: "02",
+    t: "Triage",
+    d: "Bid or no-bid",
+    state: "design",
+    stateLabel: "Designed (B01)",
+    maps: "Skill B01 — qualification gates + bid economics",
+    component: "triage",
+    scope: {
+      does: "Runs a consistent bid/no-bid check on one opportunity: hard gates first (knockouts), then a weighted score and a plain effort-vs-value-vs-win view.",
+      ai: "Pre-fills each gate from the notice + FWF's profile, and drafts the rationale — e.g. spotting the EFS gap and prompting for the Arobs PCG.",
+      human: "Makes the actual call — <b>Bid</b>, <b>No-bid</b>, or <b>Needs review</b> — and assigns an owner. Any <b>Unknown</b> blocks a clean “bid”.",
+      inn: [
+        "Gate checklist w/ pass/fail/unknown",
+        "EFS + PCG prompt baked in",
+        "Effort vs value vs win-probability",
+        "Decision + owner captured",
+      ],
+      out: [
+        "Trained win-probability model",
+        "Auto-pricing",
+        "Full commercial sign-off flow",
+      ],
+    },
+    asset: {
+      state: "design",
+      txt: "<b>Designed, not built</b> — skill B01 defines the gates + scoring; not yet wired to a real opportunity record.",
+    },
+  },
+  {
+    id: "plan",
+    n: "03",
+    t: "Plan",
+    d: "Which bids, when",
+    state: "gap",
+    stateLabel: "Missing — highest value",
+    maps: "New — no equivalent exists yet",
+    component: "plan",
+    scope: {
+      does: "Shows every live bid on one board with its stage, owner, deadline and effort — plus whether the team actually has the days to deliver what's committed.",
+      ai: "Estimates effort per bid, forecasts clashes, and surfaces the “this deadline will be missed” warning before it happens.",
+      human: "Decides sequencing and trade-offs — which bids to commit to, which to drop, who owns each, when work starts.",
+      inn: [
+        "Pipeline board by stage",
+        "Deadline + owner + effort per bid",
+        "Capacity vs commitment view",
+        "Deadline / clarification alerts",
+      ],
+      out: [
+        "Automatic resource levelling",
+        "Timesheet integration",
+        "Revenue forecasting",
+      ],
+    },
+    asset: {
+      state: "gap",
+      txt: "<b>Nothing exists yet</b> — this is the highest-value new piece and directly answers the missed-deadline failure that killed the last bid.",
+    },
+  },
+  {
+    id: "complete",
+    n: "04",
+    t: "Complete",
+    d: "Draft the bid",
+    state: "design",
+    stateLabel: "Designed (B02–B05)",
+    maps: "Skills B02–B04 · SharePoint answer bank + evidence",
+    component: "complete",
+    scope: {
+      does: "Turns the tender into a tracked question list, then drafts each answer with the evidence to back every claim — so the writer edits rather than starts from a blank page.",
+      ai: "Retrieves the best past answers + evidence from the SharePoint library and drafts a first response mapped to what the evaluator scores; builds the evidence ledger.",
+      human: "Rewrites, adds the win themes, and <b>approves</b> each answer. Nothing is submitted as-is; nothing auto-approves.",
+      inn: [
+        "Compliance matrix + per-answer status",
+        "AI draft from past bids",
+        "Evidence ledger (claim → proof → expiry)",
+        "Stale-term & unsupported-claim checks",
+      ],
+      out: [
+        "Live SharePoint (blocked on MS Graph)",
+        "Full document assembly / export",
+        "In-portal form filling",
+      ],
+    },
+    asset: {
+      state: "design",
+      txt: "<b>Designed; blocked on SharePoint</b> — skills B02–B04 exist. AI pre-fill needs the MS Graph connection stood up; can prototype on samples first.",
+    },
+  },
+  {
+    id: "manage",
+    n: "05",
+    t: "Manage",
+    d: "Clarify & submit",
+    state: "design",
+    stateLabel: "Designed (B05–B06)",
+    maps: "Skills B05–B06 · the exact failure that lost G-Cloud 15",
+    component: "manage",
+    scope: {
+      does: "Tracks every buyer clarification with an owner, a backup and a real deadline (date, time, timezone) — then runs a pre-flight gate before anyone submits.",
+      ai: "Watches deadlines, drafts clarification responses from the library, and blocks submission when a mandatory item is missing or a document has expired.",
+      human: "Owns each clarification, approves responses, and makes the final call to submit. The buyer's portal submission stays a human action.",
+      inn: [
+        "Clarification register w/ time + tz + escalation",
+        "Backup owner on every item",
+        "Pre-flight blocking checklist",
+        "Expiry checks on documents",
+      ],
+      out: [
+        "Live portal / mailbox integration",
+        "Auto-submitting to the buyer",
+        "Reminder scheduling off flight/award dates",
+      ],
+    },
+    asset: {
+      state: "design",
+      txt: "<b>Designed</b> — skills B05–B06. This directly encodes the lesson from the G-Cloud 15 disregard: a missed clarification is fatal.",
+    },
+  },
+  {
+    id: "learn",
+    n: "06",
+    t: "Learn",
+    d: "Outcome & library",
+    state: "design",
+    stateLabel: "Designed (B07)",
+    maps: "Skill B07 — feeds the library back to Stage 4",
+    component: "learn",
+    scope: {
+      does: "Captures how the bid actually did — won/lost, evaluator score, feedback — and turns that into concrete improvements to the reusable library.",
+      ai: "Reads the feedback and proposes what to promote, retire or refresh, so good content compounds and weak content is flagged before it's reused.",
+      human: "Approves each library change. Nothing gets marked “reusable” without a person confirming it.",
+      inn: [
+        "Outcome + score + feedback capture",
+        "Promote / retire / refresh suggestions",
+        "Closes the loop into Stage 4",
+        "Evidence expiry surfaced",
+      ],
+      out: [
+        "Cross-bid analytics dashboards",
+        "Automated win/loss reporting",
+        "Pricing intelligence model",
+      ],
+    },
+    asset: {
+      state: "design",
+      txt: "<b>Designed</b> — skill B07. Without this the library slowly goes stale; with it, every bid makes the next one easier.",
+    },
+  },
+];
+
+// state slug → [stepper pill class, asset dot class]
+export const STATE_MAP = {
+  live: ["s-live", "dot-live"],
+  design: ["s-design", "dot-design"],
+  gap: ["s-gap", "dot-gap"],
+};

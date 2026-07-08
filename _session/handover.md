@@ -6,20 +6,24 @@
 
 ## Status
 
-`2026-07-08` — **In the definition phase (mockups-first). Journey style approved; architecture
-direction set.** Built an interactive 6-stage journey mockup (`docs/design/journey-mockups.html`,
-published artifact) — user approved the style and shape. Architecture decided at direction level
-(`docs/design/architecture.md`): **local app now** (extend the discovery PoC), **Azure SPA is a
-budget-dependent longer-term goal**, SharePoint via a **library-provider seam** (`LocalMirror` now →
-`GraphSharePoint` later). HubSpot integration noted as a future feature. Repo: Phase 0 still stands.
+`2026-07-09` — **App shell built.** User chose definition step (b) — start the local app shell — and
+it's done: the discovery front end is now the shell of the full 6-stage journey (top bar + stepper nav
++ hash routing + light/dark theme), extending the discovery PoC per `docs/design/architecture.md`
+(not a separate app). **Search** is the one live, wired stage; **Triage/Plan/Complete/Manage/Learn**
+are labelled illustrative preview screens carrying the approved mockup's content, awaiting real data.
+All new code lives under `discovery/web/` — see `discovery/_session/handover.md` for the file-level
+detail. Builds clean (38 modules, no errors); backend+dev-server data plumbing curl-verified; **not
+yet reviewed in a browser** (no browser tool this environment). Phase 1 (search → triage) now has a UI
+skeleton. Foundational architecture direction unchanged: local app now, Azure SPA later, SharePoint via
+the `LocalMirror → GraphSharePoint` seam; HubSpot a future feature.
 
 ## Active task
 
-**Confirm the next definition step.** Candidates: (a) **Data model** — define the shared bid record
-that flows across the six stages (Opportunity → Qualified Bid → Answers → Evidence → Clarifications →
-Outcome); or (b) **start the local app shell** from the approved mockup (journey nav + stage routing,
-extending the discovery front end). Not started — pick with the user first. Working method: mockups-first,
-strawman → react.
+**User to review the running shell** (`cd discovery && uvicorn api:app --port 8000` + `cd web && npm
+run dev` → <http://localhost:5173>) — click through all 6 stages + theme toggle, flag anything wrong.
+Then the next real build step is **(a) the data model** — the shared bid record across the six stages
+(Opportunity → Qualified Bid → Answers → Evidence → Clarifications → Outcome) — which is now the
+concrete blocker for wiring Triage/Plan/etc. to real records instead of the illustrative mock data.
 
 ## Surfaced / parked threads
 
@@ -30,7 +34,9 @@ strawman → react.
 
 ## Open decisions
 
-1. **Next definition step** — data model vs start building the app shell (see Active task).
+1. **Data model** — the shared bid record across the six stages. Now the concrete next build step and
+   the blocker for wiring the mock stages to real data. (Was "data model vs app shell"; the shell is
+   built, so this is what's left.)
 2. **SharePoint data path** — how `LocalMirror` gets seeded (parked to Stage 4).
 
 Settled: mockups-first method; six-stage journey shape + visual style approved; **local app now, Azure

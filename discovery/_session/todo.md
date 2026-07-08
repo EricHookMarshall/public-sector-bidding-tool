@@ -5,11 +5,17 @@
 
 ## Active queue
 
-**Full PoC is COMPLETE — all success criteria met, all user-requested UI features built.**
-No blocking work remains.
+- [ ] **User review of the journey shell** — click through all 6 stages + theme toggle in the browser
+      (<http://localhost:5173>) and flag anything wrong. Not yet observed by a human; only build/curl
+      verified so far.
+- [ ] **Wire a second real stage (Triage/B01)** — blocked on the top-level project's open data-model
+      decision (shared bid record across stages).
 
 ## Surfaced / open
 
+- [ ] **`StagePlaceholder.jsx` is now dead code** (2026-07-09) — superseded by the per-stage mock
+      screens (TriageStage etc.); not referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose as a
+      fallback for a stage with no mock screen yet.
 - [ ] **`.gitignore`** — `bids.db` and `web/node_modules/` should be gitignored. The repo exists; easy first commit.
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source. Cross-source matching (same notice on FTS and CF) is not yet handled. Low priority given value-band split.
 

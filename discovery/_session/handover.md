@@ -6,45 +6,81 @@
 
 ## Status
 
-`2026-06-29` — **UI fully rebuilt with live-search, export, CPV dropdown, region labels, and description on cards.** The PoC now does everything originally asked for. Stack unchanged (FastAPI + React/Vite); architecture extended: the API was read-only and is now read+write (POST /api/search triggers live connector runs).
+`2026-07-09` — **Discovery UI is now the shell of the full 6-stage bidding journey**, not just the
+Search screen. Top-level project decided "app shell first" (see top-level `_session/handover.md`);
+this session extended the discovery front end into that shell rather than starting a separate app, per
+`docs/design/architecture.md`. Backend/API/connectors untouched this session — only `discovery/web/`
+changed. Search remains the one live, wired stage; Triage/Plan/Complete/Manage/Learn are illustrative
+preview screens (real UK-procurement-style mock data, ported from `docs/design/journey-mockups.html`),
+clearly banner-labelled as not-yet-built.
 
 What happened this session:
 
-- **Connector refactor:** `find_tender_filter.py` and `contracts_finder_filter.py` both gained a parameterised `run(days, cpv_codes, stage, open_only, published_from, published_to, use_db)` replacing hardcoded constants. CLI `main()` still works unchanged. `ft.build_prefixes()` and `ft.to_api_datetime()` extracted so CF can share them.
-- **`sources.py`** — source registry: `{"find_a_tender": ..., "contracts_finder": ...}`, each with a `run` callable. Adding a third source is `write a connector + one line here`.
-- **`regions.py`** — NUTS/ITL code glossary (`UKM50 → "Aberdeen City and Aberdeenshire"`), prefix-fallback for unlisted codes, `labels_for()` for the UI glossary. 63-code coverage across UK ITL1/2/3.
-- **`cpv_catalog.py`** — curated 63-code IT/software/digital CPV catalogue (`code → description`), grouped by CPV division (72/48/30/32/50). Exposed via `/api/meta` → `cpv_catalog`.
-- **`api.py` additions:** `POST /api/search` (fan-out live fetch, per-source summary, errors isolated per source), `GET /api/export` (CSV download, same query as list view), `region_label` field on every row, `region_labels` glossary + `search_options` + `cpv_catalog` in `/api/meta`. Shared `_query_opportunities()` helper so list + export never diverge. FastAPI `Depends()` for shared query params.
-- **UI (App.jsx + styles.css):** "Run a live search" collapsible panel — source checkboxes, stage dropdown + open-only toggle, date-window toggle (last-N-days ↔ from/to), CPV chip editor with the catalogue dropdown + free-text entry + reset/clear, live per-source results summary. Description snippet on every card. Region shown as human label (`📍 Glasgow City`) with code in tooltip. `⤓ Export CSV` button on results header. Region filter dropdown shows `UKM50 — Aberdeen City…`. `region_label` in detail modal.
-- **Bug fix this session:** `cpv_catalog` is a top-level field of `/api/meta` but was referenced as `opts.cpv_catalog` (under `search_options`) → crash on panel render. Fixed to `meta?.cpv_catalog`.
+- **`web/src/journey.js`** (new) — single source of truth for the 6 stages: id, stepper metadata,
+  build `state` (`live`/`design`/`gap`), `maps`-to (which skill/PoC it corresponds to), and the full
+  scope content (does / AI helps / human decides / in-v1 / out-later) ported verbatim from the
+  approved mockup.
+- **`web/src/App.jsx`** (rewritten) — was the Search-only page; is now the journey shell: sticky top
+  bar + brand, 6-stage stepper nav, hash-based stage routing (`#plan` etc., deep-linkable, back/forward
+  works), ←/→ keyboard stepping (ignored while typing in a field), light/dark theme toggle. Renders the
+  active stage via a `VIEWS` map keyed by `journey.js`'s `component` field.
+- **`web/src/stages/`** (new directory, 7 files):
+  - `SearchStage.jsx` — the old App.jsx search UI, logic unchanged, lifted out so the shell can host it.
+  - `MockStage.jsx` + `ScopeCard.jsx` — shared layout: browser-chrome screen + "Preview — illustrative
+    data, not built yet" banner on the left, the scope card on the right.
+  - `TriageStage.jsx`, `PlanStage.jsx`, `CompleteStage.jsx`, `ManageStage.jsx`, `LearnStage.jsx` — one
+    populated mock screen per stage (qualification gates, pipeline board, compliance matrix + AI
+    draft + evidence ledger, clarification register + pre-flight, outcome + library updates), all
+    ported from the mockup so each future stage shows a concrete picture, not just prose.
+  - `StagePlaceholder.jsx` — now unused (superseded by the per-stage mock screens) but left in place;
+    not wired into `VIEWS`.
+- **`web/src/styles.css`** — adopted the mockup's full design-token set (light + dark +
+  `data-theme` override), added shell/stepper/scope/pager/mock-screen CSS; legacy variable names
+  aliased (`--bg`, `--open`, …) so the original search-stage CSS needed no rewrite.
+- **`web/index.html`** — title → "Bidpath — Public Sector Bidding".
 
 **Verification (real runs, this session):**
 
-- `python3 -c "import api, sources, regions, cpv_catalog…"` → all imports OK.
-- `regions.label("UKM50")` → "Aberdeen City and Aberdeenshire"; `regions.label("UK")` → "United Kingdom"; `regions.label("London")` → "London" (passthrough). ✓
-- `POST /api/search` with `find_a_tender`, `days=14`, `stage=tender` → `scanned: 94, kept: 5, ok: true`. ✓
-- `POST /api/search` with `find_a_tender`, `days=30`, `stage=planning`, `open_only=false` → `inserted: 7` new rows (planning-stage notices, genuinely different from tender-stage). ✓
-- `GET /api/export?source=Contracts+Finder` → CSV, header correct (22 fields incl. `region_label`), 2 real CF rows. ✓
-- `/api/meta` → `cpv_catalog: 63 entries`, `region_labels: {UK: …, UKM50: …, …}`, `search_options.stages: [tender, planning, award]`. ✓
-- Vite production build: `✓ 28 modules transformed` — no errors. ✓
-- DB: 14 rows → 21 after live searches (FTS 19, CF 2).
+- `npm run build` (after the shell rewrite, Search-only): `✓ 31 modules transformed`, no errors.
+- `npm run build` (after adding the 5 mock stages): `✓ 38 modules transformed`, no errors.
+- Backend + dev server started for real: `python3 db.py` → 21 rows (FTS 19, CF 2); `uvicorn api:app
+  --port 8000` + `npm run dev` both came up; `curl :8000/api/meta` → `total: 21`; `curl
+  :5173/api/opportunities` (via Vite proxy) → `count: 21`; page title confirmed via curl.
+- Every new/changed module (`App.jsx`, `journey.js`, all 8 `stages/*.jsx`) fetched from the dev server
+  → HTTP 200, no transform errors in the Vite log.
+- **Not verified:** an actual in-browser click-through of the stepper/theme-toggle/routing — no browser
+  tool available in this environment. Build + module-transform success is a strong but not complete
+  proxy; the user was handed the running URL to look themselves.
+- Services stopped cleanly at session end (`pkill -f "uvicorn api:app"`, `pkill -f vite`) — confirmed
+  no leftover processes.
 
 ## Active task
 
-**None blocking.** Everything the user asked for is built and working. Next items are optional polish / maintenance:
+**None blocking on the discovery side.** The shell exists and builds clean; the user has been asked to
+look at it live and flag anything wrong. Likely next steps once they do:
 
-- **`.gitignore`** — add `bids.db`, `web/node_modules/` (the repo already exists; a `.gitignore` should be committed).
-- **Session docs commit** — `CLAUDE.md` and `_session/` are the main docs; no commit made this session.
-- **CPV badge on result cards** — `cpv_codes` is shown in card-meta but small; a labelled CPV chip (using `cpv_catalog`) would be richer.
-- **Third API source** — `sources.py` registry makes it a small add (write a `run()` connector + one line).
-- **Cross-source dedupe** — same notice on FTS and CF; low priority given value-band split.
+- **User review of the shell** — click through all 6 stages, both themes, confirm nothing looks off
+  (this is the natural next action — see also the top-level `_session/handover.md`).
+- **Wire a second real stage** — Triage (B01) is the smallest real next build: gate logic against a
+  real opportunity record needs the data model decision the top-level project still has open.
+- **`StagePlaceholder.jsx` cleanup** — now dead code (superseded by per-stage mock screens); either
+  delete it or repurpose it as the fallback for a stage that has no mock screen yet.
+- Carried over, still true: `.gitignore` for `bids.db`/`web/node_modules/`; cross-source dedupe (low
+  priority).
 
 ## Open decisions
 
-1. **Cross-source dedupe:** `(source, ocid)` dedupes within a source. Cross-source matching still unsettled — low priority.
-2. **`.gitignore`:** `bids.db` and `web/node_modules/` should be gitignored now that the repo exists.
+1. **Data model** — the top-level project still has this open (shared bid record across all 6 stages).
+   Blocks wiring Triage/Plan/etc. to real data; doesn't block further shell/preview work.
+2. **Cross-source dedupe:** `(source, ocid)` dedupes within a source. Cross-source matching still
+   unsettled — low priority.
+3. **`.gitignore`:** `bids.db` and `web/node_modules/` should be gitignored now that the repo exists.
 
-Settled: full ~18-field schema; `(source, ocid)` upsert key; two sources live (FTS + CF); FastAPI + React/Vite stack; flag-don't-delete cleanup via `refresh_clean.py`; live search via `POST /api/search`; CPV dropdown + region labels; export CSV.
+Settled: full ~18-field schema; `(source, ocid)` upsert key; two sources live (FTS + CF); FastAPI +
+React/Vite stack; flag-don't-delete cleanup via `refresh_clean.py`; live search via `POST /api/search`;
+CPV dropdown + region labels; export CSV; **journey shell built on top of the discovery UI** (not a
+separate app), stage routing via URL hash, mock screens carry the approved-mockup content for stages
+not yet built.
 
 ## Start-of-session checklist
 
@@ -69,12 +105,17 @@ Pull deeper context on demand: support/brief.md (full brief), cpv_codes.md (rele
 find_tender_filter.py + contracts_finder_filter.py + db.py (connectors + DB layer),
 sources.py (source registry), regions.py (NUTS/ITL glossary), cpv_catalog.py (CPV descriptions),
 refresh_clean.py (refresh + lifecycle-flag cleanup), api.py (FastAPI JSON API),
-web/src/App.jsx + web/src/api.js (React UI), web/src/styles.css,
-_session/progress.md (cold dated history), support/public_sector_bid_apis.md.
+web/src/journey.js (6-stage metadata + scope content), web/src/App.jsx (journey shell),
+web/src/stages/ (SearchStage = real; TriageStage/PlanStage/CompleteStage/ManageStage/LearnStage =
+illustrative mock screens; MockStage/ScopeCard = shared layout), web/src/api.js, web/src/styles.css,
+_session/progress.md (cold dated history), support/public_sector_bid_apis.md,
+../docs/design/journey-mockups.html (source of the mock-screen content) and
+../docs/design/architecture.md (why this became a shell, not a separate app).
 
-The full PoC is built and working. No blocking work remains. At session end, REPLACE the
-hot-state file, append a dated entry to _session/progress.md, and update _session/todo.md.
-Don't commit/push unless asked.
+The discovery engine (Search stage) is built and working; the app is now the shell of the full
+6-stage journey, with 5 stages as labelled preview screens awaiting real data wiring. At session
+end, REPLACE the hot-state file, append a dated entry to _session/progress.md, and update
+_session/todo.md. Don't commit/push unless asked.
 ```
 
 ## End-of-session checklist

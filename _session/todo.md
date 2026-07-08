@@ -5,8 +5,10 @@
 
 ## Active queue
 
-- [ ] **Confirm next definition step** — (a) data model (shared bid record across the 6 stages), or
-      (b) start the local app shell from the approved mockup. Pick with user first.
+- [x] **Next definition step chosen: (b) app shell** (2026-07-09) — built on the discovery front end;
+      6-stage shell with Search live + 5 illustrative preview stages. See `discovery/_session/`.
+- [ ] **User review of the running shell** — click through all 6 stages + theme toggle, flag issues.
+- [ ] **Data model** — now the next real build step (see below); blocks wiring the mock stages.
 
 ## Surfaced / open
 

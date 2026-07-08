@@ -3,6 +3,53 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 — App shell built (definition step (b) chosen)
+
+**Context.** Resumed via `/resume-prompt`. The standing question was data model vs. app shell; user
+chose **app shell first**. Built it as an extension of the discovery front end per
+`docs/design/architecture.md`. Mid-session feedback ("not enough mock data for future stages to get a
+clear picture") drove a second pass adding populated mock screens.
+
+**Work done.** All under `discovery/web/` (full file-level detail in `discovery/_session/progress.md`):
+new `journey.js` (6-stage single source of truth), `App.jsx` rewritten into the journey shell (top bar,
+stepper nav, hash routing, ←/→ keys, theme toggle), new `stages/` dir (SearchStage = real search UI
+lifted out; MockStage + ScopeCard shared layout; Triage/Plan/Complete/Manage/Learn = populated
+illustrative preview screens ported from the mockup; StagePlaceholder now dead code), `styles.css`
+adopted the mockup's design tokens (light + dark) with legacy aliases, `index.html` title → Bidpath.
+
+**Verification (real runs).** `npm run build` → 31 modules (first pass) then 38 (with mock stages),
+no errors. Backend + dev server started for real: `db.py` → 21 rows; `curl :8000/api/meta` → total 21;
+`curl :5173/api/opportunities` via Vite proxy → count 21; every changed module → HTTP 200, no transform
+errors. Services stopped cleanly at end. **Not verified:** in-browser click-through — no browser tool
+this environment; only compile/transform/data-plumbing observed. Handed user the running URL to check.
+
+**Decisions.** App shell built on the discovery app (not a new codebase); stage selection in the URL
+hash (no router dependency); not-yet-built stages show labelled populated preview screens, not abstract
+scope text, so their intended shape is legible before real wiring.
+
+**Open questions raised.** None new. The data model (shared bid record) is now the concrete blocker for
+wiring the mock stages to real data.
+
+**Next.** User reviews the shell in a browser; then build the data model as the next real step.
+
+---
+
+## 2026-07-09 — Session closed, no new work (question left open)
+
+**Context.** User invoked `/end-session` immediately after the 2026-07-08 design session, without
+answering the pending question (data model vs app shell next).
+
+**Work done.** None — checked git status (clean, HEAD `85ac33a`, matches last commit) and confirmed no
+files changed since. Nothing to verify beyond that; no code was run.
+
+**Decisions.** None new.
+
+**Open questions raised.** None new — the standing question (data model vs app shell) remains open.
+
+**Next.** Get the user's answer on data model vs app shell, then proceed accordingly.
+
+---
+
 ## 2026-07-08 — Definition: journey mockups + architecture direction
 
 **Context.** User pushed back on jumping to build — architecture/UI/scope weren't decided. Switched to a
