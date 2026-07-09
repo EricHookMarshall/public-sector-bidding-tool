@@ -2,6 +2,8 @@
 
 *Decided 2026-07-08 (Step 3). Agreed **direction**, not final detail — captured from the design conversation. Refine as we build.*
 
+> **Update:** the "discovery PoC" referred to below is now the flat app at the repo root — backend in `src/`, frontend in `web/` (the `discovery/` folder was removed in the session-5 restructure). References to "discovery" here are the original design language.
+
 ## Product form
 
 - **Local app now.** Runs on a local machine, no cloud infra. **Extend the existing discovery PoC**
@@ -19,7 +21,7 @@
   Bank / Evidence Register — see `skills/SHAREPOINT.md`).
 - MS Graph / SharePoint is **not available in this environment**, and may not be soon.
 - **Approach: a "library provider" seam** — one interface the app reads/writes the bid library
-  through, with swappable backends (same pattern as the discovery `sources.py` registry already in the repo):
+  through, with swappable backends (same pattern as the `src/sources.py` registry already in the repo):
   - **`LocalMirror` (now)** — real exported SharePoint data, or hand-seeded samples, held locally
     (folder + SQLite) mirroring the 3-library structure. Lets us build Stage 4 (AI pre-fill) for real,
     against realistic data, today.

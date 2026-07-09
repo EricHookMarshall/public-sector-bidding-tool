@@ -87,20 +87,23 @@ Full detail and verified facts in [`knowledge/`](knowledge/).
 
 ## Roadmap
 
-- **Phase 0 — Consolidate & verify** *(in progress)*: one repo, clean structure,
-  facts verified (`knowledge/VERIFIED_FACTS.md`).
-- **Phase 1 — Search → triage**: shared record; promote an opportunity into a
-  qualified bid/no-bid decision (wire discovery ↔ B01).
-- **Phase 2 — Planning layer**: bid pipeline + calendar (deadline, owner, effort,
-  win-probability, capacity, alerts). The highest-value missing piece.
-- **Phase 3 — SharePoint + AI pre-fill**: stand up the 3-library bid store (MS
-  Graph) and run B00/B03/B04. Biggest external dependency.
-- **Phase 4 — Manage & learn**: preflight gate, clarification register, outcome loop.
+- **Phase 0 — Consolidate & verify** ✅ one repo, clean structure, facts verified
+  (`knowledge/VERIFIED_FACTS.md`).
+- **Phase 1 — Search → triage** ✅ Triage (FOR001) wired to live data with AI
+  pre-fill; a Go promotes an opportunity into a bid.
+- **Phase 2 — Planning layer** ✅ pipeline board + capacity + FOR002 timeline +
+  reactive deadline/owner/capacity alerts.
+- **Phase 3 — SharePoint + AI pre-fill** *(next external dependency)*: stand up the
+  3-library bid store (MS Graph) and run B00/B03/B04. What Complete (Stage 4) needs.
+- **Phase 4 — Manage & learn**: clarification register (Stage 5, no external
+  blocker), preflight gate, outcome loop.
 
 ## Open decisions
 
-1. **Product form** — grow the discovery UI into the whole journey, or keep
-   discovery separate and run the bid workspace via skills + SharePoint?
-2. **SharePoint timing** — Phase 3 needs real MS Graph credentials (this
-   environment currently has Google Drive, not SharePoint).
-3. **Sequencing** — chosen: **breadth first** (thin end-to-end), consolidate & verify first.
+1. **SharePoint timing** — Phase 3 / Complete needs real MS Graph credentials
+   (this environment currently has Google Drive, not SharePoint).
+2. **Next stage** — Manage (Stage 5, no external blocker, encodes the
+   clarification-deadline failure) vs. Complete (Stage 4, blocked on SharePoint).
+
+*Resolved:* product form — the discovery UI **was** grown into the whole 6-stage
+journey app (settled by the build through Stage 3). Sequencing — **breadth first**.

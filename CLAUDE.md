@@ -110,7 +110,7 @@ secret). Kill services when done: `pkill -f "uvicorn api:app"; pkill -f vite`.
 ## Roadmap
 
 - **Phase 0 — Consolidate & verify** ✅ one repo, clean structure, facts verified.
-- **Phase 1 — Search → triage**: shared record; promote an opportunity into a bid/no-bid decision (wire discovery ↔ skills B01).
-- **Phase 2 — Planning layer**: bid pipeline + calendar (deadline, owner, effort, win-probability, capacity, alerts). Highest-value missing piece.
-- **Phase 3 — SharePoint + AI pre-fill**: stand up the 3-library bid store (MS Graph); run B00/B03/B04. Biggest external dependency.
-- **Phase 4 — Manage & learn**: preflight gate, clarification register, outcome loop.
+- **Phase 1 — Search → triage** ✅ shared record; Triage (FOR001) wired to `bids.db` with AI pre-fill; a Go promotes an opportunity into a `Bid`.
+- **Phase 2 — Planning layer** ✅ Plan (FOR002): pipeline board + capacity + timeline + reactive deadline/owner/capacity alerts.
+- **Phase 3 — SharePoint + AI pre-fill** *(next external dependency)*: stand up the 3-library bid store (MS Graph); run B00/B03/B04. This is what Complete (Stage 4) needs.
+- **Phase 4 — Manage & learn**: preflight gate, clarification register (Stage 5, no external blocker — the likely next build), outcome loop (Stage 6).
