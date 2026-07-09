@@ -3,6 +3,59 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 9) — Azure Phase B: db.py dual-mode port, verified on real SQL Server
+
+**Context.** Session 8 designed the Azure migration; the handover's next action was Phase B — port
+`src/db.py` off raw `sqlite3` to a SQLAlchemy Core dual-mode shim, verifiable locally against a SQL
+Server container with no Azure spend. The user opened by asking whether this is better emulated in
+Azurite. Answer (and a correction worth keeping): **Azurite is a Blob/Queue/Table emulator, not a SQL
+emulator** — it cannot stand in for Azure SQL. The right local target is a SQL Server container. User
+also flagged an existing SQL Server image in Docker to repurpose.
+
+**Work done.**
+- **Reused the existing local image.** `docker images` showed `mcr.microsoft.com/mssql/server:2022-latest`
+  already pulled (no running container/volume). Used it as-is: 2022 speaks the identical `mssql` dialect
+  to Azure SQL, so it verifies the whole port; 2025's only extra is the `VECTOR` type (retrieval Option B,
+  deferred). Zero download.
+- **`docker-compose.yml`** (repo root, new) — `db` (SQL Server) + `azurite` scaffold. Hit a real OOM: the
+  container `Exited (137)` (SIGKILL) under Rosetta x64 emulation. Fixed with `MSSQL_MEMORY_LIMIT_MB=2048`
+  + `mem_limit: 3g` (Docker VM = 7.8 GB). Then boots healthy, `1433` published, SA password from gitignored
+  root `.env`.
+- **Driver stack.** `pip install pyodbc` (5.3.0) + Homebrew `unixodbc` + `msodbcsql18`. First attempt
+  failed (masked by `| tail`): Homebrew's untrusted-tap gate refused msodbcsql18. Fix: `brew trust
+  microsoft/mssql-release` then install. Registered "ODBC Driver 18 for SQL Server".
+- **Ported `src/db.py`** — the surgical part: only db.py changed, none of the 8 caller files. `connect()`
+  returns a `_Conn` adapter over a SQLAlchemy Core connection; `exec_driver_sql` passes the existing `?`
+  SQL straight to whichever driver (both qmark); a `_Row`/`_Result` pair mirrors `sqlite3.Row`/cursor so
+  every call site is untouched. Schema declared once as SQLAlchemy metadata (`opportunities` + 7 tables,
+  built DRY from the existing field-list constants) → `create_all()` emits per-dialect DDL, replacing the
+  old `executescript`. Backend chosen by `DB_URL` env (unset = local sqlite, exact prior behaviour).
+- **Fixed two real dialect bugs the live engine surfaced** — `ORDER BY (deadline_date IS NULL)` (T-SQL
+  syntax error) → portable `CASE WHEN … THEN 1 ELSE 0 END` in all 4 list queries; `NVARCHAR(MAX)` can't be
+  a unique-key column → `source`/`ocid` bounded to `Unicode(400)`.
+- **`requirements.txt`** — added `SQLAlchemy` (always) + `pyodbc` (SQL Server/Azure only); fixed the stale
+  "stdlib covers db.py" comment.
+
+**Verification (all live, quoted).** `scratchpad/verify_dualmode.py` ran the SAME db.py functions against
+a throwaway SQLite file and the live SQL Server container: **`IDENTICAL BEHAVIOUR: True`**, 4/4 PASS
+(insert/update = `('inserted','updated')` on both; `Café … £120k … ✓` round-trips through NVARCHAR; JSON
+`delivery_team`/`phases` decode to lists; `list_bids_for_board` JOIN + rewritten ORDER BY runs).
+`python3 src/db.py` on the default path shows the real `opportunities: 21` etc. (cleaned the VerifyTest
+rows the test leaked — was opp id 22). Over HTTP through the adapter: `/api/plan/board` → `count:3` with
+real bids; `/api/opportunities` → `{count, results}` 21 rows. Audit: api.py runtime SQL is portable; only
+the 4 `seed_*_demo.py` still use sqlite-only `LIMIT 1` (dev-local, deferred).
+
+**Decisions.** Repurpose the existing **2022** image (not pull 2025) until `VECTOR` is needed. Keep the
+port surgical via the qmark-compatible adapter rather than rewriting every call site to SQLAlchemy
+`text()`/named params. Azurite scaffolded in compose but **not** used by Phase B (it's not a SQL emulator).
+
+**Open questions raised.** Connection lifecycle under real multi-user cloud (api.py doesn't close per-request
+connections — fine for local PoC, revisit pooling later). Whether to finish the seeder `LIMIT 1` tail now
+or defer.
+
+**Next.** Phase C (auth: MSAL + PyJWT/JWKS), per `docs/design/azure-target.md` — closes the "no auth
+anywhere" gap; buildable/verifiable locally. (Or finish the Phase B seeder tail; or browser-walk Complete/Learn.)
+
 ## 2026-07-09 (session 8) — Azure + SPA target design
 
 **Context.** The journey app (all 6 stages) has been feature-complete since session 7b, still running

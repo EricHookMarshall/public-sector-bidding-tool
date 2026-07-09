@@ -1,7 +1,13 @@
 # Public Sector Bidding API PoC — Python dependencies.
-# Standard library covers the connectors and db.py; these are for the JSON API.
+# Standard library covers the connectors; db.py + the JSON API need the below.
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# Dual-mode data layer (src/db.py): SQLAlchemy Core over SQLite locally, or Azure
+# SQL / SQL Server when DB_URL is set. SQLAlchemy is always required; pyodbc only
+# for the SQL Server / Azure SQL backend (also needs the system ODBC Driver 18),
+# so it's optional for pure-local sqlite dev.
+SQLAlchemy>=2.0
+pyodbc>=5.1  # only when DB_URL points at SQL Server / Azure SQL
 # AI pre-fill for Triage (llm.py / triage_ai.py). Lazily imported, so the API
 # still boots without it — the AI-draft endpoint just returns 503. ADD the Azure
 # OpenAI SDK (`openai`) here when the azure_openai provider is built.

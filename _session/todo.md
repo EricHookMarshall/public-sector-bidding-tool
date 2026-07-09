@@ -40,12 +40,17 @@
 
 ## Surfaced / open
 
-- [ ] **Azure + SPA migration — Phase B (DB portability)** (design landed 2026-07-09, session 8) —
-      `docs/design/azure-target.md` is the plan of record: clone TalentGrow's proven Azure blueprint
-      (SWA Free + Functions Flex + Azure SQL free serverless, AAD-only + Managed Identity everywhere).
-      First real code step: port `src/db.py` off raw `sqlite3` to a SQLAlchemy Core dual-mode shim
-      (SQLite local / Azure SQL cloud). Independent of Azure being provisioned — buildable + verifiable
-      locally now. Phase C (auth: MSAL + JWT validation) follows the same way.
+- [x] **Azure migration — Phase B (DB portability)** (2026-07-09, session 9) — `src/db.py` ported off raw
+      `sqlite3` to a SQLAlchemy Core dual-mode shim (SQLite local / Azure SQL cloud via `DB_URL`); only
+      db.py changed (qmark-compatible `_Conn`/`_Row` adapter, zero caller edits). `docker-compose.yml`
+      (SQL Server 2022 + Azurite scaffold) added; two dialect bugs fixed (ORDER BY IS NULL; NVARCHAR(MAX)
+      key columns). **Verified `IDENTICAL BEHAVIOUR: True` on both backends** vs a live SQL Server 2022
+      container; app serves through the adapter. `requirements.txt` updated (SQLAlchemy + pyodbc).
+- [ ] **Azure migration — Phase C (auth)** — Entra ID/MSAL sign-in on the SPA + PyJWT/JWKS validation on
+      the API (closes the "no auth anywhere" gap). Buildable/verifiable locally against a dev-tenant app
+      reg + `LOCAL_AUTH_BYPASS`. Plan of record: `docs/design/azure-target.md`. **Next up.**
+- [ ] **Phase B tail — seeder `LIMIT 1`** — the 4 `seed_*_demo.py` still use sqlite-only `LIMIT 1`; port to
+      `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` so the seeders also run on SQL Server. Low priority (dev-local).
 - [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton (`AzureOpenAIProvider`), not
       implemented. Now sequenced into the Azure migration's Phase E; build when Azure access is
       provisioned (client requirement).

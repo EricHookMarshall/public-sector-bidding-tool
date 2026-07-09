@@ -6,147 +6,119 @@
 
 ## Status
 
-`2026-07-09` (session 8) — **No app code changed this session.** The journey remains feature-complete
-(all six stages, session 7). This session was pure forward planning: the user asked what's needed to
-move the tool to Azure + a hosted SPA. Produced a design doc, `docs/design/azure-target.md` (not
-started, nothing provisioned) — target is to **clone TalentGrow's** (a sibling FWF app) proven Azure
-blueprint: SWA (Free) + Azure Functions (Flex Consumption, Python) + Azure SQL free serverless (AAD-
-only) + Managed Identity everywhere, no Key Vault. Locked decisions: Entra ID sign-in (MSAL), mirror
-TalentGrow's build pattern, cheapest/free DB, Managed Identity + federated cred for SharePoint/Graph.
+`2026-07-09` (session 9) — **Azure migration Phase B (DB portability) is DONE and dual-mode verified.**
+`src/db.py` is ported off raw `sqlite3` to a **SQLAlchemy Core dual-mode shim**: SQLite locally by
+default, Azure SQL / SQL Server when `DB_URL` is set — the same code, same call sites. Verified against a
+**real local SQL Server 2022 container** (repurposed the already-pulled image; no download, no Azure
+spend) with `IDENTICAL BEHAVIOUR: True` across both backends. The journey remains feature-complete (all
+six stages, session 7); this session was infra + the db.py port only, no stage/UI logic changed.
 
-Prior status (session 7), unchanged: **All six journey stages are built, wired to `bids.db`, and
-live-verified.** Complete (Stage 4) shipped via the `LocalMirror` provider seam over the real gitignored
-bid export — so the full **Search → Triage → Plan → Complete → Manage → Learn** loop is real.
+**How the port works (surgical — only `src/db.py` changed, zero of the 8 caller files):** `db.connect()`
+now returns a thin adapter over a SQLAlchemy Core connection. Both `sqlite3` and `pyodbc` use `?` (qmark)
+placeholders, so every existing `conn.execute("… ?", params).fetchone()["col"]` call site works
+untouched via `exec_driver_sql`. The schema is declared once as SQLAlchemy metadata → `create_all()`
+emits the right DDL per dialect (`AUTOINCREMENT` on SQLite / `IDENTITY` on SQL Server), replacing the old
+hand-written `executescript`. Rows come back as a dict-like `_Row` that mirrors `sqlite3.Row`
+(`row["col"]`, `row[0]`, `.keys()`).
 
-Complete = the FOR006 tender-response compliance matrix + **AI pre-fill grounded in FWF's real bid
-library**. New backend: `src/library.py` (the LocalMirror provider — reads the real
-`Bid Library Tracker.xlsx`, extracts expiry from free-text Notes, retrieval + evidence ledger),
-`src/response.py` (FOR006 matrix rig + live word-count compliance), `src/complete_ai.py` (retrieval-
-grounded answer drafting), the `bid_responses` table, `/api/complete/*` + `/api/library` +
-`GET`/`PUT /api/bids/{id}/responses` + index-based AI-draft, a real matrix→workspace UI replacing the
-mock `CompleteStage.jsx`, and `src/seed_complete_demo.py`.
+**Two real dialect bugs the live engine caught** (both would have passed a SQLite-only test): (1)
+`ORDER BY (deadline_date IS NULL)` — valid in SQLite, **syntax error in T-SQL** — rewritten to the
+portable `CASE WHEN … THEN 1 ELSE 0 END` in all 4 list queries; (2) `NVARCHAR(MAX)` **can't be a
+unique-key column** in SQL Server — bounded `source`/`ocid` to `Unicode(400)` (still TEXT on SQLite, no
+behaviour change).
 
-Verified over **real HTTP**: `/api/complete/board` 200 (library provider available, **42 items**);
-`/api/library` evidence ledger surfaces the real **expired** "ISO Certifications" (2025-10-31, parsed
-from Notes); GET matrix auto-seeds 8 real questions from the FOR006 master; a PUT with an 800-word
-answer flags `over_limit` server-side (word count recomputed, not trusted); the **AI draft is
-retrieval-grounded** (680/666 words within the 750 limit, cites real library items, names win themes,
-honestly flags gaps — `claude-haiku-4-5` via the live `.env` key); out-of-range index → **404**.
-`npm run build` clean (37 modules). DB: `bid_responses: 1` (RTPI seeded), all other stages intact.
+## Verified this session (all live, honest)
+
+- **`db.py` on both backends → `IDENTICAL BEHAVIOUR: True`**, 4/4 checks PASS: insert/update semantics,
+  `£`/`✓` unicode round-trip through NVARCHAR, JSON-field decode, JOIN + rewritten ORDER BY. (Test rig:
+  `scratchpad/verify_dualmode.py` — throwaway sqlite file + the live container; not committed.)
+- **Default sqlite path intact** — `python3 src/db.py` → the real 21 opportunities / 3 bids / etc.
+  (cleaned up the VerifyTest rows the test leaked into `bids.db`).
+- **App serves through the adapter** — `uvicorn` up, `/api/plan/board` (`count:3`, real bids) and
+  `/api/opportunities` (21 rows) both 200.
+- **Follow-on audit**: api.py's runtime SQL is fully portable (no LIMIT/OFFSET, no IS-NULL ordering).
+  Only remaining sqlite-ism = `LIMIT 1` in the **dev-only `seed_*_demo.py`** scripts (4 of them) — not on
+  the Azure path; would need `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` for SQL Server. Deferred.
 
 ## Active task
 
-**Nothing blocking — the journey is feature-complete; Azure migration is now designed but not started.**
-Sensible next moves (user's call), roughly in priority order:
+**Phase B done — pick the next Azure-migration step (user's call), roughly in priority order:**
 
-1. **Start the Azure migration at Phase B (DB portability)** per `docs/design/azure-target.md` — port
-   `src/db.py` off raw `sqlite3` to a SQLAlchemy Core dual-mode shim (SQLite local / Azure SQL cloud).
-   This and Phase C (auth) are the substantive code work and can be built + verified locally, no Azure
-   subscription needed yet.
-2. **User browser walk of Complete (+ Learn)** (still open from session 7) — these were verified
-   server-side only. Spin up `uvicorn api:app --app-dir src --port 8000` + `cd web && npm run dev` →
-   localhost:5173, open `#complete` and `#learn`.
-3. **Commit the outstanding milestone.** Nothing has been committed since session 6 — Learn + Complete
-   (session 7) are still uncommitted. The user hasn't asked to commit; offer it.
-4. **Polish / harden Complete** — e.g. persist AI-draft provenance (win themes/evidence) with the
-   answer, richer retrieval, or a cross-bid completion view. All optional.
-5. **Deferred externals** — Azure OpenAI provider; live `GraphSharePoint` (drops in behind the
-   `library.py` seam when MS Graph is provisioned); HubSpot.
+1. **Phase C — auth** per `docs/design/azure-target.md`: Entra ID / MSAL sign-in on the SPA + PyJWT/JWKS
+   validation on the API (closes the "no auth anywhere" gap, the #1 gap). Buildable + verifiable locally
+   against a dev-tenant app reg + a `LOCAL_AUTH_BYPASS` shim — no Azure subscription needed.
+2. **Finish Phase B tail** — port the 4 `seed_*_demo.py` `LIMIT 1` queries to portable OFFSET/FETCH so the
+   seeders also run on SQL Server (they only run locally today, so low priority).
+3. **User browser walk of Complete + Learn** — still open from session 7; verified server-side only.
+4. **Deferred externals** — Azure OpenAI provider; live `GraphSharePoint`; HubSpot.
 
-## What shipped
+## Local SQL Server parity stack (new this session)
 
-**Azure/SPA target design — session 8** (`docs/design/azure-target.md` new) — no code; a design doc
-answering "what does Azure + a hosted SPA need?" Grounded in the existing seams (`llm.py`, `library.py`,
-`sources.py`) and in **TalentGrow** (sibling FWF app, same Entra tenant/RG family), whose Bicep is
-**already live and deployed in dev** — treat it as a proven blueprint, not a draft (its own
-`infra/README.md` has a stale "not yet validated" note from authoring time; ignore it). Gap checklist,
-phased path (A design → B DB portability → C auth → D hosting scaffold → E Azure-native providers →
-F provision/go-live), and file-level touch list captured in the doc. Also settled this session (all in
-the doc, web-verified): **cheapest data** = Azure SQL free offer (£0; 10 free DBs/sub) + **docs stay in
-SharePoint, no Blob**; **AI retrieval** without a paid vector store — three seam-swappable options
-(A: M365 Copilot Retrieval API over the existing Copilot index — spike first; B: native `VECTOR` in the
-free Azure SQL DB, GA Jun-2025; C: cached-text + Full-Text baseline); and a **local emulation** strategy
-(Tier 1 emulate: SQL Server 2025 container + Azurite + `func start`; Tier 2 use the seams — Entra/Graph/
-Copilot have no emulator). Corrected: Azure SQL **Edge retired 30-Sep-2025** — use the SQL Server 2025
-container for local DB parity.
-
-**Complete (Stage 4) — session 7** (`src/library.py` new, `src/response.py` new, `src/complete_ai.py`
-new, `src/db.py`, `src/api.py`, `web/src/api.js`, `web/src/stages/CompleteStage.jsx` (was a mock),
-`web/src/journey.js`, `web/src/styles.css`, `src/seed_complete_demo.py` new) — the `LocalMirror`
-library provider (architecture.md's seam; reads the real gitignored export, extracts expiry from
-Notes, keyword retrieval + evidence ledger, `master_template()` for the question set), the FOR006
-matrix rig (statuses, live word-count gate, completion summary), retrieval-grounded AI drafting, the
-`bid_responses` table, the Complete endpoints (board / library browse / matrix GET-PUT / index-based
-AI-draft), and a real matrix→workspace UI. Honest boundary: if the export is absent the UI says
-"library not connected" — it never fakes content; `GraphSharePoint` swaps in behind the same seam.
-
-**Learn (Stage 6) — session 7** (`src/outcome.py` new, `bid_outcomes` table, `/api/learn/*`) — B07
-outcome + win-rate + promote/refresh/retire library-feedback loop (human-approved, no library write
-faked). Full detail in [progress.md](progress.md) session 7.
-
-**Manage (Stage 5) — session 6** (`src/clarification.py`, `bid_manage` table) — FOR003 CQLOG +
-pre-flight gate (409 on a blocked submit).
+- **`docker-compose.yml`** (repo root, new) — `db` = SQL Server **2022** (`mcr.microsoft.com/mssql/server`,
+  the image already local; identical `mssql` dialect to Azure SQL, so it verifies the whole port —
+  bump to `:2025-latest` only when the native `VECTOR` type is needed for retrieval Option B) + `azurite`
+  scaffold (Blob/Queue/Table, for later Phase D/E; **not** a SQL emulator). Run `db` alone for Phase B.
+- **Memory caps matter**: without them the container `Exited (137)` (OOM/SIGKILL) under Rosetta x64
+  emulation. Set `MSSQL_MEMORY_LIMIT_MB=2048` + `mem_limit: 3g` (Docker VM is 7.8 GB). Now boots healthy.
+- **Runtime**: x64 image via Docker Desktop **Rosetta** (already enabled). Container reachable on
+  `localhost:1433`; SA password in gitignored root `.env` (`MSSQL_SA_PASSWORD`, local dev only).
+- **Deps**: `pip install pyodbc` + Homebrew `unixodbc` + `msodbcsql18` (needs `brew trust
+  microsoft/mssql-release` first — the newer untrusted-tap gate). `requirements.txt` now lists
+  `SQLAlchemy` (always) + `pyodbc` (SQL Server/Azure only). pyodbc 5.3.0, driver "ODBC Driver 18".
+- Local SQL Server URL used for verify: `mssql+pyodbc://sa:<pw>@localhost:1433/bids?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes` (password `!` → `%21`).
+- **Container may still be running** — `docker compose down` to stop (keeps the volume).
 
 ## Surfaced / parked threads
 
-- **`web/src/stages/MockStage.jsx` + `StagePlaceholder.jsx` are now dead code** — every stage is real,
-  so nothing imports them (the build dropped from 39→37 modules). Safe to delete.
-- **AI-draft provenance isn't persisted** — the win-themes/evidence/gaps meta shows in the UI after a
-  draft but isn't saved with the answer (only `supplier_response` persists). Fine for the PoC; a
-  natural enhancement.
-- **`question_ref` repeats across lots** in the FOR006 master (Lot2/Q1, Lot3/Q1) — handled by
-  identifying matrix rows by index, not qref. Don't reintroduce qref as a key.
-- **`GraphSharePoint` provider** — not built (no MS Graph here). Slots into `library.get_provider()`
-  behind the same interface; set `LIBRARY_PROVIDER` + `BID_LIBRARY_ROOT` to point elsewhere.
-- **Azure OpenAI provider** — skeleton in `src/llm.py`, not implemented.
+- **`seed_*_demo.py` use `LIMIT 1`** — sqlite-only; needs OFFSET/FETCH for SQL Server (Phase B tail, low
+  priority — seeders are dev-local).
+- **Connection lifecycle** — api.py opens a `db.connect()` per request and mostly doesn't close it (same
+  as the old sqlite code). Fine for a local single-user PoC; revisit pooling before real multi-user cloud.
+- **`web/src/stages/MockStage.jsx` + `StagePlaceholder.jsx` are dead code** — every stage is real. Safe to delete.
+- **AI-draft provenance isn't persisted** — win-themes/evidence shown in UI but not saved with the answer.
+- **`question_ref` repeats across lots** in the FOR006 master — matrix rows keyed by index, not qref. Don't reintroduce qref as a key.
+- **`GraphSharePoint` provider** — not built (no MS Graph here); slots into `library.get_provider()`. **Azure OpenAI provider** — skeleton in `src/llm.py`, not implemented.
 - **Team capacity default (25 days, `src/bidplan.py`)** — placeholder, not a real FWF number.
-- **Google Drive MCP connector** is authenticated here (SharePoint/MS Graph is not) — an alternative
-  `LocalMirror` feed if the local folder export isn't the chosen source.
-- **Azure migration is designed, not started** — `docs/design/azure-target.md`. Biggest lift: `db.py`
-  off raw `sqlite3`. No auth exists on the API today at all — that's the #1 gap the design closes.
 
 ## Open decisions
 
-1. **What next** — start Azure Phase B, browser-review Complete/Learn, commit the milestone, or polish.
-   Not decided.
-2. **Commit cadence** — Learn + Complete are uncommitted; the user commits on request only.
-3. **AI-draft provenance persistence** (see threads) — save the evidence/win-themes with the answer?
-4. **Azure OpenAI / GraphSharePoint timing** — build when the respective access is provisioned (now
-   sequenced into Azure migration Phase E, see `docs/design/azure-target.md`).
+1. **What next** — Phase C (auth), finish the Phase B seeder tail, browser-review Complete/Learn, or polish. Not decided.
+2. **AI-draft provenance persistence** — save the evidence/win-themes with the answer?
+3. **Azure OpenAI / GraphSharePoint timing** — build when the respective access is provisioned (Azure migration Phase E).
 
-Settled this session: **Azure/SPA target design** — clone TalentGrow's blueprint (SWA plus Functions
-Flex plus Azure SQL free plus Managed Identity everywhere, no Key Vault); Entra ID/MSAL for sign-in;
-Azure SQL free serverless for DB.
+Settled this session (session 9): **Phase B done** — `db.py` dual-mode via SQLAlchemy Core, verified on a
+local SQL Server 2022 container; repurpose the existing 2022 image (not 2025) until `VECTOR` is needed;
+Azurite is Blob/Queue/Table only, **not** a SQL emulator (it's scaffolded for later, not used by Phase B).
 
-Settled session 7, unchanged: **Complete (Stage 4) built via LocalMirror** — the journey is
-feature-complete, all 6 stages real; **Learn (Stage 6) built**; **browser review of stages 1–3/5 done,
-looks fine**.
+Settled session 8, unchanged: **Azure/SPA target design** — clone TalentGrow's blueprint (SWA + Functions
+Flex + Azure SQL free + Managed Identity everywhere, no Key Vault); Entra ID/MSAL sign-in; `docs/design/azure-target.md` is the plan of record.
 
-Settled earlier, unchanged: Manage (Stage 5) FOR003 + pre-flight gate; flat repo structure; Plan
-(Stage 3) real; Triage (B01) + AI + Settings; mockups-first method; six-stage journey shape + visual
-style approved; local app now, Azure SPA later; library-provider seam; AI drives task completion;
-stack = FastAPI + SQLite + React/Vite; shared bid record from `docs/design/data-model.md`. Facts
-verified in `knowledge/VERIFIED_FACTS.md`.
+Settled session 7, unchanged: journey feature-complete, all 6 stages real; Complete via LocalMirror; Learn built; browser review of stages 1–3/5 done.
+
+Settled earlier, unchanged: Manage (Stage 5) FOR003 + pre-flight gate; flat repo structure; Plan real;
+Triage + AI + Settings; six-stage journey shape + visual style approved; library-provider seam; stack =
+FastAPI + (now dual-mode) SQLAlchemy/SQLite + React/Vite; shared bid record from `docs/design/data-model.md`.
 
 ## Start-of-session checklist
 
 1. Read [CLAUDE.md](../CLAUDE.md), this file, and [todo.md](todo.md).
 2. Confirm DB state: `python3 src/db.py` → `opportunities: 21`, `qualifications: 3`, `bids: 3`,
-   `bid_plans: 3`, `bid_manage: 3`, `bid_responses: 1`, `bid_outcomes: 2` (the demo seed) — unless a
-   prior session's testing left different rows; check before assuming.
+   `bid_plans: 3`, `bid_manage: 3`, `bid_responses: 1`, `bid_outcomes: 2` — unless prior testing left
+   different rows; check before assuming.
 3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev` →
-   `http://localhost:5173`. Demo data: `python3 src/seed_plan_demo.py` (Plan bids) +
-   `seed_manage_demo.py` (Manage) + `seed_complete_demo.py` (Complete matrix) + `seed_learn_demo.py`
-   (Learn outcomes); each takes `--clear`.
-4. Complete's library reads the real gitignored export at `knowledge/SharePoint Folder/Bids/` — if
-   absent (e.g. fresh clone), the Complete UI shows "library not connected" and AI-draft is disabled;
-   that's honest, not a bug. `src/.env` holds a real Anthropic key for AI drafting.
-5. If picking up the Azure migration, read `docs/design/azure-target.md` first — it's the plan of
-   record for that thread.
+   `http://localhost:5173`. Seeders: `seed_plan_demo.py` / `seed_manage_demo.py` / `seed_complete_demo.py`
+   / `seed_learn_demo.py` (each takes `--clear`).
+4. **Dual-mode DB**: default = local sqlite (`src/bids.db`), no setup. To exercise SQL Server: `docker
+   compose up -d --wait db`, then set `DB_URL` (see the SQL Server URL above). `pyodbc` + system
+   `msodbcsql18` required for that path only.
+5. Complete's library reads the real gitignored export at `knowledge/SharePoint Folder/Bids/`; absent =
+   "library not connected" (honest, not a bug). `src/.env` holds the Anthropic key for AI drafting.
+6. Azure migration: `docs/design/azure-target.md` is the plan of record; Phase B (DB) is done, Phase C
+   (auth) is next.
 
 ## End-of-session checklist
 
-1. Kill any running services (`pkill -f "uvicorn api:app"; pkill -f vite`).
+1. Kill any running services (`pkill -f "uvicorn api:app"; pkill -f vite`). Optionally `docker compose down`.
 2. **Replace** the Status + Active task above with the new current state — don't append.
 3. **Prepend** a dated entry to [progress.md](progress.md) (most-recent-first).
 4. Update the [todo.md](todo.md) active queue.

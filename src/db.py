@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
-Shared SQLite layer for the Public Sector Bidding API PoC.
+Shared data layer for the Public Sector Bidding API PoC.
 
-One local file (bids.db), one common-record table, one idempotent upsert.
+Dual-mode via SQLAlchemy Core (see the shim below `now_iso`): SQLite locally by
+default, Azure SQL / SQL Server when DB_URL is set — same code, same call sites.
+
+One common-record table, one idempotent upsert.
 Every connector (Find a Tender, Contracts Finder, ...) maps its source's raw
 response into the COMMON_FIELDS shape below and calls upsert_opportunity().
 
@@ -23,10 +26,16 @@ Dedupe / freshness:
   - record_source_run() stamps when each source was last checked (hard rule:
     refresh runs must record per-source last-checked time).
 """
-import sqlite3
 import json
 import os
 import datetime
+from collections.abc import Mapping
+
+from sqlalchemy import (
+    create_engine, inspect,
+    MetaData, Table, Column, Integer, Unicode, UnicodeText,
+    UniqueConstraint, ForeignKey,
+)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bids.db")
 
@@ -238,128 +247,220 @@ def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+# --- Dual-mode engine + connection shim (Phase B) --------------------------
+# The app is written against a tiny slice of the sqlite3 Connection API:
+#   conn.execute("... ?", params).fetchone()/.fetchall()  (dict-like rows) + conn.commit()
+# To run that UNCHANGED against either SQLite (local) or Azure SQL / SQL Server
+# (cloud), connect() returns a thin adapter over a SQLAlchemy Core connection.
+# Both the sqlite3 and pyodbc drivers use qmark ('?') paramstyle, so
+# exec_driver_sql passes the existing SQL straight through to whichever dialect
+# is active — no per-call-site rewrite. The schema DDL is the one genuinely
+# dialect-divergent part (AUTOINCREMENT vs IDENTITY, TEXT vs NVARCHAR(MAX)); it
+# is declared once as SQLAlchemy metadata below and emitted per-dialect by
+# create_all(), replacing the old hand-written executescript.
+#
+# Backend selection: the DB_URL env var wins (the mssql+pyodbc URL for the local
+# SQL Server container / Azure SQL in cloud); otherwise the local sqlite file,
+# preserving the original PoC behaviour exactly.
+
+metadata = MetaData()
+
+# Columns that participate in a UNIQUE/index key. SQL Server rejects NVARCHAR(MAX)
+# as a key column, so these get a bounded length; SQLite ignores the bound and
+# still stores TEXT, so behaviour is unchanged locally. 400 keeps the composite
+# (source, ocid) key well inside SQL Server's index-key byte limit.
+_KEYED = {"source", "ocid"}
+
+
+def _text_cols(fields):
+    """One column per field name: bounded Unicode for key columns (NVARCHAR(400)
+    on SQL Server), UnicodeText otherwise (NVARCHAR(MAX)); both TEXT on SQLite.
+    Keeps the schema DRY from the same field lists the code uses."""
+    return [Column(f, Unicode(400) if f in _KEYED else UnicodeText) for f in fields]
+
+
+opportunities = Table(
+    "opportunities", metadata,
+    Column("id", Integer, primary_key=True),
+    *_text_cols(COMMON_FIELDS),
+    Column("lifecycle", UnicodeText),        # cleanup-pass flag; outside COMMON_FIELDS
+    *_text_cols(ENRICHMENT_FIELDS),          # triage additions; connector-untouched
+    UniqueConstraint("source", "ocid"),
+)
+
+source_runs = Table(
+    "source_runs", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("source", UnicodeText, nullable=False),
+    Column("source_endpoint", UnicodeText),
+    Column("checked_at", UnicodeText, nullable=False),
+    Column("scanned", Integer),
+    Column("kept", Integer),
+)
+
+qualifications = Table(
+    "qualifications", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id"), nullable=False),
+    Column("created_at", UnicodeText),
+    Column("updated_at", UnicodeText),
+    *_text_cols(QUALIFICATION_FIELDS),
+    UniqueConstraint("opportunity_id"),
+)
+
+bids = Table(
+    "bids", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id"), nullable=False),
+    Column("qualification_id", Integer, ForeignKey("qualifications.id")),
+    Column("bid_name", UnicodeText),
+    Column("stage", UnicodeText),
+    Column("status", UnicodeText),
+    Column("created_at", UnicodeText),
+    Column("updated_at", UnicodeText),
+    UniqueConstraint("opportunity_id"),
+)
+
+
+def _bid_child(name, fields):
+    """A per-bid stage table (plan/manage/outcome/responses): id + bid_id FK +
+    timestamps + the stage's own fields, UNIQUE on bid_id (one row per bid)."""
+    return Table(
+        name, metadata,
+        Column("id", Integer, primary_key=True),
+        Column("bid_id", Integer, ForeignKey("bids.id"), nullable=False),
+        Column("created_at", UnicodeText),
+        Column("updated_at", UnicodeText),
+        *_text_cols(fields),
+        UniqueConstraint("bid_id"),
+    )
+
+
+bid_plans = _bid_child("bid_plans", BID_PLAN_FIELDS)
+bid_manage = _bid_child("bid_manage", BID_MANAGE_FIELDS)
+bid_outcomes = _bid_child("bid_outcomes", BID_OUTCOME_FIELDS)
+bid_responses = _bid_child("bid_responses", BID_RESPONSE_FIELDS)
+
+
+class _Row(Mapping):
+    """Dict-like view over a SQLAlchemy Row that mirrors sqlite3.Row: supports
+    both row["col"] and row[0], plus .keys() and dict(row) — so every existing
+    call site (and _row_dict) works untouched."""
+    __slots__ = ("_m", "_vals")
+
+    def __init__(self, sa_row):
+        self._m = sa_row._mapping
+        self._vals = None
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            if self._vals is None:
+                self._vals = list(self._m.values())
+            return self._vals[key]
+        return self._m[key]
+
+    def keys(self):
+        return list(self._m.keys())
+
+    def __iter__(self):
+        return iter(self._m)
+
+    def __len__(self):
+        return len(self._m)
+
+
+class _Result:
+    """Wraps a SQLAlchemy CursorResult so .fetchone()/.fetchall()/iteration yield
+    _Row objects (or None), matching the sqlite3 cursor surface the code uses."""
+
+    def __init__(self, res):
+        self._res = res
+
+    def fetchone(self):
+        row = self._res.fetchone()
+        return _Row(row) if row is not None else None
+
+    def fetchall(self):
+        return [_Row(r) for r in self._res.fetchall()]
+
+    def __iter__(self):
+        for r in self._res:
+            yield _Row(r)
+
+    @property
+    def rowcount(self):
+        return self._res.rowcount
+
+
+class _Conn:
+    """The sqlite3.Connection slice the app relies on (execute / commit / close),
+    backed by a SQLAlchemy Core connection."""
+
+    def __init__(self, sa_conn):
+        self._c = sa_conn
+
+    @property
+    def dialect(self):
+        return self._c.dialect.name
+
+    def execute(self, sql, params=()):
+        if params:
+            res = self._c.exec_driver_sql(sql, tuple(params))
+        else:
+            res = self._c.exec_driver_sql(sql)
+        return _Result(res)
+
+    def commit(self):
+        self._c.commit()
+
+    def close(self):
+        self._c.close()
+
+
+_ENGINES = {}
+
+
+def _engine(db_path=DB_PATH):
+    """Cached SQLAlchemy Engine for the active backend. DB_URL env overrides the
+    default local sqlite file — that override is how the local SQL Server
+    container / Azure SQL backend is selected."""
+    url = os.environ.get("DB_URL") or f"sqlite:///{db_path}"
+    if url not in _ENGINES:
+        _ENGINES[url] = create_engine(url, future=True)
+    return _ENGINES[url]
+
+
+def _text_ddl(dialect):
+    """The per-dialect column type for the ALTER-based back-fill migration."""
+    return "NVARCHAR(MAX)" if dialect == "mssql" else "TEXT"
+
+
 def connect(db_path=DB_PATH):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    """Open a connection to the active backend (sqlite by default; Azure SQL /
+    SQL Server when DB_URL is set). Returns the _Conn adapter, so callers keep
+    using conn.execute(...).fetchone()/.commit() exactly as before."""
+    conn = _Conn(_engine(db_path).connect())
+    if conn.dialect == "sqlite":
+        conn.execute("PRAGMA journal_mode=WAL")  # SQLite-only durability setting
     return conn
 
 
 def init_db(conn):
-    cols = ",\n        ".join(f"{f} TEXT" for f in COMMON_FIELDS)
-    qual_cols = ",\n            ".join(f"{f} TEXT" for f in QUALIFICATION_FIELDS)
-    plan_cols = ",\n            ".join(f"{f} TEXT" for f in BID_PLAN_FIELDS)
-    manage_cols = ",\n            ".join(f"{f} TEXT" for f in BID_MANAGE_FIELDS)
-    outcome_cols = ",\n            ".join(f"{f} TEXT" for f in BID_OUTCOME_FIELDS)
-    response_cols = ",\n            ".join(f"{f} TEXT" for f in BID_RESPONSE_FIELDS)
-    conn.executescript(
-        f"""
-        CREATE TABLE IF NOT EXISTS opportunities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        {cols},
-        UNIQUE(source, ocid)
-        );
-
-        -- Per-source freshness log: when each source was last checked.
-        CREATE TABLE IF NOT EXISTS source_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source          TEXT NOT NULL,
-            source_endpoint TEXT,
-            checked_at      TEXT NOT NULL,
-            scanned         INTEGER,
-            kept            INTEGER
-        );
-
-        -- Stage 2 (Triage): one FOR001 qualification per opportunity. UNIQUE on
-        -- opportunity_id so a re-triage updates in place rather than duplicating.
-        CREATE TABLE IF NOT EXISTS qualifications (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            opportunity_id INTEGER NOT NULL,
-            created_at     TEXT,
-            updated_at     TEXT,
-            {qual_cols},
-            UNIQUE(opportunity_id),
-            FOREIGN KEY(opportunity_id) REFERENCES opportunities(id)
-        );
-
-        -- The bid spine — born when a qualification decides "Go".
-        CREATE TABLE IF NOT EXISTS bids (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            opportunity_id INTEGER NOT NULL,
-            qualification_id INTEGER,
-            bid_name       TEXT,
-            stage          TEXT,
-            status         TEXT,
-            created_at     TEXT,
-            updated_at     TEXT,
-            UNIQUE(opportunity_id),
-            FOREIGN KEY(opportunity_id) REFERENCES opportunities(id),
-            FOREIGN KEY(qualification_id) REFERENCES qualifications(id)
-        );
-
-        -- Stage 3 (Plan): one FOR002 bid plan per bid. UNIQUE on bid_id so
-        -- re-planning updates in place rather than duplicating.
-        CREATE TABLE IF NOT EXISTS bid_plans (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            bid_id     INTEGER NOT NULL,
-            created_at TEXT,
-            updated_at TEXT,
-            {plan_cols},
-            UNIQUE(bid_id),
-            FOREIGN KEY(bid_id) REFERENCES bids(id)
-        );
-
-        -- Stage 5 (Manage): one FOR003 CQLOG + pre-flight record per bid. UNIQUE
-        -- on bid_id so re-managing updates in place rather than duplicating.
-        CREATE TABLE IF NOT EXISTS bid_manage (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            bid_id     INTEGER NOT NULL,
-            created_at TEXT,
-            updated_at TEXT,
-            {manage_cols},
-            UNIQUE(bid_id),
-            FOREIGN KEY(bid_id) REFERENCES bids(id)
-        );
-
-        -- Stage 6 (Learn): one B07 outcome + lessons record per bid. UNIQUE on
-        -- bid_id so re-recording an outcome updates in place rather than duplicating.
-        CREATE TABLE IF NOT EXISTS bid_outcomes (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            bid_id     INTEGER NOT NULL,
-            created_at TEXT,
-            updated_at TEXT,
-            {outcome_cols},
-            UNIQUE(bid_id),
-            FOREIGN KEY(bid_id) REFERENCES bids(id)
-        );
-
-        -- Stage 4 (Complete): one FOR006 response matrix per bid. UNIQUE on bid_id
-        -- so re-working the matrix updates in place rather than duplicating.
-        CREATE TABLE IF NOT EXISTS bid_responses (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            bid_id     INTEGER NOT NULL,
-            created_at TEXT,
-            updated_at TEXT,
-            {response_cols},
-            UNIQUE(bid_id),
-            FOREIGN KEY(bid_id) REFERENCES bids(id)
-        );
-        """
-    )
-    # Lightweight migration: `lifecycle` is a persisted flag (open / closed /
-    # unknown / stale) maintained by refresh_clean.py. It lives OUTSIDE
-    # COMMON_FIELDS so connectors never touch it — only the cleanup pass writes
-    # it. "stale" = a stored row that the source no longer returns (withdrawn /
-    # dropped off the feed) — the one lifecycle signal the API can't derive live
-    # from deadline_date alone.
-    existing = {r["name"] for r in conn.execute("PRAGMA table_info(opportunities)")}
-    if "lifecycle" not in existing:
-        conn.execute("ALTER TABLE opportunities ADD COLUMN lifecycle TEXT")
-    # Triage-enrichment columns (see ENRICHMENT_FIELDS) — added the same way:
-    # nullable, connector-untouched, filled when an opportunity is triaged.
-    for f in ENRICHMENT_FIELDS:
-        if f not in existing:
-            conn.execute(f"ALTER TABLE opportunities ADD COLUMN {f} TEXT")
+    """Create every table if absent (idempotent), emitting the right DDL for the
+    active dialect via SQLAlchemy metadata, then back-fill any columns a
+    pre-existing DB predates. Replaces the old SQLite-only executescript."""
+    metadata.create_all(conn._c.engine, checkfirst=True)
+    # Back-fill the opportunities columns that live OUTSIDE COMMON_FIELDS —
+    # `lifecycle` (the cleanup-pass flag maintained by refresh_clean.py: open /
+    # closed / unknown / stale, where "stale" = a stored row the source no longer
+    # returns) and the triage-enrichment fields. Fresh DBs already have them from
+    # create_all; this only fires on a DB created before they existed. Uses the
+    # dialect-neutral inspector in place of the old PRAGMA table_info.
+    existing = {c["name"] for c in inspect(conn._c).get_columns("opportunities")}
+    coltype = _text_ddl(conn.dialect)
+    for col in ["lifecycle", *ENRICHMENT_FIELDS]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col} {coltype}")
     conn.commit()
 
 
@@ -668,7 +769,7 @@ def list_bids_for_manage(conn):
         FROM bids b
         JOIN opportunities o ON o.id = b.opportunity_id
         LEFT JOIN bid_manage m ON m.bid_id = b.id
-        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        ORDER BY CASE WHEN o.deadline_date IS NULL THEN 1 ELSE 0 END, o.deadline_date ASC
         """
     ).fetchall()
     return [_row_dict(r) for r in rows]
@@ -747,7 +848,7 @@ def list_bids_for_complete(conn):
         FROM bids b
         JOIN opportunities o ON o.id = b.opportunity_id
         LEFT JOIN bid_responses r ON r.bid_id = b.id
-        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        ORDER BY CASE WHEN o.deadline_date IS NULL THEN 1 ELSE 0 END, o.deadline_date ASC
         """
     ).fetchall()
     return [_row_dict(r) for r in rows]
@@ -838,7 +939,7 @@ def list_bids_for_learn(conn):
         JOIN opportunities o ON o.id = b.opportunity_id
         LEFT JOIN bid_manage m ON m.bid_id = b.id
         LEFT JOIN bid_outcomes x ON x.bid_id = b.id
-        ORDER BY (o.deadline_date IS NULL), o.deadline_date DESC
+        ORDER BY CASE WHEN o.deadline_date IS NULL THEN 1 ELSE 0 END, o.deadline_date DESC
         """
     ).fetchall()
     return [_row_dict(r) for r in rows]
@@ -876,7 +977,7 @@ def list_bids_for_board(conn):
         JOIN opportunities o ON o.id = b.opportunity_id
         LEFT JOIN qualifications q ON q.opportunity_id = b.opportunity_id
         LEFT JOIN bid_plans p ON p.bid_id = b.id
-        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        ORDER BY CASE WHEN o.deadline_date IS NULL THEN 1 ELSE 0 END, o.deadline_date ASC
         """
     ).fetchall()
     return [dict(r) for r in rows]

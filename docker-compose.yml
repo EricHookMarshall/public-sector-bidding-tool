@@ -1,0 +1,54 @@
+# Local Azure-parity stack for Phase B (DB port) onward.
+# Brings up the two services that HAVE emulators: SQL Server (stands in for
+# Azure SQL) and Azurite (stands in for Blob/Queue/Table storage). Entra/Graph/
+# Copilot have no emulator — those stay behind the provider seams (see
+# docs/design/azure-target.md, Tier 2).
+#
+#   docker compose up -d db        # Phase B needs only this
+#   docker compose up -d           # add azurite when Blob/queue work lands
+#
+# Password comes from .env (MSSQL_SA_PASSWORD) — never commit a real one.
+services:
+  db:
+    # 2022 image is already pulled locally and speaks the SAME T-SQL/mssql
+    # dialect as Azure SQL, so it verifies the whole dual-mode port. Bump to
+    # :2025-latest ONLY when we need the native VECTOR type (retrieval Option B).
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64            # x64 image; runs via Docker Desktop Rosetta on Apple Silicon
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}"
+      MSSQL_PID: "Developer"         # free edition for dev
+      # Cap the buffer pool so SQL Server doesn't balloon past the Docker VM and
+      # get OOM-killed (exit 137) under Rosetta x64 emulation. 2 GB is ample for
+      # this PoC's data volume.
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+    mem_limit: 3g                     # hard ceiling for the container (SQL + emulation overhead)
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      # Green only once the engine accepts a login — lets `depends_on` wait for real readiness.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  azurite:
+    # Blob/Queue/Table emulator — NOT a SQL emulator. Not needed for Phase B;
+    # it's here so `docker compose up -d` gives the full local stack once Blob
+    # file handling / async connector queues land (Phase D/E).
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: ["azurite", "--blobHost", "0.0.0.0", "--queueHost", "0.0.0.0", "--tableHost", "0.0.0.0", "-l", "/data"]
+    ports:
+      - "10000:10000"   # blob
+      - "10001:10001"   # queue
+      - "10002:10002"   # table
+    volumes:
+      - azurite_data:/data
+
+volumes:
+  mssql_data:
+  azurite_data:
