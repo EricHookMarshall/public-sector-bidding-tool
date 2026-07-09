@@ -735,3 +735,37 @@ header.top {
 .manage-actions .submit-btn { background: var(--good); border-color: var(--good); }
 .manage-actions .submit-btn:disabled { background: var(--neutral-soft); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 .empty.sm { padding: 12px; text-align: left; font-size: 12.5px; }
+
+/* --- Stage 6 (Learn): outcome capture + win-rate + library feedback ------- */
+.learn { display: flex; flex-direction: column; gap: 14px; }
+/* Neutral "Awaiting" result pill (Won/Not Won/Withdrawn reuse p-pass/p-fail/p-unk). */
+.p-wait { background: var(--neutral-soft); color: var(--muted); }
+/* Win-rate panel — reuses .cap + .bar; the stat row shows the headline numbers. */
+.winrate .wr-facts { margin-bottom: 2px; }
+.winrate .stat .v.sm { font-size: 15px; font-weight: 700; letter-spacing: 0; }
+.km-sub { font-size: 11.5px; color: var(--muted); }
+/* Lessons Learned rows — one editable {category, note, action} per line. */
+.lesson-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
+.lesson-row select, .lesson-row input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.lesson-note { flex: 1; min-width: 160px; }
+.lib-act .tag { margin-left: auto; align-self: flex-start; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; }
+
+/* --- Stage 4 (Complete): FOR006 matrix + AI pre-fill + evidence ledger ---- */
+.complete { display: flex; flex-direction: column; gap: 14px; }
+.lib-strip { font-weight: 500; }
+.stat .v .v-sub { font-size: 13px; font-weight: 600; color: var(--muted); }
+/* Two-pane workspace: give the matrix list room to scroll on long tenders. */
+.complete-ws { align-items: start; }
+.complete-ws .qlist { max-height: 460px; overflow-y: auto; }
+.qi { text-align: left; cursor: pointer; font-family: inherit; }
+.qi-wc { margin-left: auto; font-size: 10px; }
+/* Answer editor. */
+.resp-text { width: 100%; resize: vertical; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.55; background: var(--paper); color: var(--ink); font-family: inherit; }
+.resp-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mini-fld.inline { flex-direction: row; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-family: inherit; font-size: 12px; color: var(--muted); }
+.mini-fld.inline select { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.owner-inp { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; background: var(--paper); color: var(--ink); font-family: inherit; width: 110px; margin-left: auto; }
+/* AI draft meta block under the answer. */
+.ai-meta { border-top: 1px dashed var(--line); padding-top: 9px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.ai-meta p { margin: 0; line-height: 1.5; }
+.ai-gaps { color: var(--warn); }

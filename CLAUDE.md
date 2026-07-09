@@ -20,15 +20,18 @@ Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group.
 The *why* — FWF's G-Cloud 15 disregard, the EFS/PCG gap, the framework
 timeline — lives in [`knowledge/`](knowledge/).
 
-## Current phase: the journey app is live through Stage 3
+## Current phase: the journey app is live through all six stages
 
 The repo is one connected git repo (remote:
 `github.com/EricHookMarshall/public-sector-bidding-tool`) with a clean structure
-and live-verified facts. The app is the **6-stage journey shell**; **Search
-(1), Triage (2, incl. AI pre-fill) and Plan (3)** are built, wired to `bids.db`,
-and live-verified. **Complete (4), Manage (5) and Learn (6)** are still labelled
-preview screens. The `skills/` B00–B07 chain is designed but not yet grounded to
-live data. Roadmap and status live in
+and live-verified facts. The app is the **6-stage journey shell**, and **all six
+stages — Search (1), Triage (2, +AI), Plan (3), Complete (4), Manage (5), Learn
+(6) — are built, wired to `bids.db`, and live-verified.** No preview screens
+remain. Complete (4) reads FWF's real bid library through the `LocalMirror`
+provider seam (`src/library.py`) over the gitignored export at
+`knowledge/SharePoint Folder/Bids/`; live `GraphSharePoint` drops in behind the
+same seam when MS Graph is provisioned. The `skills/` B00–B07 chain is designed
+but not yet folded into the app. Roadmap and status live in
 [`_session/handover.md`](_session/handover.md) and [README.md](README.md).
 
 ## Repo map
@@ -103,14 +106,20 @@ secret). Kill services when done: `pkill -f "uvicorn api:app"; pkill -f vite`.
   keep the DB lean (store only open, relevant opportunities), always record
   provenance, and normalise every source before storing — never let a raw source
   shape leak into the DB or UI.
-- **SharePoint isn't available in this environment yet** (only a Google Drive
-  connector is). Anything depending on the live bid library (Phase 3, B00/B03/B04)
-  is blocked until real MS Graph access is set up outside the session — don't fake it.
+- **Live SharePoint/MS Graph isn't available in this environment yet** (only a
+  Google Drive connector is). Anything depending on the *live* bid library
+  (B00/B03/B04 against real MS Graph) is blocked until access is set up outside the
+  session — **don't fake it**. This does *not* block Complete (Stage 4): reading the
+  real **gitignored local export** (`knowledge/SharePoint Folder/Bids/`) through the
+  `LocalMirror` provider seam is sanctioned — that's using real data, not faking a
+  connection. The rule is: don't invent a live SharePoint link, and never commit the
+  confidential bid content itself.
 
 ## Roadmap
 
 - **Phase 0 — Consolidate & verify** ✅ one repo, clean structure, facts verified.
 - **Phase 1 — Search → triage** ✅ shared record; Triage (FOR001) wired to `bids.db` with AI pre-fill; a Go promotes an opportunity into a `Bid`.
 - **Phase 2 — Planning layer** ✅ Plan (FOR002): pipeline board + capacity + timeline + reactive deadline/owner/capacity alerts.
-- **Phase 3 — SharePoint + AI pre-fill** *(next external dependency)*: stand up the 3-library bid store (MS Graph); run B00/B03/B04. This is what Complete (Stage 4) needs.
-- **Phase 4 — Manage & learn**: preflight gate, clarification register (Stage 5, no external blocker — the likely next build), outcome loop (Stage 6).
+- **Phase 4 — Manage & learn** ✅ Manage (FOR003): clarification register + pre-flight gate (Stage 5); Learn (B07): outcome capture + win-rate + library-feedback loop (Stage 6). Both wired to `bids.db` and live-verified.
+- **Phase 3 — Complete (Stage 4) / bid library** ✅ FOR006 compliance matrix + AI pre-fill against FWF's real bid library, read through the `LocalMirror` provider seam (`src/library.py`) over the gitignored export. Live word-count gate + evidence/expiry ledger + retrieval-grounded drafting. Live-verified. **The journey is now feature-complete — all six stages real.** Live `GraphSharePoint` still needs MS Graph provisioned outside the session; it drops in behind the same seam with no app changes.
+- **Beyond the journey** *(optional / deferred)*: `GraphSharePoint` provider (when MS Graph lands), Azure OpenAI provider (`src/llm.py` skeleton), persist AI-draft provenance, HubSpot pipeline↔CRM. See `_session/handover.md`.

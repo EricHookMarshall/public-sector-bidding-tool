@@ -48,9 +48,13 @@ from pydantic import BaseModel
 import bidplan as P
 import clarification as M
 import config as app_config
+import complete_ai
 import cpv_catalog
 import db
+import library as LIB
+import outcome as L
 import qualification as Q
+import response as R
 import regions
 import sources
 import triage_ai
@@ -828,6 +832,336 @@ def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict)):
 
     db.upsert_bid_manage(conn, bid_id, fields)
     payload = _manage_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+# ---- Stage 4: Complete / FOR006 response matrix + library pre-fill --------
+
+def _complete_summary(row):
+    """One Complete board card from a raw joined bid row (db.list_bids_for_complete).
+    Resolves the FOR006 matrix (or an empty one) into the completion summary the
+    board reads: how many questions, how many approved, and any over word limit."""
+    items = [R.response_view(it) for it in (row.get("items") or [])]
+    summary = R.matrix_summary(items)
+    return {
+        "bid_id": row["bid_id"],
+        "opportunity_id": row["opportunity_id"],
+        "title": row.get("title") or row.get("bid_name"),
+        "buyer_name": row.get("buyer_name"),
+        "url": row.get("url"),
+        "submission_deadline": row.get("submission_deadline"),
+        "days_to_submission": P.days_until(row.get("submission_deadline")),
+        "started": bool(row.get("items")),
+        "summary": summary,
+    }
+
+
+@app.get("/api/complete/reference")
+def complete_reference():
+    """FOR006 vocabulary (response statuses, question types) + the library
+    vocabulary (categories, expiry window) for the Complete matrix + library."""
+    return {**R.reference(), "library": LIB.reference()}
+
+
+@app.get("/api/complete/board")
+def complete_board():
+    """The cross-bid Complete board: every live bid with its FOR006 matrix
+    completion (answered / approved / over-word-limit), plus the shared library
+    provider status. Answers 'which bids still have drafting to do' at a glance."""
+    conn = db.connect()
+    db.init_db(conn)
+    rows = db.list_bids_for_complete(conn)
+    conn.close()
+
+    provider = LIB.get_provider()
+    return {
+        "count": len(rows),
+        "bids": [_complete_summary(r) for r in rows],
+        "library": provider.status(),
+    }
+
+
+@app.get("/api/library")
+def library_browse(category: str | None = None, q: str | None = None):
+    """Browse the shared bid library through the provider seam (LocalMirror now).
+    Optional `category` / `q` filter. Also returns the evidence ledger (items with
+    an expiry, soonest first) and the provider status — so the UI can show an honest
+    'library not connected' state instead of faking content when the export is absent."""
+    provider = LIB.get_provider()
+    status = provider.status()
+    items = provider.items() if status["available"] else []
+
+    filtered = items
+    if category:
+        filtered = [it for it in filtered if it.get("category") == category]
+    if q:
+        filtered = LIB.search(filtered, q, limit=50)
+
+    return {
+        "provider": status,
+        "count": len(filtered),
+        "items": filtered,
+        "evidence": LIB.evidence(items),
+    }
+
+
+def _seed_matrix():
+    """A fresh FOR006 matrix from the real master template (via the library
+    provider), each row response-view-normalised. Used when a bid has no saved
+    matrix yet — so opening a bid shows FWF's real question structure."""
+    return [R.response_view({**R.default_response_item(), **q}) for q in LIB.master_template()]
+
+
+def _responses_payload(conn, bid_id):
+    """Assemble the Complete detail for one bid: the FOR006 matrix (seeded from the
+    master template if unsaved), the completion summary, the evidence ledger, and
+    the bid/opportunity context the workspace shows."""
+    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
+    if bid_row is None:
+        raise HTTPException(status_code=404, detail="bid not found")
+    bid = {k: bid_row[k] for k in bid_row.keys()}
+    opp = _row_to_dict(conn.execute(
+        "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
+
+    stored = db.get_bid_responses(conn, bid_id)
+    saved = stored is not None and bool(stored.get("items"))
+    items = [R.response_view(it) for it in stored["items"]] if saved else _seed_matrix()
+
+    provider = LIB.get_provider()
+    lib_status = provider.status()
+    all_items = provider.items() if lib_status["available"] else []
+    return {
+        "bid": {"id": bid_id, "bid_name": bid.get("bid_name"),
+                "stage": bid.get("stage"), "status": bid.get("status")},
+        "opportunity": {
+            "id": opp.get("id"), "title": opp.get("title"),
+            "buyer_name": opp.get("buyer_name"), "url": opp.get("url"),
+            "submission_deadline": opp.get("deadline_date"),
+            "value": _num(opp.get("value_max")),
+            "currency": opp.get("currency") or "GBP",
+        },
+        "items": items,
+        "summary": R.matrix_summary(items),
+        "library": lib_status,
+        "evidence": LIB.evidence(all_items),
+        "notes": (stored or {}).get("notes") or "",
+        "saved": saved,
+    }
+
+
+@app.get("/api/bids/{bid_id}/responses")
+def get_bid_responses(bid_id: int):
+    conn = db.connect()
+    db.init_db(conn)
+    payload = _responses_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+@app.put("/api/bids/{bid_id}/responses")
+def save_bid_responses(bid_id: int, body: dict = Body(default_factory=dict)):
+    """Save (create or update) the FOR006 response matrix for a bid. Only known
+    ResponseItem fields per row are kept (the client can't smuggle extra columns),
+    `actual_words` is recomputed server-side from the answer text (the compliance
+    number can't drift from the text), and the status is validated. The response
+    mirrors GET so the UI can re-render in place."""
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="bid not found")
+
+    fields = {}
+    if isinstance(body.get("items"), list):
+        template = R.default_response_item()
+        cleaned = []
+        for raw in body["items"]:
+            if not isinstance(raw, dict):
+                continue
+            item = {k: raw.get(k, template[k]) for k in template}
+            if item.get("status") not in R.RESPONSE_STATUSES:
+                item["status"] = "To do"
+            item["actual_words"] = R.word_count(item.get("supplier_response"))
+            cleaned.append(item)
+        fields["items"] = cleaned
+    if "notes" in body:
+        fields["notes"] = body["notes"]
+
+    db.upsert_bid_responses(conn, bid_id, fields)
+    payload = _responses_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+@app.post("/api/bids/{bid_id}/responses/{item_index}/ai-draft")
+def ai_draft_response(bid_id: int, item_index: int):
+    """AI-draft one FOR006 answer, retrieval-grounded in the real library. The
+    question is identified by its row index in the matrix (question_ref repeats
+    across lots, so it isn't unique) — the client's matrix order matches the
+    server's (both come from the saved matrix, else the master template). Returns a
+    *draft* + the library matches it drew on — never saved; the UI puts it in the
+    matrix for human review. 503 (not a crash) if no LLM is configured, so the
+    manual matrix keeps working."""
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="bid not found")
+
+    stored = db.get_bid_responses(conn, bid_id)
+    items = stored["items"] if (stored and stored.get("items")) else LIB.master_template()
+    conn.close()
+
+    if not 0 <= item_index < len(items):
+        raise HTTPException(status_code=404, detail=f"question index {item_index} out of range")
+    question = items[item_index]
+
+    provider = LIB.get_provider()
+    matches = LIB.search(provider.items(), question.get("question_text", ""),
+                         question.get("tags", ""), limit=5) if provider.available() else []
+    try:
+        draft, meta = complete_ai.draft_response(question, matches)
+    except LLMUnavailable as e:
+        raise HTTPException(status_code=503, detail=f"AI drafting unavailable: {e}")
+    return {"item_index": item_index, "question_ref": question.get("question_ref"),
+            "draft": draft, "matches": matches, "meta": meta}
+
+
+# ---- Stage 6: Learn / B07 Outcome + Lessons Learned -----------------------
+
+def _learn_item(row):
+    """One Learn board card from a raw joined bid row (db.list_bids_for_learn).
+    Resolves the stored outcome (or a blank default) into the outcome view + the
+    board fields: result, score %, submitted flag, and library-suggestion count.
+    Whether an outcome was actually saved is tracked so the win-rate only counts
+    real records, not un-recorded bids sitting at the default Awaiting."""
+    saved = row.get("result") is not None or bool(row.get("lessons"))
+    stored = {f: row.get(f) for f in db.BID_OUTCOME_FIELDS if row.get(f) is not None}
+    outcome = {**L.default_outcome(), **stored}
+    view = L.outcome_view(outcome)
+    return {
+        "bid_id": row["bid_id"],
+        "opportunity_id": row["opportunity_id"],
+        "title": row.get("title") or row.get("bid_name"),
+        "buyer_name": row.get("buyer_name"),
+        "url": row.get("url"),
+        "submission_deadline": row.get("submission_deadline"),
+        "submitted": (row.get("submitted") or "") == "yes",
+        "result": view["result"],
+        "result_tone": view["result_tone"],
+        "is_decided": view["is_decided"],
+        "score_pct": view["score_pct"],
+        "score_received": view.get("score_received") or "",
+        "winner": view.get("winner") or "",
+        "suggestions_count": len(view["suggestions"]),
+        "library_approved": (view.get("library_approved") or "") == "yes",
+        "saved": saved,
+    }
+
+
+@app.get("/api/learn/reference")
+def learn_reference():
+    """B07 vocabulary (results, lesson categories, library actions) for the
+    Learn outcome form."""
+    return L.reference()
+
+
+@app.get("/api/learn/board")
+def learn_board():
+    """The cross-bid Learn board: every bid with its recorded outcome (result,
+    score, library-suggestion count), the win-rate summary tracked bid-by-bid, and
+    the loop-closing alerts (submitted-but-unrecorded / unapproved suggestions).
+    This closes the journey loop — outcomes here feed the Stage-4 library."""
+    conn = db.connect()
+    db.init_db(conn)
+    rows = db.list_bids_for_learn(conn)
+    conn.close()
+
+    items = [_learn_item(r) for r in rows]
+    return {
+        "count": len(items),
+        "bids": items,
+        "winrate": L.winrate_summary(items),
+        "alerts": L.alerts(items),
+    }
+
+
+def _outcome_payload(conn, bid_id):
+    """Assemble the Learn detail for one bid: the outcome (seeded blank if never
+    recorded), its derived view (score %, suggestions), and the bid/opportunity
+    context the form shows."""
+    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
+    if bid_row is None:
+        raise HTTPException(status_code=404, detail="bid not found")
+    bid = {k: bid_row[k] for k in bid_row.keys()}
+    opp = _row_to_dict(conn.execute(
+        "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
+    manage = db.get_bid_manage(conn, bid_id) or {}
+
+    stored = db.get_bid_outcome(conn, bid_id)
+    saved = stored is not None
+    outcome = {**L.default_outcome(), **{k: v for k, v in (stored or {}).items()
+                                         if k in db.BID_OUTCOME_FIELDS and v is not None}}
+    view = L.outcome_view(outcome)
+    return {
+        "bid": {"id": bid_id, "bid_name": bid.get("bid_name"),
+                "stage": bid.get("stage"), "status": bid.get("status")},
+        "opportunity": {
+            "id": opp.get("id"), "title": opp.get("title"),
+            "buyer_name": opp.get("buyer_name"), "url": opp.get("url"),
+            "submission_deadline": opp.get("deadline_date"),
+            "value": _num(opp.get("value_max")),
+            "currency": opp.get("currency") or "GBP",
+        },
+        "submitted": (manage.get("submitted") or "") == "yes",
+        "outcome": view,
+        "suggestions": view["suggestions"],
+        "score_pct": view["score_pct"],
+        "saved": saved,
+    }
+
+
+@app.get("/api/bids/{bid_id}/outcome")
+def get_bid_outcome(bid_id: int):
+    conn = db.connect()
+    db.init_db(conn)
+    payload = _outcome_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+@app.put("/api/bids/{bid_id}/outcome")
+def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict)):
+    """Save (create or update) the B07 outcome for a bid: result, score, feedback,
+    the Lessons Learned rows, and the library-approval sign-off. Only
+    BID_OUTCOME_FIELDS are written; the `result` is validated against the known
+    vocabulary and the lessons are normalised to the known shape (so the client
+    can't smuggle extra columns into the JSON blob). The response mirrors GET so
+    the UI can re-render in place."""
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="bid not found")
+
+    fields = {k: v for k, v in body.items() if k in db.BID_OUTCOME_FIELDS}
+
+    if "result" in fields and fields["result"] and fields["result"] not in L.RESULTS:
+        conn.close()
+        raise HTTPException(400, f"unknown result '{fields['result']}'")
+
+    # Normalise the lessons: keep only known fields per row, and only a valid
+    # library action, so the JSON blob can't carry arbitrary keys.
+    if isinstance(fields.get("lessons"), list):
+        fields["lessons"] = [
+            {"category": lsn.get("category", ""), "note": lsn.get("note", ""),
+             "action": lsn.get("action") if lsn.get("action") in L.LIBRARY_ACTIONS else ""}
+            for lsn in fields["lessons"] if isinstance(lsn, dict)
+        ]
+
+    db.upsert_bid_outcome(conn, bid_id, fields)
+    payload = _outcome_payload(conn, bid_id)
     conn.close()
     return payload
 

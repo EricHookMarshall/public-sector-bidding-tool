@@ -156,6 +156,93 @@ export async function saveBidManage(bidId, fields) {
   return res.json();
 }
 
+// ---- Stage 4: Complete / FOR006 matrix + library pre-fill ----
+
+// FOR006 vocabulary (response statuses, question types) + library categories.
+export const getCompleteReference = () => getJSON("/api/complete/reference");
+
+// The cross-bid Complete board: every bid with its FOR006 matrix completion, plus
+// the shared library provider status.
+export const getCompleteBoard = () => getJSON("/api/complete/board");
+
+// Browse the shared bid library (LocalMirror). Optional category / q filter.
+export const getLibrary = (params = {}) =>
+  getJSON(`/api/library?${filterParams(params).toString()}`);
+
+// One bid's FOR006 matrix (seeded from the master template if unstarted) + the
+// completion summary, evidence ledger, and library provider status.
+export const getBidResponses = (bidId) => getJSON(`/api/bids/${bidId}/responses`);
+
+// Save a bid's response matrix. Server recomputes word counts + validates status.
+// Returns GET shape.
+export async function saveBidResponses(bidId, fields) {
+  const res = await fetch(`/api/bids/${bidId}/responses`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// AI-draft one answer, retrieval-grounded in the real library. Identified by the
+// question's row index (question_ref repeats across lots). Returns {item_index,
+// question_ref, draft, matches, meta}; the draft is for review only (not saved).
+// Throws with the server detail on 503 (no LLM) or other errors.
+export async function aiDraftResponse(bidId, itemIndex) {
+  const res = await fetch(`/api/bids/${bidId}/responses/${itemIndex}/ai-draft`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ---- Stage 6: Learn / B07 Outcome + Lessons Learned ----
+
+// B07 vocabulary (results, lesson categories, library actions).
+export const getLearnReference = () => getJSON("/api/learn/reference");
+
+// The cross-bid Learn board: every bid with its recorded outcome, the win-rate
+// summary tracked bid-by-bid, and the loop-closing alerts.
+export const getLearnBoard = () => getJSON("/api/learn/board");
+
+// One bid's B07 outcome + derived library suggestions (seeded blank if unrecorded),
+// with the bid/opportunity context the form shows.
+export const getBidOutcome = (bidId) => getJSON(`/api/bids/${bidId}/outcome`);
+
+// Save a bid's outcome (result, score, feedback, lessons, library sign-off).
+// Returns GET shape so the UI can re-render in place.
+export async function saveBidOutcome(bidId, fields) {
+  const res = await fetch(`/api/bids/${bidId}/outcome`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ---- Settings: LLM config ----
 
 async function sendJSON(url, method, body) {

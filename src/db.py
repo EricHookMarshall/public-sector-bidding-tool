@@ -188,6 +188,51 @@ BID_MANAGE_FIELDS = [
 # JSON-valued manage columns — encoded on write, decoded on read.
 BID_MANAGE_JSON_FIELDS = {"clarifications", "preflight"}
 
+# --- Stage 6 (Learn) -------------------------------------------------------
+# The B07 Outcome — one record per bid, hung off bid_id. From FWF's pipeline
+# `Review` sheet (Won / Not Won) + the Lessons Learned Log (see outcome.py and
+# docs/design/data-model.md §6). `lessons` is the one repeating group, held as
+# JSON like bid_plans.phases: [{category, note, action}], where `action` (promote
+# / refresh / retire) is the loop-closing suggestion back into the Stage-4
+# library. `library_approved` records the human sign-off on those suggestions —
+# the tool proposes; a person confirms (the Stage-6 scope: nothing is marked
+# reusable without a person). Kept OUTSIDE the connector path, like the other
+# stage tables: only the Learn write path (upsert_bid_outcome) touches it. All
+# TEXT, text-tolerant per the PoC.
+BID_OUTCOME_FIELDS = [
+    "result",           # Awaiting / Won / Not Won / Withdrawn
+    "score_received",   # e.g. "88" or "88/100"
+    "max_score",        # optional denominator if score_received is bare
+    "winner",           # who won, if Not Won (competitor intelligence)
+    "award_date",
+    "debrief_date",
+    "feedback",         # buyer / evaluator feedback text
+    "lessons",          # JSON: the Lessons Learned rows [{category, note, action}]
+    "library_approved", # "yes" once the human signs off the suggested library updates
+    "notes",
+]
+
+# JSON-valued outcome columns — encoded on write, decoded on read.
+BID_OUTCOME_JSON_FIELDS = {"lessons"}
+
+# --- Stage 4 (Complete) ----------------------------------------------------
+# The FOR006 tender-response matrix — one record per bid, hung off bid_id. From
+# FWF's `FOR006 Tender Response Master` (see response.py and data-model.md §4):
+# the compliance matrix, one row per tender question. Held as JSON like
+# bid_plans.phases: `items` = the matrix [{question_ref, question_text,
+# word_count_limit, supplier_response, status, ...}]. The reusable content it
+# draws from (LibraryItem) is NOT per-bid — it's read live through the library
+# provider seam (library.py / LocalMirror), not stored here. Kept OUTSIDE the
+# connector path, like the other stage tables: only the Complete write path
+# (upsert_bid_responses) touches it. All TEXT, text-tolerant per the PoC.
+BID_RESPONSE_FIELDS = [
+    "items",   # JSON: the FOR006 matrix [{question_ref, supplier_response, status, ...}]
+    "notes",
+]
+
+# JSON-valued response columns — encoded on write, decoded on read.
+BID_RESPONSE_JSON_FIELDS = {"items"}
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -205,6 +250,8 @@ def init_db(conn):
     qual_cols = ",\n            ".join(f"{f} TEXT" for f in QUALIFICATION_FIELDS)
     plan_cols = ",\n            ".join(f"{f} TEXT" for f in BID_PLAN_FIELDS)
     manage_cols = ",\n            ".join(f"{f} TEXT" for f in BID_MANAGE_FIELDS)
+    outcome_cols = ",\n            ".join(f"{f} TEXT" for f in BID_OUTCOME_FIELDS)
+    response_cols = ",\n            ".join(f"{f} TEXT" for f in BID_RESPONSE_FIELDS)
     conn.executescript(
         f"""
         CREATE TABLE IF NOT EXISTS opportunities (
@@ -270,6 +317,30 @@ def init_db(conn):
             created_at TEXT,
             updated_at TEXT,
             {manage_cols},
+            UNIQUE(bid_id),
+            FOREIGN KEY(bid_id) REFERENCES bids(id)
+        );
+
+        -- Stage 6 (Learn): one B07 outcome + lessons record per bid. UNIQUE on
+        -- bid_id so re-recording an outcome updates in place rather than duplicating.
+        CREATE TABLE IF NOT EXISTS bid_outcomes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            bid_id     INTEGER NOT NULL,
+            created_at TEXT,
+            updated_at TEXT,
+            {outcome_cols},
+            UNIQUE(bid_id),
+            FOREIGN KEY(bid_id) REFERENCES bids(id)
+        );
+
+        -- Stage 4 (Complete): one FOR006 response matrix per bid. UNIQUE on bid_id
+        -- so re-working the matrix updates in place rather than duplicating.
+        CREATE TABLE IF NOT EXISTS bid_responses (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            bid_id     INTEGER NOT NULL,
+            created_at TEXT,
+            updated_at TEXT,
+            {response_cols},
             UNIQUE(bid_id),
             FOREIGN KEY(bid_id) REFERENCES bids(id)
         );
@@ -355,7 +426,9 @@ def update_enrichment(conn, opp_id, fields):
 
 
 # JSON-valued columns across all stage tables — decoded on read by _row_dict.
-_JSON_FIELDS = QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS | BID_MANAGE_JSON_FIELDS
+_JSON_FIELDS = (QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS
+                | BID_MANAGE_JSON_FIELDS | BID_OUTCOME_JSON_FIELDS
+                | BID_RESPONSE_JSON_FIELDS)
 
 
 def _row_dict(row):
@@ -601,6 +674,176 @@ def list_bids_for_manage(conn):
     return [_row_dict(r) for r in rows]
 
 
+def get_bid_responses(conn, bid_id):
+    """The FOR006 response matrix for one bid, or None if not started. JSON `items`
+    comes back decoded."""
+    row = conn.execute(
+        "SELECT * FROM bid_responses WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def upsert_bid_responses(conn, bid_id, fields):
+    """Insert or update the FOR006 response matrix for one bid.
+
+    Keyed on bid_id (one matrix per bid — re-working updates in place). Only keys
+    in BID_RESPONSE_FIELDS are written. The JSON `items` field may be passed as a
+    list and is encoded here. Returns the bid_responses row id.
+    """
+    rec = {f: fields[f] for f in BID_RESPONSE_FIELDS if f in fields}
+    for f in BID_RESPONSE_JSON_FIELDS:
+        if isinstance(rec.get(f), (dict, list)):
+            rec[f] = json.dumps(rec[f], ensure_ascii=False)
+
+    existing = conn.execute(
+        "SELECT id FROM bid_responses WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    now = now_iso()
+
+    if existing:
+        if rec:
+            assignments = ", ".join(f"{c} = ?" for c in rec)
+            conn.execute(
+                f"UPDATE bid_responses SET {assignments}, updated_at = ? WHERE bid_id = ?",
+                [rec[c] for c in rec] + [now, bid_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE bid_responses SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
+            )
+        rid = existing["id"]
+    else:
+        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO bid_responses ({', '.join(cols)}) VALUES ({placeholders})",
+            [bid_id, now, now, *rec.values()],
+        )
+        rid = conn.execute(
+            "SELECT id FROM bid_responses WHERE bid_id = ?", (bid_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return rid
+
+
+def list_bids_for_complete(conn):
+    """Every bid joined with the fields the Complete board needs — from the
+    opportunity (title, buyer, submission deadline) and the response record (the
+    FOR006 matrix). Raw values only; api.py resolves the matrix + completion
+    summary. Ordered by submission deadline (soonest first) so the board reads
+    urgency-first."""
+    rows = conn.execute(
+        """
+        SELECT
+            b.id             AS bid_id,
+            b.opportunity_id AS opportunity_id,
+            b.bid_name       AS bid_name,
+            b.status         AS bid_status,
+            o.title          AS title,
+            o.buyer_name     AS buyer_name,
+            o.deadline_date  AS submission_deadline,
+            o.url            AS url,
+            r.items          AS items
+        FROM bids b
+        JOIN opportunities o ON o.id = b.opportunity_id
+        LEFT JOIN bid_responses r ON r.bid_id = b.id
+        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        """
+    ).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
+def get_bid_outcome(conn, bid_id):
+    """The B07 outcome record (result + lessons) for one bid, or None if no
+    outcome recorded yet. JSON `lessons` comes back decoded."""
+    row = conn.execute(
+        "SELECT * FROM bid_outcomes WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def upsert_bid_outcome(conn, bid_id, fields):
+    """Insert or update the B07 outcome record for one bid.
+
+    Keyed on bid_id (one outcome per bid — re-recording updates in place). Only
+    keys in BID_OUTCOME_FIELDS are written, so this can't smuggle in other columns.
+    The JSON `lessons` field may be passed as a list and is encoded here. Returns
+    the bid_outcome row id.
+    """
+    rec = {f: fields[f] for f in BID_OUTCOME_FIELDS if f in fields}
+    for f in BID_OUTCOME_JSON_FIELDS:
+        if isinstance(rec.get(f), (dict, list)):
+            rec[f] = json.dumps(rec[f], ensure_ascii=False)
+
+    existing = conn.execute(
+        "SELECT id FROM bid_outcomes WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    now = now_iso()
+
+    if existing:
+        if rec:
+            assignments = ", ".join(f"{c} = ?" for c in rec)
+            conn.execute(
+                f"UPDATE bid_outcomes SET {assignments}, updated_at = ? WHERE bid_id = ?",
+                [rec[c] for c in rec] + [now, bid_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE bid_outcomes SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
+            )
+        oid = existing["id"]
+    else:
+        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO bid_outcomes ({', '.join(cols)}) VALUES ({placeholders})",
+            [bid_id, now, now, *rec.values()],
+        )
+        oid = conn.execute(
+            "SELECT id FROM bid_outcomes WHERE bid_id = ?", (bid_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return oid
+
+
+def list_bids_for_learn(conn):
+    """Every bid joined with the fields the Learn board needs — from the
+    opportunity (title, buyer, submission deadline), the outcome record (result +
+    lessons + score) and the manage record's `submitted` flag (so the board knows
+    which bids are submitted-but-unrecorded — the loop-closing nudge). Raw values
+    only; api.py resolves the outcome view + win-rate. Ordered by submission
+    deadline (most recently closed first) so the freshest outcomes lead."""
+    rows = conn.execute(
+        """
+        SELECT
+            b.id               AS bid_id,
+            b.opportunity_id   AS opportunity_id,
+            b.bid_name         AS bid_name,
+            b.status           AS bid_status,
+            o.title            AS title,
+            o.buyer_name       AS buyer_name,
+            o.deadline_date    AS submission_deadline,
+            o.url              AS url,
+            m.submitted        AS submitted,
+            x.result           AS result,
+            x.score_received   AS score_received,
+            x.max_score        AS max_score,
+            x.winner           AS winner,
+            x.award_date       AS award_date,
+            x.debrief_date     AS debrief_date,
+            x.feedback         AS feedback,
+            x.lessons          AS lessons,
+            x.library_approved AS library_approved
+        FROM bids b
+        JOIN opportunities o ON o.id = b.opportunity_id
+        LEFT JOIN bid_manage m ON m.bid_id = b.id
+        LEFT JOIN bid_outcomes x ON x.bid_id = b.id
+        ORDER BY (o.deadline_date IS NULL), o.deadline_date DESC
+        """
+    ).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
 def list_bids_for_board(conn):
     """Every bid joined with the fields the Plan board needs — from the
     opportunity (title, buyer, the two deadlines, value), the qualification (the
@@ -671,7 +914,11 @@ if __name__ == "__main__":
     bids = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
     plans = conn.execute("SELECT COUNT(*) FROM bid_plans").fetchone()[0]
     manage = conn.execute("SELECT COUNT(*) FROM bid_manage").fetchone()[0]
+    outcomes = conn.execute("SELECT COUNT(*) FROM bid_outcomes").fetchone()[0]
+    responses = conn.execute("SELECT COUNT(*) FROM bid_responses").fetchone()[0]
     print(f"qualifications: {quals}")
     print(f"bids: {bids}")
     print(f"bid_plans: {plans}")
     print(f"bid_manage: {manage}")
+    print(f"bid_responses: {responses}")
+    print(f"bid_outcomes: {outcomes}")

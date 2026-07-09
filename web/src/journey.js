@@ -107,9 +107,9 @@ export const STAGES = [
     n: "04",
     t: "Complete",
     d: "Draft the bid",
-    state: "design",
-    stateLabel: "Designed (B02–B05)",
-    maps: "Skills B02–B04 · SharePoint answer bank + evidence",
+    state: "live",
+    stateLabel: "Works today (FOR006)",
+    maps: "FOR006 response matrix + LocalMirror bid library · AI pre-fill",
     component: "complete",
     scope: {
       does: "Turns the tender into a tracked question list, then drafts each answer with the evidence to back every claim — so the writer edits rather than starts from a blank page.",
@@ -128,8 +128,8 @@ export const STAGES = [
       ],
     },
     asset: {
-      state: "design",
-      txt: "<b>Designed; blocked on SharePoint</b> — skills B02–B04 exist. AI pre-fill needs the MS Graph connection stood up; can prototype on samples first.",
+      state: "live",
+      txt: "<b>Wired to real data</b> — every bid gets its FOR006 compliance matrix (one row per tender question) reading <code>bids.db</code>, seeded from FWF's real question master. AI drafts each answer from the actual bid library through the <code>LocalMirror</code> provider seam (the gitignored export), grounded in retrieved evidence and citing what it drew on; a live word-count check enforces the tender limit, and the evidence ledger surfaces any expired credential. Live SharePoint drops in behind the same seam later — no app changes. Needs an API key in <code>discovery/.env</code> for AI drafting.",
     },
   },
   {
@@ -167,9 +167,9 @@ export const STAGES = [
     n: "06",
     t: "Learn",
     d: "Outcome & library",
-    state: "design",
-    stateLabel: "Designed (B07)",
-    maps: "Skill B07 — feeds the library back to Stage 4",
+    state: "live",
+    stateLabel: "Works today (B07)",
+    maps: "Skill B07 — outcome + win-rate + library feedback into Stage 4",
     component: "learn",
     scope: {
       does: "Captures how the bid actually did — won/lost, evaluator score, feedback — and turns that into concrete improvements to the reusable library.",
@@ -188,8 +188,8 @@ export const STAGES = [
       ],
     },
     asset: {
-      state: "design",
-      txt: "<b>Designed</b> — skill B07. Without this the library slowly goes stale; with it, every bid makes the next one easier.",
+      state: "live",
+      txt: "<b>Wired to real data</b> — every bid reads <code>bids.db</code> for its outcome (won / not won / withdrawn, evaluator score, feedback) and Lessons Learned. The win rate is tracked bid-by-bid, and each result derives promote / refresh / retire suggestions for the library that you approve. Applying approved updates to the real library needs the SharePoint connection Stage 4 is blocked on — the tool proposes and records sign-off; it never writes the library itself.",
     },
   },
 ];

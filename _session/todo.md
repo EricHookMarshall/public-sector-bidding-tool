@@ -19,13 +19,24 @@
       auto+expiry items, `alerts`), `bid_manage` table, `/api/manage/*` + `GET`/`PUT /api/bids/{id}/manage`
       (gate enforced server-side → 409 if blocked), real board→detail UI, `seed_manage_demo.py`.
       Live-verified over HTTP.
-- [ ] **User review of the journey shell** — click through all 6 stages, Triage's form, Settings,
-      Plan's board + timeline, and Manage's register + pre-flight gate in the browser
-      (<http://localhost:5173>) and flag anything wrong. **5 stages built, 0 observed by a human** —
-      only build/curl/TestClient verified so far.
-- [ ] **Learn (Stage 6) or Complete (Stage 4)** — the two stages left. Learn (B07 outcome → library
-      feedback) has no external blocker and closes the journey loop; Complete (FOR006) is next in
-      order but blocked on live SharePoint/MS Graph. Not decided — see handover.
+- [x] **User review of the journey shell** (2026-07-09, session 7) — user confirmed the browser
+      click-through was done and the stages look fine. Clears the 5-session "0 human-reviewed" thread.
+- [x] **Learn (Stage 6) — B07 outcome + win-rate + library-feedback loop** (2026-07-09, session 7) —
+      `src/outcome.py` (B07 rig: results, Lessons Learned, `library_suggestions`, `winrate_summary`,
+      `alerts`), `bid_outcomes` table, `/api/learn/*` + `GET`/`PUT /api/bids/{id}/outcome` (result
+      validated → 400), real win-rate board→outcome-detail UI replacing the mock, `seed_learn_demo.py`.
+      Live-verified over HTTP; `npm run build` clean. Suggestions proposed + signed off, never written
+      to a real library (honest boundary).
+- [x] **Complete (Stage 4) — FOR006 matrix + LocalMirror library + AI pre-fill** (2026-07-09, session
+      7b) — `src/library.py` (LocalMirror provider over the real gitignored export; expiry extracted
+      from Notes; retrieval + evidence ledger; `master_template`), `src/response.py` (FOR006 rig + live
+      word-count gate), `src/complete_ai.py` (retrieval-grounded drafting), `bid_responses` table,
+      `/api/complete/*` + `/api/library` + matrix GET/PUT + index-based AI-draft, real matrix→workspace
+      UI replacing the mock, `seed_complete_demo.py`. Live-verified over HTTP; `npm run build` clean.
+      **The journey is now feature-complete — all 6 stages real.**
+- [ ] **User browser walk of Complete + Learn** — the two stages built this session, verified
+      server-side only. Open `#complete` / `#learn` at <http://localhost:5173> and flag anything wrong.
+- [ ] **Commit the milestone** — Learn + Complete are uncommitted. Commit on the user's request.
 
 ## Surfaced / open
 

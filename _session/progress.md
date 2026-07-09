@@ -3,6 +3,133 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 7b) — Complete (Stage 4): FOR006 matrix + LocalMirror library + AI pre-fill
+
+**Context.** After Learn shipped (below), the user asked about using "a local file store" for
+Complete in the interim. Investigating confirmed the block was overstated: `architecture.md` already
+designed a `LocalMirror → GraphSharePoint` provider seam, and the real bid export exists gitignored at
+`knowledge/SharePoint Folder/Bids/`. The user chose **LocalMirror over the repo export**. So Complete
+was built for real against FWF's actual bid library — the last stage, closing the 6-stage journey.
+Grounded to the real `FOR006 Tender Response Master` + `Bid Library Tracker` (data-model.md §4/§4b).
+
+**Work done.**
+
+- **`src/library.py`** (new) — the bid-library provider seam. `LocalMirrorProvider` reads the real
+  `Bid Library Tracker.xlsx` (10 category sheets, 9 columns) → LibraryItem dicts. Key wrinkle the real
+  data forced: **expiry lives in free-text `Notes`** ("9001 Expires: 09/01/2026"), not a column — so
+  `extract_expiries()` mines it (dd/mm/yyyy, "31 Oct 2025", ISO), gated on expiry cues to avoid false
+  positives, and surfaces a structured `expiry_date`/`expiry_status` (expired / expiring_soon ≤90d /
+  ok). `search()` = lean keyword+tag retrieval; `evidence()` = the credential ledger soonest-expiry
+  first; `master_template()` reads the FOR006 question set (fallback questions if the export is
+  absent). Degrades cleanly to `available=False` when the file isn't present — never fakes.
+  `get_provider()` mirrors llm/sources; GraphSharePoint slots in behind the same interface.
+- **`src/response.py`** (new) — the FOR006 ResponseItem rig (18 real columns). Statuses To
+  do→Drafted→In review→Approved; `word_count()` + `response_view()` compute the **live word-count
+  compliance** (limit vs actual, recomputed from the answer text, never trusted); `matrix_summary()`
+  = the completion readout incl. `over_word_limit` (the hard gate — an over-length answer can be
+  discarded unread) and a `ready` flag.
+- **`src/complete_ai.py`** (new) — retrieval-grounded AI drafting, same shape as `triage_ai.py`
+  (reuses `FWF_PROFILE` + `llm.get_provider`). The model drafts one answer *from* the retrieved
+  LibraryItems, must respect the word limit, cites `evidence_used`, and flags `gaps`. Never
+  auto-saved; 503 if no LLM.
+- **`src/db.py`** — `bid_responses` table (`items` JSON matrix, like bid_plans.phases); get/upsert;
+  `list_bids_for_complete`; `bid_responses` count in `__main__`.
+- **`src/api.py`** — `import library/response/complete_ai`; `/api/complete/reference`,
+  `/api/complete/board`, `/api/library` (browse + evidence + provider status), `GET`/`PUT
+  /api/bids/{id}/responses` (matrix auto-seeds from the master when unstarted; PUT recomputes word
+  counts + validates status server-side), and `POST /api/bids/{id}/responses/{index}/ai-draft`
+  (index-based, because `question_ref` repeats across lots).
+- **`web/src/api.js`** — `getCompleteReference`/`getCompleteBoard`/`getLibrary`/`getBidResponses`/
+  `saveBidResponses`/`aiDraftResponse`.
+- **`web/src/stages/CompleteStage.jsx`** — replaced the mock. Board (per-bid completion bar + library
+  provider strip) → a two-pane workspace: the compliance matrix (status dots + per-question word
+  badges) + the selected question's editor (question text, live word-count check, status/owner, an
+  "✦ AI draft" button that fills the answer + shows win-themes/evidence/gaps), plus the evidence
+  ledger (credential expiry, expired in red). Reuses the mock's `.ws`/`.qlist`/`.draft`/`.ledger`/
+  `.dotp` CSS.
+- **`web/src/journey.js`** — Complete flipped `design → live` ("Works today (FOR006)"), asset updated.
+- **`web/src/styles.css`** — added `.complete`/`.lib-strip`/`.complete-ws`/`.resp-text`/`.resp-foot`/
+  `.ai-meta`/`.ai-gaps` + `.qi` button/scroll tweaks. Reused the mock Complete classes.
+- **`src/seed_complete_demo.py`** (new) — seeds RTPI's matrix from the real 8-question master with a
+  status spread + a placeholder answer (clearly marked DEMO). Library is read live, never seeded.
+
+**Verification (honest).** `python3 src/library.py` → provider available, 42 items/10 categories, 1
+expired (ISO Certifications 2025-10-31, parsed from Notes). `python3 src/response.py` → matrix maths +
+over-limit detection. Over real HTTP: `/api/complete/board` 200 (library available, 42 items);
+`/api/library` evidence ledger 19 items, expired first; GET matrix auto-seeds 8 real questions;
+PUT an 800-word answer → `over_limit=True`, summary `over_word_limit=1` (word count recomputed
+server-side); **AI draft retrieval-grounded** — 666–680 words within the 750 limit, cites real library
+items, names win themes, honestly flags "no named case study cited" (claude-haiku-4-5, live `.env`
+key); out-of-range index → 404. `cd web && npm run build` clean (37 modules). Removed the bid-8 test
+matrix to restore the seed state; services stopped.
+
+**Result.** The journey is feature-complete — all six stages (Search/Triage/Plan/Complete/Manage/
+Learn) are real and wired to `bids.db`. No preview screens remain. CLAUDE.md spine + roadmap updated.
+
+**Next.** Browser-walk Complete/Learn, commit the milestone, or polish. See handover Active task.
+
+## 2026-07-09 (session 7) — Learn (Stage 6): B07 outcome + win-rate + library-feedback loop
+
+**Context.** App ran through Stage 5; the open decision was what next. User confirmed the **browser
+click-through was done and the stages look fine** (clearing the 5-session "0 human-reviewed" thread),
+and chose to **build Learn (Stage 6)** — no external blocker, and it closes the journey loop (outcome
+capture → library feedback). Built as a close parallel to Plan/Manage: new domain module, one new DB
+table, reference/board/GET/PUT endpoints, a real board→detail UI replacing the mock, a demo seed.
+Grounded to the authoritative B07/Outcome vocabulary in `docs/design/data-model.md §6` — not invented.
+
+**Work done.**
+
+- **`src/outcome.py`** (new) — the B07 Outcome rig, mirroring `clarification.py`/`bidplan.py`.
+  `RESULTS` (Awaiting/Won/Not Won/Withdrawn — Awaiting = submitted-but-undecided, the honest
+  pre-decision state), Lessons Learned categories, `LIBRARY_ACTIONS` (promote/refresh/retire).
+  `score_pct()` tolerantly parses "88", "88/100" or a bare 0–100. `library_suggestions()` derives the
+  loop-closing suggestions from the result (Won→promote headline, Not Won→refresh headline) + any
+  lesson tagged with an action. `winrate_summary()` = won/(won+not_won), **withdrawals excluded** from
+  the denominator (not a competitive loss), plus avg score % and by-result counts. `alerts()` nudges
+  on submitted-but-unrecorded + decided-with-unapproved-suggestions (tolerant of both the board-card
+  and raw-view shapes). `python3 src/outcome.py` self-checks the maths.
+- **`src/db.py`** — `bid_outcomes` table (scalars + `lessons` JSON, like `bid_plans.phases`);
+  `BID_OUTCOME_FIELDS`/`BID_OUTCOME_JSON_FIELDS`; `get_bid_outcome`/`upsert_bid_outcome`;
+  `list_bids_for_learn` (joins opportunities + `bid_manage.submitted` + `bid_outcomes`, most-recently-
+  closed first); `bid_outcomes` count in `__main__`. UNIQUE(bid_id) → re-record updates in place.
+- **`src/api.py`** — `import outcome as L`; `/api/learn/reference`, `/api/learn/board` (win-rate +
+  alerts + cards), `GET`/`PUT /api/bids/{id}/outcome`. `_learn_item` tracks `saved` so the win-rate
+  only counts real records (an un-recorded bid sits at default Awaiting, not counted). The PUT
+  validates `result` (→ 400 on unknown) and normalises `lessons` to the known shape.
+- **`web/src/api.js`** — `getLearnReference`/`getLearnBoard`/`getBidOutcome`/`saveBidOutcome`.
+- **`web/src/stages/LearnStage.jsx`** — replaced the mock. Win-rate panel (reuses `.cap`/`.bar`),
+  loop-closing alert strips, a card grid, and a board→detail flow: outcome form (result/score/winner/
+  dates/feedback), an editable Lessons Learned register, a read-only derived-suggestions list
+  (promote ▲ / refresh ↻ / retire ▼), and Save + "Approve library updates" sign-off. Honest `.src-note`:
+  approved updates flow to the Stage-4 library once SharePoint is stood up — nothing is written here.
+- **`web/src/journey.js`** — Learn flipped `design → live` ("Works today (B07)"), asset text updated.
+- **`web/src/styles.css`** — added `.p-wait` (Awaiting pill), `.winrate`/`.wr-facts`, `.lesson-row`/
+  `.lesson-note`, `.km-sub`. Reused the existing `.lib-act`/`.ic-*`/`.outcome-head` mock styles.
+- **`src/seed_learn_demo.py`** (new) — illustrative outcomes on the same demo bids: RTPI Won (88%,
+  promote lessons, submitted), SPM Not Won (61%, lost to a named incumbent, retire lesson), SUMIT left
+  unrecorded (Awaiting). Gives a 50% win rate tracked bid-by-bid. `--clear` resets.
+
+**Verification (honest).** `python3 src/db.py` → `bid_outcomes: 2` (21/3/3/3/3 intact). `python3
+src/outcome.py` self-check: 50% win rate, avg 74. Over real HTTP (`uvicorn` on :8000):
+`/api/learn/reference` 200; `/api/learn/board` 200 — win rate 50% (1W/1L/0WD, 1 awaiting), avg 74%,
+**2 alerts** (after fixing an initial shape mismatch where `alerts()` read `suggestions` but the board
+passes `suggestions_count` — made `alerts()` tolerant of both); GET detail resolves RTPI→3 / SPM→2
+suggestions; `PUT {result:"Maybe"}` → **400**; a valid Withdrawn PUT round-tripped and re-derived its
+suggestion (then removed the stray test row to restore the seed state). `cd web && npm run build` →
+clean, 39 modules. Services stopped.
+
+**Finding — Complete (Stage 4) is NOT hard-blocked.** Investigating the user's "we have a local file
+store" question: `docs/design/architecture.md` designed a **`LocalMirror` → `GraphSharePoint`
+provider seam**, and the real bid export already exists (gitignored) at `knowledge/SharePoint
+Folder/Bids/` — incl. `02 Bid Library/Bid Library Tracker.xlsx` (LibraryItem + expiry register),
+`01 Bid Forms/FOR006 Tender Response Master.xlsx` (ResponseItem schema), and real per-bid `FOR006`
+compliance matrices. A `LocalMirror` over this real export, behind the seam, is the **sanctioned**
+path (the hard rule forbids *faking* SharePoint / *committing* confidential content, not reading a
+real local export). So Complete can be built for real now — the "blocked" framing was overstated.
+Recorded as the recommended next build.
+
+**Next.** Build **Complete (Stage 4)** via `LocalMirror`, or pause. See handover Active task.
+
 ## 2026-07-09 (session 6) — Manage (Stage 5): FOR003 clarification register + pre-flight gate
 
 **Context.** Structure was clean and the app ran through Stage 3; the open decision was which stage
