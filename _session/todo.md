@@ -40,8 +40,15 @@
 
 ## Surfaced / open
 
+- [ ] **Azure + SPA migration — Phase B (DB portability)** (design landed 2026-07-09, session 8) —
+      `docs/design/azure-target.md` is the plan of record: clone TalentGrow's proven Azure blueprint
+      (SWA Free + Functions Flex + Azure SQL free serverless, AAD-only + Managed Identity everywhere).
+      First real code step: port `src/db.py` off raw `sqlite3` to a SQLAlchemy Core dual-mode shim
+      (SQLite local / Azure SQL cloud). Independent of Azure being provisioned — buildable + verifiable
+      locally now. Phase C (auth: MSAL + JWT validation) follows the same way.
 - [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton (`AzureOpenAIProvider`), not
-      implemented. Build when Azure access is provisioned (client requirement).
+      implemented. Now sequenced into the Azure migration's Phase E; build when Azure access is
+      provisioned (client requirement).
 - [ ] **`web/src/StagePlaceholder.jsx` is dead code** — superseded by the per-stage screens; not
       referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose.
 - [ ] **Team capacity (Plan)** — `bidplan.DEFAULT_TEAM_CAPACITY_DAYS` (25) is a tuned placeholder, not a

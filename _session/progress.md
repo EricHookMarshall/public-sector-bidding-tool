@@ -3,6 +3,73 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 8) — Azure + SPA target design
+
+**Context.** The journey app (all 6 stages) has been feature-complete since session 7b, still running
+purely local (FastAPI + SQLite + Vite dev server). The user asked what's needed to move it to Azure
+plus a hosted SPA — specifically whether Azurite emulation is needed, what app registration(s) enable
+SharePoint access, and what else is missing. No code was changed this session; this was pure
+architecture/planning.
+
+**Work done.**
+
+- Explored the backend seams (`src/api.py`, `src/db.py`, `src/library.py`, `src/llm.py`,
+  connectors/`src/sources.py`) and the frontend (`web/`) to ground the plan in what actually exists —
+  confirmed three swappable seams already anticipate this move (LLM, bid library, sources), a
+  whitelisted `.env` loader reading straight from `os.environ`, relative `/api` frontend paths, and a
+  commented-out `AzureOpenAIProvider` skeleton in `llm.py`.
+- Explored `/Users/erichook-marshall/Downloads/Code/talent_grow` — a sibling FWF app already deployed
+  in the **same Entra tenant + resource-group family** (`fwf-rg-talentgrow-dev-westeur`). Its Azure
+  blueprint (SWA Free + Azure Functions Flex Consumption + Azure SQL AAD-only + Managed Identity
+  everywhere, no Key Vault, two path-filtered GitHub Actions workflows) is proven and **live in dev** —
+  the target here is to clone it, adapted for a Python FastAPI backend (via `AsgiFunctionApp`) instead
+  of TalentGrow's Node Functions.
+- Wrote **`docs/design/azure-target.md`** — the design doc: target architecture diagram, answers to
+  the framing questions (Azurite only needed for Blob, not SQL/Graph/Entra; app registrations needed —
+  API app reg + SPA app reg for MSAL, no secret-bearing app reg for SharePoint since Managed Identity +
+  `Sites.Selected` covers it; DB = Azure SQL free serverless offer, ported via a SQLAlchemy Core
+  dual-mode shim so local dev keeps SQLite; Managed Identity + federated OIDC cred for CI/CD), a gap
+  checklist against the current codebase (biggest gaps: no auth anywhere on the API today, `DB_PATH`
+  hardcoded in `db.py:31`, CORS hardcoded to localhost), and a 6-phase path (A design → B DB
+  portability → C auth → D hosting scaffold → E Azure-native providers → F provision/go-live).
+- **Corrected a false record risk**: TalentGrow's own `infra/README.md` carries a self-note from
+  authoring time that the Bicep "had not yet been run through `az bicep build`/`what-if`." The user
+  confirmed this is stale — the Bicep **is** deployed and working in TalentGrow's dev environment.
+  Recorded this correction in cross-session memory so it isn't resurfaced as a live caveat.
+
+- **Cost + retrieval deep-dive (same session).** Web-verified three facts and folded them into the
+  doc's new **Documents & AI retrieval** section: (1) Azure SQL free offer = 100k vCore-sec + 32GB per
+  DB, **10 free DBs/subscription**, lifetime — confirmed cheapest, £0 for this workload; (2) docs stay
+  in **SharePoint, no Blob** (only the unavoidable pennies-cost Functions deployment storage account);
+  (3) AI retrieval without a paid vector store via three seam-swappable options — **A** M365 **Copilot
+  Retrieval API** (`POST /copilot/retrieval`, reuses the existing Copilot index over SP, no embeddings
+  — spike first), **B** native `VECTOR` type in the free Azure SQL DB (GA Jun-2025, embeddings via
+  `AI_GENERATE_EMBEDDINGS`, pennies), **C** cached-text + Full-Text Search (£0 baseline). Cache
+  past-response text into the DB regardless — the substrate for all three.
+- **Local emulation / dev parity (same session).** Added a section splitting the stack into Tier 1
+  (emulate: **SQL Server 2025 container** + Azurite + Functions Core Tools `func start`, optional SWA
+  CLI — de-risks Phases B/D with no Azure spend; container's `VECTOR` type tests Option B too) and
+  Tier 2 (no emulator — Entra/Graph/Copilot/OpenAI use the provider seams + a real free dev-tenant +
+  `LOCAL_AUTH_BYPASS`). Mirrors TalentGrow's local SQL-container + auth-bypass pattern. **Corrected a
+  stale fact:** Azure SQL **Edge retired 30-Sep-2025** — the doc's earlier "Azure SQL Edge / SQL Server
+  container" line now points only at the SQL Server 2025 container (Rosetta needed on Apple Silicon).
+
+**Decisions.** Entra ID sign-in via MSAL (not Easy Auth, matching TalentGrow's pattern of JWT
+validation in app code). Mirror TalentGrow's build pattern (SWA + Functions Flex, not App Service/
+Container Apps). Cheapest/free DB → Azure SQL free serverless offer. SharePoint/Graph access via
+Managed Identity + `Sites.Selected`, not a secret-bearing app registration. **Docs stay in SharePoint,
+no Blob.** AI retrieval: ship the Full-Text baseline, spike the Copilot Retrieval API, hold SQL-native
+vectors as the self-contained fallback. Emulate Tier 1 services locally; use seams for Tier 2.
+
+**Open questions raised.** None new beyond what's already tracked in `docs/design/azure-target.md`'s
+"Open decisions" — timing of Phases D–F depends on when an Azure subscription/tenant admin access is
+available; whether to keep Anthropic (needs one App Setting secret) or switch to Azure OpenAI
+(MI-native, no secret) is deferred to Phase E.
+
+**Next.** Start Phase B (DB portability — SQLAlchemy Core dual-mode for `src/db.py`) when the user
+picks this thread back up; independent of Azure being provisioned, so it can be built and verified
+locally first. See `docs/design/azure-target.md` for the full plan.
+
 ## 2026-07-09 (session 7b) — Complete (Stage 4): FOR006 matrix + LocalMirror library + AI pre-fill
 
 **Context.** After Learn shipped (below), the user asked about using "a local file store" for
