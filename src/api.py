@@ -45,6 +45,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+import bidplan as P
 import config as app_config
 import cpv_catalog
 import db
@@ -506,6 +507,151 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict)):
         db.create_bid_from_qualification(conn, opp_id, qid, bid_name)
 
     payload = _qualification_payload(conn, opp_id)
+    conn.close()
+    return payload
+
+
+# ---- Stage 3: Plan / FOR002 bid plan --------------------------------------
+
+def _num(v):
+    """Coerce a stored TEXT number back to float (SQLite keeps numbers as text in
+    our TEXT columns), or None if blank/unparseable."""
+    if v in (None, ""):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _board_item(row):
+    """One board card from a raw joined bid row (db.list_bids_for_board). Adds the
+    derived fields the board reads: pipeline stage (defaulted for an un-planned
+    bid), the single authoritative clarification deadline, and days-to-deadline."""
+    # Clarification deadline: the opportunity enrichment is authoritative; fall
+    # back to the one captured on the FOR001 qualification. Distinct from the
+    # submission deadline on purpose — losing track of it is the founding failure.
+    clar = row.get("opp_clarification_deadline") or row.get("qual_clarification_deadline")
+    value = _num(row.get("estimated_value")) or _num(row.get("value_max"))
+    return {
+        "bid_id": row["bid_id"],
+        "opportunity_id": row["opportunity_id"],
+        "title": row.get("title") or row.get("bid_name"),
+        "buyer_name": row.get("buyer_name"),
+        "url": row.get("url"),
+        "currency": row.get("currency") or "GBP",
+        # A bid with no saved plan sits in the first column until planned.
+        "pipeline_stage": row.get("pipeline_stage") or P.PIPELINE_STAGES[0],
+        "owner": row.get("owner") or "",
+        "target_submission": row.get("target_submission") or "",
+        "submission_deadline": row.get("submission_deadline"),
+        "clarification_deadline": clar,
+        "days_to_submission": P.days_until(row.get("submission_deadline")),
+        "days_to_clarification": P.days_until(clar),
+        "effort_days": _num(row.get("effort_days")) or 0,
+        "cost": _num(row.get("cost")) or 0,
+        "value": value,
+        "complexity": row.get("complexity"),
+    }
+
+
+@app.get("/api/plan/reference")
+def plan_reference():
+    """FOR002 vocabulary (pipeline stages, phase list, owner roles, statuses,
+    default capacity) for the Plan board + timeline."""
+    return P.reference()
+
+
+@app.get("/api/plan/board")
+def plan_board(capacity_days: float = Query(P.DEFAULT_TEAM_CAPACITY_DAYS,
+                                            description="team bid-writing capacity over the horizon")):
+    """The cross-bid Plan board: every live bid with its pipeline position, owner,
+    deadlines (days remaining) and 'cost to chase', grouped into pipeline columns,
+    plus the team-capacity summary and the computed deadline/owner alerts. This is
+    the highest-value view — it answers the missed-deadline failure directly."""
+    conn = db.connect()
+    db.init_db(conn)
+    rows = db.list_bids_for_board(conn)
+    conn.close()
+
+    items = [_board_item(r) for r in rows]
+    columns = [
+        {"stage": s, "cards": [it for it in items if it["pipeline_stage"] == s]}
+        for s in P.PIPELINE_STAGES
+    ]
+    return {
+        "count": len(items),
+        "columns": columns,
+        "capacity": P.capacity_summary(items, capacity_days),
+        "alerts": P.alerts(items, capacity_days),
+    }
+
+
+def _plan_payload(conn, bid_id):
+    """Assemble the Plan detail for one bid: the plan (saved or seeded blank),
+    whether it's saved, and the bid/opportunity context the timeline shows."""
+    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
+    if bid_row is None:
+        raise HTTPException(status_code=404, detail="bid not found")
+    bid = {k: bid_row[k] for k in bid_row.keys()}
+    opp = _row_to_dict(conn.execute(
+        "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
+    qual = db.get_qualification(conn, bid["opportunity_id"]) or {}
+
+    plan = db.get_bid_plan(conn, bid_id)
+    saved = plan is not None
+    if not saved:
+        plan = {f: None for f in db.BID_PLAN_FIELDS}
+        plan["pipeline_stage"] = P.PIPELINE_STAGES[0]
+        plan["phases"] = P.default_phases()
+    elif not plan.get("phases"):
+        plan["phases"] = P.default_phases()
+
+    clar = opp.get("clarification_deadline") or qual.get("clarification_deadline")
+    return {
+        "bid": {"id": bid_id, "bid_name": bid.get("bid_name"),
+                "stage": bid.get("stage"), "status": bid.get("status")},
+        "opportunity": {
+            "id": opp.get("id"), "title": opp.get("title"),
+            "buyer_name": opp.get("buyer_name"), "url": opp.get("url"),
+            "submission_deadline": opp.get("deadline_date"),
+            "clarification_deadline": clar,
+            "value": _num(qual.get("estimated_value")) or _num(opp.get("value_max")),
+            "currency": opp.get("currency") or "GBP",
+        },
+        "economics": {
+            "effort_days": _num(qual.get("estimated_bid_effort_days")) or 0,
+            "cost": _num(qual.get("estimated_bid_cost")) or 0,
+            "complexity": qual.get("complexity"),
+        },
+        "plan": plan,
+        "saved": saved,
+    }
+
+
+@app.get("/api/bids/{bid_id}/plan")
+def get_bid_plan(bid_id: int):
+    conn = db.connect()
+    db.init_db(conn)
+    payload = _plan_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+@app.put("/api/bids/{bid_id}/plan")
+def save_bid_plan(bid_id: int, body: dict = Body(default_factory=dict)):
+    """Save (create or update) the FOR002 bid plan for a bid: pipeline position,
+    owner, dates, and the phase timeline. Only BID_PLAN_FIELDS are written; the
+    response mirrors GET so the UI can re-render in place."""
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="bid not found")
+
+    fields = {k: v for k, v in body.items() if k in db.BID_PLAN_FIELDS}
+    db.upsert_bid_plan(conn, bid_id, fields)
+    payload = _plan_payload(conn, bid_id)
     conn.close()
     return payload
 

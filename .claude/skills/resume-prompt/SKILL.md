@@ -22,11 +22,11 @@ Read these now (project source of truth, most-load-bearing first):
 
 If any of these is missing, say so and stop — the session state is the thing being resumed; don't
 guess it. Pull deeper context only as the task demands: `README.md` (the journey overview),
-`knowledge/` (FWF context + `VERIFIED_FACTS.md`), `discovery/CLAUDE.md` (the discovery engine's own
-sub-spine), `skills/` (the B00–B07 bid chain), `_session/progress.md` (cold dated history).
+`knowledge/` (FWF context + `VERIFIED_FACTS.md`), the app code under `src/` (backend) and `web/`
+(frontend), `skills/` (the B00–B07 bid chain), `_session/progress.md` (cold dated history).
 
-Note: `discovery/` has its **own** `_session/` and `CLAUDE.md`. When the Active task is discovery-code
-work, read that sub-spine too; the top-level `_session/` holds cross-cutting project state.
+The app runs from the repo root: `uvicorn api:app --app-dir src --port 8000` for the API and
+`cd web && npm run dev` for the UI. `src/bids.db` and `src/.env` live beside the code (gitignored).
 
 ## Step 2 — Orient and report
 

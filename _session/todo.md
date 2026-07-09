@@ -5,34 +5,40 @@
 
 ## Active queue
 
-- [x] **Wire Triage (B01) for real** (2026-07-09, session 3) — FOR001 qualification/bid schema +
-      real form in `TriageStage.jsx`. Storage decision resolved: extended `discovery/bids.db`.
-- [x] **AI pre-fill for Triage** (2026-07-09, session 3) — provider-agnostic seam (Anthropic built,
-      Azure OpenAI planned), FOR001 drafting, default model `claude-haiku-4-5` for cost. Live-verified
-      with a real key. See `discovery/_session/todo.md` for file-level detail.
-- [x] **Settings screen** (2026-07-09, session 3) — `#settings` view for AI provider/model/key,
-      write-only key storage, live Test connection.
-- [ ] **Plan (Stage 3)** — `data-model.md` §3 (`BidPlan`: pipeline position + FOR002 timeline) is
-      fully specified; flagged as the highest-value missing piece. Recommended next.
-- [ ] **User review of the running shell** — click through all 6 stages + the new Triage form and
-      Settings screen, flag issues. Still outstanding after 3 sessions.
+- [x] **Restructure repo — flatten the nested sub-app** (2026-07-09, session 5) — `discovery/` removed;
+      backend → `src/`, frontend → `web/`, brief → `support/`, `requirements.txt` → root; `bids.db` +
+      `.env` moved into `src/`. Duplicated `_session/`/`.claude/`/`CLAUDE.md` consolidated to one set at
+      root. App live-verified running from the new layout.
+- [x] **Plan (Stage 3)** (2026-07-09, session 4) — `src/bidplan.py` (FOR002 rig), `src/db.py`
+      (`bid_plans` table), `src/api.py` (reference/board/GET/PUT), `PlanStage.jsx` (real pipeline board +
+      capacity + FOR002 timeline). `src/seed_plan_demo.py` for reviewable demo data. Live-verified.
+- [x] **Triage (B01) + AI pre-fill + Settings** (2026-07-09, session 3) — FOR001 form wired to `bids.db`;
+      provider-agnostic AI seam (`src/llm.py`, Anthropic live, Azure OpenAI skeleton); `#settings` screen.
+- [ ] **User review of the journey shell** — click through all 6 stages, Triage's form, Settings, and
+      Plan's board + timeline in the browser (<http://localhost:5173>) and flag anything wrong.
+      **Still not observed by a human across 4 sessions** — only build/curl/TestClient verified so far.
+- [ ] **Manage (Stage 5) or Complete (Stage 4)** — next stage to build. Manage (FOR003 clarification log)
+      has no external blocker and directly encodes the clarification-deadline failure; Complete (FOR006)
+      is next in journey order but blocked on live SharePoint/MS Graph. Not decided — see handover.
 
 ## Surfaced / open
 
-- [ ] **Azure OpenAI provider** — the client will need AI drafting on Azure OpenAI, not just
-      Anthropic. Seam is built (`discovery/llm.py`); implementation deferred until Azure access is
-      provisioned outside the session.
-- [ ] **Library-provider seam** — one interface for the bid library; `LocalMirror` now → `GraphSharePoint`
-      later (see `docs/design/architecture.md`). `data-model.md` recommends seeding `LibraryItem` by
-      parsing the mirrored `knowledge/SharePoint Folder/` trackers now (proven working this session) —
-      decide when building the Complete stage.
-- [ ] **HubSpot integration** — future feature (pipeline ↔ CRM). Noted, not scoped.
-- [ ] **Cleanse FWF strategy docs** (`knowledge/01–03`) — strip `.docx` export artefacts. Low priority.
+- [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton (`AzureOpenAIProvider`), not
+      implemented. Build when Azure access is provisioned (client requirement).
+- [ ] **`web/src/StagePlaceholder.jsx` is dead code** — superseded by the per-stage screens; not
+      referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose.
+- [ ] **Team capacity (Plan)** — `bidplan.DEFAULT_TEAM_CAPACITY_DAYS` (25) is a tuned placeholder, not a
+      real FWF number, and isn't persisted — only overridable per-request. Needs a real source.
+- [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same
+      notice on FTS and CF) not yet handled. Low priority given the value-band split.
 
-## Parked / optional
+## Parked / optional polish
 
-- [ ] **Third+ discovery source** — `discovery/sources.py` makes it a one-connector add (Scotland / Wales / TED).
-- [ ] **Swap RM6263 → DOS7** in the recovery-plan alternative-framework shortlist (per VERIFIED_FACTS.md).
+- [ ] **CPV label badge on cards** — `src/cpv_catalog.py` has descriptions; could show a labelled chip.
+- [ ] **Third API source** — `src/sources.py` registry makes it a one-connector-plus-one-line add
+      (TED, Scotland eTender, Crown Commercial Service).
+- [ ] **Lifecycle badge on cards** — `stale`/`closed` flag is in the filter + detail view, not the card.
+- [ ] **CPV scope widen** — currently IT/software only. Widen `TARGET_CPV` + `src/cpv_catalog.py`.
 
 ## Done
 

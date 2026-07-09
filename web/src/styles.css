@@ -620,3 +620,61 @@ header.top {
 }
 .test-result.ok { color: var(--good); background: var(--good-soft); border-color: transparent; }
 .test-result.bad { color: var(--crit); background: var(--crit-soft); border-color: transparent; }
+
+/* --- Stage 3: Plan (pipeline board + capacity + FOR002 timeline) -----------
+   Reuses the board/kcard/cap/alert-strip tokens the mock introduced; the
+   additions below are the real-data extras (multi-column board, deadline
+   badges, capacity footer, the per-bid timeline editor). */
+.plan { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.alert-list { display: flex; flex-direction: column; gap: 6px; }
+.alert-strip.warn {
+  background: var(--warn-soft); color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+/* Six pipeline columns; scroll horizontally rather than crush on narrow views. */
+.board.plan-board { grid-template-columns: repeat(6, minmax(140px, 1fr)); overflow-x: auto; }
+@media (max-width: 760px) { .board.plan-board { grid-template-columns: repeat(3, minmax(140px, 1fr)); } }
+
+/* kcard is a <button> here — reset it and make the whole card clickable. */
+.plan-card {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit; margin-bottom: 8px;
+}
+.plan-card:hover { border-color: var(--accent); }
+.who.none { background: var(--crit-soft); color: var(--crit); }
+.plan-deadlines { margin-top: 6px; }
+.dl { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
+.dl-ok { color: var(--muted); background: var(--panel-2); }
+.dl-warn { color: var(--warn); background: var(--warn-soft); }
+.dl-crit { color: var(--crit); background: var(--crit-soft); }
+
+/* Capacity footer (the input + the over-committed message). */
+.cap.is-over { border-color: color-mix(in srgb, var(--crit) 40%, var(--line)); }
+.cap-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.cap-warn { color: var(--crit); font-weight: 600; }
+.cap-input { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--faint); }
+.cap-input input { width: 56px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font-family: var(--mono); }
+
+/* Per-bid plan detail. */
+.plan-detail { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.pd-head { display: flex; align-items: center; gap: 12px; }
+.pd-head h3 { margin: 0; font-size: 1.05rem; flex: 1; }
+.pd-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.pd-facts .stat .v.sm { font-size: 14px; font-weight: 640; letter-spacing: 0; }
+.pd-facts .stat.stat-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); }
+
+/* FOR002 phase timeline — a compact editable grid. */
+.timeline { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
+.tl-row {
+  display: grid; grid-template-columns: 1.4fr 1fr 0.9fr 0.9fr 1fr 1.6fr; gap: 6px;
+  align-items: center; min-width: 640px;
+}
+.tl-row.tl-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; padding: 0 2px 2px; }
+.tl-row input, .tl-row select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; background: var(--paper); color: var(--ink); font-family: inherit; min-width: 0; }
+.tl-phase { font-size: 12px; font-weight: 600; padding: 4px 2px; }
+/* Status tint on the phase row's left edge. */
+.tl-row:not(.tl-head) { border-left: 3px solid transparent; padding-left: 5px; border-radius: 3px; }
+.tl-row.st-in-progress { border-left-color: var(--accent); }
+.tl-row.st-done { border-left-color: var(--good); }
+.tl-row.st-blocked { border-left-color: var(--crit); }

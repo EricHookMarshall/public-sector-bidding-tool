@@ -16,7 +16,7 @@
 ## Data & SharePoint
 
 - The bid library must eventually live in **SharePoint** (3 libraries: Submissions / Approved Answer
-  Bank / Evidence Register — see `skills/bid_skills_v2/SHAREPOINT.md`).
+  Bank / Evidence Register — see `skills/SHAREPOINT.md`).
 - MS Graph / SharePoint is **not available in this environment**, and may not be soon.
 - **Approach: a "library provider" seam** — one interface the app reads/writes the bid library
   through, with swappable backends (same pattern as the discovery `sources.py` registry already in the repo):

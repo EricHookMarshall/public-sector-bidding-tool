@@ -91,6 +91,38 @@ export async function aiDraftQualification(oppId) {
   return res.json();
 }
 
+// ---- Stage 3: Plan / FOR002 bid plan ----
+
+// FOR002 vocabulary (pipeline stages, phase list, owner roles, statuses).
+export const getPlanReference = () => getJSON("/api/plan/reference");
+
+// The cross-bid Plan board: bids grouped into pipeline columns, plus the
+// team-capacity summary and the computed deadline/owner/capacity alerts.
+export const getPlanBoard = (capacityDays) =>
+  getJSON(`/api/plan/board${capacityDays ? `?capacity_days=${capacityDays}` : ""}`);
+
+// One bid's FOR002 plan (pipeline position + phase timeline), seeded if unsaved,
+// with the bid/opportunity context the timeline shows.
+export const getBidPlan = (bidId) => getJSON(`/api/bids/${bidId}/plan`);
+
+// Save a bid's plan (pipeline position, owner, dates, phases). Returns GET shape.
+export async function saveBidPlan(bidId, fields) {
+  const res = await fetch(`/api/bids/${bidId}/plan`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ---- Settings: LLM config ----
 
 async function sendJSON(url, method, body) {

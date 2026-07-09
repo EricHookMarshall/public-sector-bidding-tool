@@ -3,6 +3,104 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 5) — Repo restructured: flattened the nested sub-app
+
+**Context.** A folder rename dropped the chat history; on re-orientation the user flagged that the
+`discovery/` sub-folder had grown into the whole app yet still carried its own duplicated
+project-discipline files (`_session/`, `.claude/`, `CLAUDE.md`) alongside the top-level set — and
+that the name "discovery" no longer reflected a 6-stage bidding app. Their other projects
+(`talent_grow`, `wa_poc`, `BFSIAgent`) all use one `CLAUDE.md` + `README.md` + `_session/` at the
+repo root with code in `src/`/`web/`, never a nested self-contained sub-project. Asked which layout;
+user chose **backend under `src/`, `web/` at root**.
+
+**Work done.**
+- Moved `discovery/*.py` → `src/`, `discovery/web` → `web/`, `discovery/support` → `support/`,
+  `discovery/requirements.txt` → repo root. `bids.db`, `.env`, `.env.example` moved into `src/`
+  because `db.py`/`config.py`/`api.py` resolve them relative to `__file__` — they must sit beside
+  the code. Imports left untouched (all bare, e.g. `import db`): the app runs via
+  `uvicorn api:app --app-dir src` and scripts via `python3 src/x.py`, both of which put `src/` on
+  `sys.path` — zero import edits, zero code churn.
+- Consolidated the duplicated discipline: deleted stale `discovery/.claude` (root `.claude` is the
+  current project-wide set — the discovery copies were PoC-era), merged `discovery/CLAUDE.md`'s
+  app/record-shape detail into root `CLAUDE.md`, merged `discovery/_session/` (session-4 hot state)
+  into this top-level triad. Repointed root `.gitignore` `discovery/bids.db` → `src/bids.db`
+  (+ `-wal`/`-shm`). Fixed `discovery/` path references in `CLAUDE.md`, `README.md`, the
+  `_session/` triad, the `.claude/skills` and `docs/design/data-model.md`.
+- `discovery/` folder removed entirely (`rmdir` clean).
+
+**Verification — real, from the new layout.**
+- `python3 src/db.py` → `DB ready at …/src/bids.db`, `opportunities: 21`, `qualifications: 3`,
+  `bids: 3`, `bid_plans: 3` — all data intact, DB found via `__file__`-relative path.
+- `import api` clean (bare imports resolve with `src/` on path); `.env` loads the Anthropic key from
+  `src/.env` without an explicit export.
+- Live HTTP: `uvicorn api:app --app-dir src --port 8011` → `/api/meta` 200 and the session-4
+  `/api/plan/board` 200. Server killed after.
+
+**Decisions.** Flat repo, no nested sub-app — one `CLAUDE.md` + one `_session/` triad + one
+`.claude/` at root, matching the user's other projects. Backend grouped under `src/` (keeps the root
+tidy next to `skills/`/`knowledge/`/`docs/`); `bids.db` + `.env` travel with the code in `src/`;
+`--app-dir src` chosen over converting to a package so imports stay untouched.
+
+**Open questions raised.** None new. Carried forward: which stage next (Manage vs. Complete); the
+running shell is still unreviewed by a human in a browser (4 sessions now).
+
+**Next.** Pick Manage vs. Complete for the next stage — or get the user's first browser
+click-through of the shell (Search + Triage + Settings + Plan all real and server-side-verified).
+
+---
+
+## 2026-07-09 (session 4) — Plan (Stage 3) built: pipeline board + capacity + FOR002 timeline
+
+**Context.** Resumed via `/resume-prompt`. The handover offered a fork: Plan (Stage 3, "highest-value
+missing piece" per `journey.js`) vs. extending Complete with the AI-drafting pattern from session 3.
+Asked the user directly; they chose **Plan**.
+
+**Work done.** (Paths below are pre-restructure; the files now live under `src/` and `web/`.)
+- `bidplan.py` (new) — FOR002 domain module mirroring `qualification.py`: the fixed 15-phase timeline
+  (from `docs/design/data-model.md` §3b), 6 pipeline stages, owner roles, phase statuses. Two pure
+  computations: `capacity_summary()` (committed FOR001 bid-effort vs a team-capacity default) and
+  `alerts()` (deadline/owner/capacity warnings, crit-before-warn) — including the clarification-deadline
+  alert, the direct encoding of the G-Cloud 15 founding failure. Default team capacity 25 person-days
+  (a tuned placeholder, flagged as needing a real source).
+- `db.py` — new `bid_plans` table (`UNIQUE(bid_id)`, JSON `phases`), `get_bid_plan`/`upsert_bid_plan`
+  (same pattern as qualifications), `list_bids_for_board` (joins bid → opportunity → qualification).
+  Migration re-ran against the live DB: `opportunities: 21` unchanged, idempotent.
+- `api.py` — `GET /api/plan/reference`, `GET /api/plan/board` (`?capacity_days=` override; server
+  computes days-to-deadline, groups into pipeline columns, returns capacity + alerts),
+  `GET`/`PUT /api/bids/{id}/plan` (seeds a blank 15-phase timeline if unplanned).
+- `web/src/api.js`, `web/src/stages/PlanStage.jsx` — real board (clickable cards, deadline badges,
+  editable capacity input) replacing the mock; a per-bid FOR002 timeline detail view. Reused the
+  mock's board/kcard/cap/alert-strip CSS; added board/badge/timeline CSS to `web/src/styles.css`.
+- `web/src/journey.js` — Plan flipped `state: "gap" → "live"`.
+- `seed_plan_demo.py` (new) — idempotent, `--clear`-resettable demo seeder: drives 3 real stored
+  opportunities through the genuine Triage "Go" path so the board has real data to review. Never
+  touches the underlying opportunities.
+
+**Verification — real, not asserted.**
+- `python3 db.py`: migration clean, counts correct before/after.
+- FastAPI `TestClient`: full Triage→bid→Plan round trip (Go creates a bid, board groups it, GET seeds
+  a blank plan, PUT persists a pipeline move + phase edit, board re-renders), cleaned back to `21/0/0/0`.
+- Live `curl` against a running `uvicorn` with the demo seed: 3 bids grouped into 3 columns; capacity
+  `28.5/25.0 → over` (RTPI in *Submitted* correctly excluded via `PIPELINE_DONE` filtering); alert
+  stack led with over-commitment, then SUMIT's clarification-deadline-in-2d (crit), then a no-owner
+  warning that **auto-downgraded** once an owner was assigned via a live PUT — confirms alerts are
+  computed reactively, not cached.
+- `npm run build` clean. Vite dev server verified serving (`200`) and proxying `/api` (`200`).
+- Demo data reset to a clean state (`--clear` + reseed) before session end.
+
+**Decisions.** Plan chosen over extending Complete (user's direct choice). Demo-data strategy for
+reviewable-but-undecided stages: a small, clearly-labelled, idempotent, resettable seed script rather
+than an empty board or hand-edited DB. Team capacity kept as a request-time override (not persisted) —
+sufficient for a PoC demo, flagged as needing a real source.
+
+**Open questions raised.** Which stage next: Manage (Stage 5, no external blocker, on-thesis) vs.
+Complete (Stage 4, next in order but blocked on live SharePoint/MS Graph). Team capacity default needs
+a real source.
+
+**Next.** Pick Manage vs. Complete — or get the user's first browser click-through of the shell.
+
+---
+
 ## 2026-07-09 (session 3) — Triage (B01) live + AI pre-fill + Settings screen
 
 **Context.** Continued straight from session 2's Active task ("wire Triage for real"), then the
@@ -12,8 +110,9 @@ OpenAI later, so the design had to plan for that swap up front. After it shipped
 cost as a factor and asked to move off the default (more expensive) model, then asked for a
 Settings screen to manage the AI config day-to-day.
 
-**Work done.** Full file-level detail lives in `discovery/_session/progress.md` (this session's
-entry there). Summary: (1) Triage — FWF's real FOR001 qualification form (go/no-go RAG scoring +
+**Work done.** (A more granular version of this entry lived in the old `discovery/_session/` log,
+now folded away by the session-5 restructure — preserved in git history.) Summary: (1) Triage —
+FWF's real FOR001 qualification form (go/no-go RAG scoring +
 complexity→cost rig, verified against the source spreadsheet's totals exactly) wired to two new
 `bids.db` tables and a real form in `TriageStage.jsx`, replacing the mock; a Go decision now
 promotes an opportunity into a `Bid`. (2) AI pre-fill — a provider-agnostic seam (`discovery/llm.py`)
@@ -40,8 +139,8 @@ still to build (client will need it, timing depends on their Azure provisioning)
 shell is still unreviewed by a human in a browser, now 3 sessions running.
 
 **Next.** Plan (Stage 3) — `docs/design/data-model.md` §3 is fully specified and the app itself
-flags it as the highest-value missing piece. See `discovery/_session/handover.md` for the
-file-level starting point.
+flags it as the highest-value missing piece. (Built the following session — see the session-4
+entry above.)
 
 ---
 
@@ -65,8 +164,8 @@ could be derived from it to shape the data model — the open decision the previ
   `clarification_deadline` and credential `expiry_date` as first-class fields — both tie directly to
   the admin-failure story that motivates this whole project.
 - User said "go ahead and start" — applied the first slice (§1, `Opportunity` extension) to
-  `discovery/db.py`. See `discovery/_session/progress.md` (2026-07-09, session 2) for the file-level
-  detail and verification.
+  `db.py` (then `discovery/db.py`, now `src/db.py`). File-level detail preserved in git history
+  (the old `discovery/_session/` log, folded away by the session-5 restructure).
 - **Found and fixed a real exposure**: the copied SharePoint folder (financials, insurance certs,
   personal CVs, contract examples) was untracked and unignored in git — a direct hit against the
   CLAUDE.md hard rule on client-confidential content. Added `knowledge/SharePoint Folder/` to
@@ -96,7 +195,8 @@ chose **app shell first**. Built it as an extension of the discovery front end p
 `docs/design/architecture.md`. Mid-session feedback ("not enough mock data for future stages to get a
 clear picture") drove a second pass adding populated mock screens.
 
-**Work done.** All under `discovery/web/` (full file-level detail in `discovery/_session/progress.md`):
+**Work done.** All under the frontend (then `discovery/web/`, now `web/`; more granular detail in
+git history via the old `discovery/_session/` log):
 new `journey.js` (6-stage single source of truth), `App.jsx` rewritten into the journey shell (top bar,
 stepper nav, hash routing, ←/→ keys, theme toggle), new `stages/` dir (SearchStage = real search UI
 lifted out; MockStage + ScopeCard shared layout; Triage/Plan/Complete/Manage/Learn = populated

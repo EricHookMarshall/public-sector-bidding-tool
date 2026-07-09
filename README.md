@@ -8,9 +8,10 @@ work), and **manage** them through to award and learning.
 Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group. See
 [`knowledge/`](knowledge/) for the business context and why this exists.
 
-> **Status:** early consolidation. The discovery engine works; the bid-lifecycle
-> skills are designed but not yet grounded to live data. This repo brings the
-> pieces into one place and defines the path between them.
+> **Status:** the app is a working 6-stage journey shell. Search, Triage (with
+> AI pre-fill) and Plan are built and wired to live data; Complete, Manage and
+> Learn are labelled preview screens. The bid-lifecycle skills (`skills/`) are
+> designed but not yet grounded to live data.
 
 ---
 
@@ -22,16 +23,16 @@ Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group. See
 
 | Stage | What the user does | Lives in | State |
 |---|---|---|---|
-| **1. Search** | Find relevant opportunities across sources | [`discovery/`](discovery/) | ✅ Working — Find a Tender + Contracts Finder |
-| **2. Triage** | Bid / no-bid with clear reasons | [`skills/`](skills/) B01 | 🟡 Designed, not wired to discovery |
-| **3. Plan** | Which bids, when, with what capacity | — | 🔴 Missing — the portfolio/calendar layer |
-| **4. Complete** | Matrix → retrieve → draft → review → preflight | [`skills/`](skills/) B02–B05 | 🟡 Designed; needs live doc I/O + SharePoint |
-| **5. Manage** | Clarifications, deadlines, sign-off | [`skills/`](skills/) B06 | 🟡 Designed; needs portal/mailbox link |
-| **6. Learn** | Feed outcomes back into the library | [`skills/`](skills/) B07 | 🟡 Designed; depends on stage 4 |
+| **1. Search** | Find relevant opportunities across sources | [`src/`](src/) + [`web/`](web/) | ✅ Live — Find a Tender + Contracts Finder |
+| **2. Triage** | Bid / no-bid with clear reasons | [`src/`](src/) + [`web/`](web/) | ✅ Live — real FOR001 form + AI pre-fill |
+| **3. Plan** | Which bids, when, with what capacity | [`src/`](src/) + [`web/`](web/) | ✅ Live — pipeline board + capacity + FOR002 timeline |
+| **4. Complete** | Matrix → retrieve → draft → review → preflight | [`skills/`](skills/) B02–B05 | 🟡 Preview screen; needs live doc I/O + SharePoint |
+| **5. Manage** | Clarifications, deadlines, sign-off | [`skills/`](skills/) B06 | 🟡 Preview screen; needs portal/mailbox link |
+| **6. Learn** | Feed outcomes back into the library | [`skills/`](skills/) B07 | 🟡 Preview screen; depends on stage 4 |
 
-The **gap** this project closes: today the two halves (discovery ↔ bid skills)
-don't share a data model or a handoff, there's no planning layer, and the AI
-pre-fill has no live **SharePoint** library behind it yet.
+The **gap** this project still closes: the AI pre-fill for Complete has no live
+**SharePoint** library behind it yet, and the `skills/` B00–B07 chain isn't yet
+grounded to the app's live data.
 
 ---
 
@@ -39,32 +40,38 @@ pre-fill has no live **SharePoint** library behind it yet.
 
 ```
 .
-├── discovery/     # Working PoC: pull → normalise → store → filter → display opportunities
-│   ├── *.py       #   FastAPI + SQLite connectors (Find a Tender, Contracts Finder)
-│   ├── web/       #   React/Vite UI (live search, filters, CSV export)
-│   └── CLAUDE.md  #   Project spine for the discovery engine
+├── src/           # App backend: FastAPI + SQLite. Connectors (Find a Tender,
+│   │              #   Contracts Finder) → normalise → bids.db; Triage (FOR001)
+│   │              #   + Plan (FOR002) logic + AI pre-fill seam.
+│   ├── bids.db    #   Local SQLite store (gitignored, rebuildable)
+│   └── .env       #   Local secrets — Anthropic key etc. (gitignored)
+├── web/           # App frontend: React/Vite — the 6-stage journey shell
+├── support/       # The PoC brief + the API catalogue the record shape came from
 ├── skills/        # Bid-lifecycle skill chain B00–B07 (Claude skills + helper scripts)
-│   └── bid_skills_v2/  #   Current version; targets a 3-library SharePoint bid store
+│   ├── b00…b07/   #   One folder per skill (SKILL.md + scripts/ + references/)
+│   ├── INDEX.md · STANDARD.md · SHAREPOINT.md  #   Chain map, writing standard, 3-library architecture
+│   └── tender_sweep/  #   Standalone sweep skill (me / team variants)
 ├── knowledge/     # The "why": FWF situation + UK procurement reference
 │   ├── 01-current-position.md      # G-Cloud 15 disregard, EFS gap, handover state
 │   ├── 02-recovery-plan.md         # 3-horizon recovery plan (Arobs PCG, alt frameworks)
 │   ├── 03-knowledge-base.md        # UK procurement primer (PA23, G-Cloud, EFS, PCG)
 │   ├── 04-skills-review-2026-07-08.md  # Review that shaped the B00–B07 skill design
 │   └── VERIFIED_FACTS.md           # ✅ Live-verified facts + sources (re-check before use)
-└── README.md      # This file — the spine
+├── docs/          # Design docs (architecture, data-model, journey mockups)
+├── CLAUDE.md      # The working spine (read this first)
+└── README.md      # This file — the outward-facing spine
 ```
 
-## Running the discovery engine
+## Running the app
 
 ```bash
-cd discovery
-python3 db.py                              # create/inspect bids.db
-python3 find_tender_filter.py 120          # fetch → normalise → upsert
-uvicorn api:app --reload --port 8000       # JSON API
-cd web && npm install && npm run dev       # UI at http://localhost:5173
+python3 src/db.py                                   # create/inspect src/bids.db
+python3 src/find_tender_filter.py 120               # fetch → normalise → upsert
+uvicorn api:app --app-dir src --reload --port 8000  # JSON API (src/ on the path)
+cd web && npm install && npm run dev                # UI at http://localhost:5173
 ```
 
-`bids.db` and `node_modules/` are gitignored (rebuildable from the connectors).
+`src/bids.db`, `src/.env` and `node_modules/` are gitignored (rebuildable / secret).
 
 ---
 

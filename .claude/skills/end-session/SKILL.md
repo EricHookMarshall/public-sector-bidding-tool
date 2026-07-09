@@ -13,11 +13,11 @@ This mirrors the **End-of-session checklist** in `_session/handover.md` and the 
 
 ## Step 1 — Stop running services
 
-Harmless if nothing is running (the only long-running services are in the discovery engine):
+Harmless if nothing is running (the only long-running services are the app's API + UI):
 
 ```bash
-pkill -f "uvicorn api:app"   # discovery JSON API
-pkill -f vite                # discovery web UI
+pkill -f "uvicorn api:app"   # JSON API (run with --app-dir src)
+pkill -f vite                # web UI
 ```
 
 ## Step 2 — Gather what actually happened this session
@@ -25,8 +25,8 @@ pkill -f vite                # discovery web UI
 Before writing anything, reconstruct the session honestly:
 
 - What changed on disk (files edited, added, deleted, moved)?
-- Verification state: what did you actually run, and what was the real result? For discovery code:
-  imports/`python3 db.py`, a live connector run, or the Vite build. For docs/skills: nothing to run —
+- Verification state: what did you actually run, and what was the real result? For app code:
+  imports/`python3 src/db.py`, a live connector run, or the Vite build. For docs/skills: nothing to run —
   say so. **Quote real results. Never claim green you didn't observe**; if something failed or was
   skipped, say so.
 - Decisions made, and any new open questions.

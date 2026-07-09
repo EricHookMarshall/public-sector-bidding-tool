@@ -142,6 +142,28 @@ BID_FIELDS = [
     "updated_at",
 ]
 
+# --- Stage 3 (Plan) --------------------------------------------------------
+# The FOR002 BidPlan — one record per bid, hung off bid_id. Two parts (see
+# docs/design/data-model.md §3 and bidplan.py):
+#   (a) pipeline position — where the bid sits on the board + its owner.
+#   (b) FOR002 phase timeline — the fixed ordered phase list (JSON), giving a
+#       real critical path/calendar.
+# Kept OUTSIDE the connector path, like qualifications: only the Plan write path
+# (upsert_bid_plan) touches it. All TEXT, text-tolerant per the PoC. `phases`
+# holds the repeating group [{phase, owner, start_date, completion_date, status,
+# comments}] as JSON text.
+BID_PLAN_FIELDS = [
+    "pipeline_stage",     # Qualifying / Kick-off / Drafting / In review / Submitted / Closed
+    "owner",              # bid owner (a FOR002 owner role or a person)
+    "start_date",         # planned bid-work start
+    "target_submission",  # internal target (may be earlier than the hard deadline_date)
+    "phases",             # JSON: the FOR002 timeline [{phase, owner, ...}]
+    "notes",
+]
+
+# JSON-valued bid-plan columns — encoded on write, decoded on read.
+BID_PLAN_JSON_FIELDS = {"phases"}
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -157,6 +179,7 @@ def connect(db_path=DB_PATH):
 def init_db(conn):
     cols = ",\n        ".join(f"{f} TEXT" for f in COMMON_FIELDS)
     qual_cols = ",\n            ".join(f"{f} TEXT" for f in QUALIFICATION_FIELDS)
+    plan_cols = ",\n            ".join(f"{f} TEXT" for f in BID_PLAN_FIELDS)
     conn.executescript(
         f"""
         CREATE TABLE IF NOT EXISTS opportunities (
@@ -200,6 +223,18 @@ def init_db(conn):
             UNIQUE(opportunity_id),
             FOREIGN KEY(opportunity_id) REFERENCES opportunities(id),
             FOREIGN KEY(qualification_id) REFERENCES qualifications(id)
+        );
+
+        -- Stage 3 (Plan): one FOR002 bid plan per bid. UNIQUE on bid_id so
+        -- re-planning updates in place rather than duplicating.
+        CREATE TABLE IF NOT EXISTS bid_plans (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            bid_id     INTEGER NOT NULL,
+            created_at TEXT,
+            updated_at TEXT,
+            {plan_cols},
+            UNIQUE(bid_id),
+            FOREIGN KEY(bid_id) REFERENCES bids(id)
         );
         """
     )
@@ -282,12 +317,17 @@ def update_enrichment(conn, opp_id, fields):
     return len(cols)
 
 
+# JSON-valued columns across all stage tables — decoded on read by _row_dict.
+_JSON_FIELDS = QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS
+
+
 def _row_dict(row):
-    """sqlite3.Row → plain dict (or None), decoding JSON qualification fields."""
+    """sqlite3.Row → plain dict (or None), decoding JSON stage fields
+    (qualification delivery_team/RAG, bid-plan phases)."""
     if row is None:
         return None
     rec = {k: row[k] for k in row.keys()}
-    for f in QUALIFICATION_JSON_FIELDS:
+    for f in _JSON_FIELDS:
         if isinstance(rec.get(f), str) and rec[f]:
             try:
                 rec[f] = json.loads(rec[f])
@@ -389,6 +429,97 @@ def create_bid_from_qualification(conn, opp_id, qualification_id, bid_name, stag
     return bid_id
 
 
+def get_bid_plan(conn, bid_id):
+    """The FOR002 bid plan for one bid, or None if not planned yet. JSON `phases`
+    comes back decoded."""
+    row = conn.execute(
+        "SELECT * FROM bid_plans WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def upsert_bid_plan(conn, bid_id, fields):
+    """Insert or update the FOR002 bid plan for one bid.
+
+    Keyed on bid_id (one plan per bid — re-planning updates in place). Only keys
+    in BID_PLAN_FIELDS are written, so this can't smuggle in other columns. The
+    JSON `phases` field may be passed as a list and is encoded here. Returns the
+    bid_plan row id.
+    """
+    rec = {f: fields[f] for f in BID_PLAN_FIELDS if f in fields}
+    for f in BID_PLAN_JSON_FIELDS:
+        if isinstance(rec.get(f), (dict, list)):
+            rec[f] = json.dumps(rec[f], ensure_ascii=False)
+
+    existing = conn.execute(
+        "SELECT id FROM bid_plans WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    now = now_iso()
+
+    if existing:
+        if rec:
+            assignments = ", ".join(f"{c} = ?" for c in rec)
+            conn.execute(
+                f"UPDATE bid_plans SET {assignments}, updated_at = ? WHERE bid_id = ?",
+                [rec[c] for c in rec] + [now, bid_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE bid_plans SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
+            )
+        pid = existing["id"]
+    else:
+        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO bid_plans ({', '.join(cols)}) VALUES ({placeholders})",
+            [bid_id, now, now, *rec.values()],
+        )
+        pid = conn.execute(
+            "SELECT id FROM bid_plans WHERE bid_id = ?", (bid_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return pid
+
+
+def list_bids_for_board(conn):
+    """Every bid joined with the fields the Plan board needs — from the
+    opportunity (title, buyer, the two deadlines, value), the qualification (the
+    'cost to chase' economics), and the bid plan (pipeline position, owner). Raw
+    values only; api.py computes the derived days-to-deadline / capacity. Ordered
+    by submission deadline (soonest first) so the board reads urgency-first."""
+    rows = conn.execute(
+        """
+        SELECT
+            b.id               AS bid_id,
+            b.opportunity_id   AS opportunity_id,
+            b.bid_name         AS bid_name,
+            b.status           AS bid_status,
+            o.title            AS title,
+            o.buyer_name       AS buyer_name,
+            o.deadline_date    AS submission_deadline,
+            o.clarification_deadline AS opp_clarification_deadline,
+            o.value_max        AS value_max,
+            o.currency         AS currency,
+            o.url              AS url,
+            q.estimated_value  AS estimated_value,
+            q.estimated_bid_effort_days AS effort_days,
+            q.estimated_bid_cost        AS cost,
+            q.clarification_deadline    AS qual_clarification_deadline,
+            q.complexity       AS complexity,
+            p.pipeline_stage   AS pipeline_stage,
+            p.owner            AS owner,
+            p.target_submission AS target_submission
+        FROM bids b
+        JOIN opportunities o ON o.id = b.opportunity_id
+        LEFT JOIN qualifications q ON q.opportunity_id = b.opportunity_id
+        LEFT JOIN bid_plans p ON p.bid_id = b.id
+        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        """
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def record_source_run(conn, source, source_endpoint, scanned, kept):
     """Stamp when a source was last checked and how much it yielded."""
     conn.execute(
@@ -419,5 +550,7 @@ if __name__ == "__main__":
         print(f"  {s}: {n}")
     quals = conn.execute("SELECT COUNT(*) FROM qualifications").fetchone()[0]
     bids = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
+    plans = conn.execute("SELECT COUNT(*) FROM bid_plans").fetchone()[0]
     print(f"qualifications: {quals}")
     print(f"bids: {bids}")
+    print(f"bid_plans: {plans}")

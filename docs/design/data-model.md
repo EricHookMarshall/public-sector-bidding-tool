@@ -32,7 +32,7 @@ Submission`.
 
 ## Entities
 
-### 1. Opportunity  (SEARCH)  — *extends the existing `discovery/db.py` record*
+### 1. Opportunity  (SEARCH)  — *extends the existing `src/db.py` record*
 
 Discovery already stores ~18 fields (`source`, `ocid`, `title`, `buyer_name`,
 `cpv_codes`, `value_max`, `deadline_date`, `url`, …). `FOR004` shows the extra
@@ -189,7 +189,7 @@ Opportunity ──(Qualification: Go)──▶ Bid
 
 ## Open questions
 
-- **Storage**: extend `discovery/bids.db` (SQLite) with these tables, or a
+- **Storage**: extend `src/bids.db` (SQLite) with these tables, or a
   separate store? Recommend: same DB, new tables, `Opportunity` FK-linked — keeps
   one local file per the PoC boundary.
 - **Enum vs free-text**: FWF's forms mix both (e.g. pipeline stages are ad-hoc

@@ -77,9 +77,9 @@ export const STAGES = [
     n: "03",
     t: "Plan",
     d: "Which bids, when",
-    state: "gap",
-    stateLabel: "Missing — highest value",
-    maps: "New — no equivalent exists yet",
+    state: "live",
+    stateLabel: "Works today (FOR002)",
+    maps: "FOR002 BidPlan + Tender Pipeline — pipeline board + capacity",
     component: "plan",
     scope: {
       does: "Shows every live bid on one board with its stage, owner, deadline and effort — plus whether the team actually has the days to deliver what's committed.",
@@ -98,8 +98,8 @@ export const STAGES = [
       ],
     },
     asset: {
-      state: "gap",
-      txt: "<b>Nothing exists yet</b> — this is the highest-value new piece and directly answers the missed-deadline failure that killed the last bid.",
+      state: "live",
+      txt: "<b>Wired to real data</b> — every bid promoted by a Triage “Go” lands on a live pipeline board reading <code>bids.db</code>: pipeline column, owner, both deadlines (days remaining) and the FOR001 “cost to chase”. The capacity bar sums committed effort against the team’s days, and the alerts fire on the real clarification/submission deadlines. Click a bid for its FOR002 phase timeline.",
     },
   },
   {

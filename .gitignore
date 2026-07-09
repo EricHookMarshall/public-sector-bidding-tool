@@ -4,6 +4,12 @@
 .idea/
 .vscode/
 
+# --- Skills: keep as extracted folders, never commit packaged bundles ---
+# The B-series skills live as folders (SKILL.md + scripts/ + references/). The
+# zipped/.skill bundles are build artifacts — extract them, don't track them.
+skills/**/*.zip
+skills/**/*.skill
+
 # --- Python ---
 __pycache__/
 *.py[cod]
@@ -24,7 +30,9 @@ npm-debug.log*
 knowledge/SharePoint Folder/
 
 # SQLite PoC database is rebuildable from the connectors; keep it out of git.
-discovery/bids.db
+src/bids.db
+src/bids.db-wal
+src/bids.db-shm
 *.sqlite
 *.sqlite3
 .env
