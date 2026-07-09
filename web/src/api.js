@@ -123,6 +123,39 @@ export async function saveBidPlan(bidId, fields) {
   return res.json();
 }
 
+// ---- Stage 5: Manage / FOR003 CQLOG + pre-flight gate ----
+
+// FOR003 vocabulary (clarification statuses, pre-flight checklist template).
+export const getManageReference = () => getJSON("/api/manage/reference");
+
+// The cross-bid Manage board: every live bid with its clarification-register
+// summary + pre-flight readiness, plus the computed clarification/gate alerts.
+export const getManageBoard = () => getJSON("/api/manage/board");
+
+// One bid's FOR003 register + resolved pre-flight checklist (seeded if unsaved),
+// with the bid/opportunity context the register shows.
+export const getBidManage = (bidId) => getJSON(`/api/bids/${bidId}/manage`);
+
+// Save a bid's manage record (register, pre-flight, notes, submitted flag).
+// Marking submitted only sticks if the pre-flight gate is clear (else a 409 with
+// the reason). Returns GET shape.
+export async function saveBidManage(bidId, fields) {
+  const res = await fetch(`/api/bids/${bidId}/manage`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ---- Settings: LLM config ----
 
 async function sendJSON(url, method, body) {

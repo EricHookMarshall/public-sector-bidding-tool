@@ -164,6 +164,30 @@ BID_PLAN_FIELDS = [
 # JSON-valued bid-plan columns — encoded on write, decoded on read.
 BID_PLAN_JSON_FIELDS = {"phases"}
 
+# --- Stage 5 (Manage) ------------------------------------------------------
+# The FOR003 CQLOG + pre-flight gate — one record per bid, hung off bid_id. Two
+# repeating groups, held as JSON like bid_plans.phases (see clarification.py and
+# docs/design/data-model.md §5/§5b):
+#   clarifications — the FOR003 register [{question_number, question, owner,
+#                    backup_owner, buyer_deadline, deadline_note, status, ...}].
+#                    Losing track of one of these is the founding failure.
+#   preflight      — the submission checklist [{key, status, note, expiry_date}],
+#                    resolved against clarification.PREFLIGHT_ITEMS on read.
+# `submitted`/`submitted_at` record the final human submit action (the buyer's
+# portal submission stays a human act — the tool never auto-submits). Kept
+# OUTSIDE the connector path, like qualifications/bid_plans: only the Manage
+# write path (upsert_bid_manage) touches it. All TEXT, text-tolerant per the PoC.
+BID_MANAGE_FIELDS = [
+    "clarifications",   # JSON: the FOR003 register [{question_number, ...}]
+    "preflight",        # JSON: the pre-flight checklist [{key, status, ...}]
+    "submitted",        # "yes" once the final submit gate is cleared, else ""
+    "submitted_at",     # ISO timestamp of the submit action
+    "notes",
+]
+
+# JSON-valued manage columns — encoded on write, decoded on read.
+BID_MANAGE_JSON_FIELDS = {"clarifications", "preflight"}
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -180,6 +204,7 @@ def init_db(conn):
     cols = ",\n        ".join(f"{f} TEXT" for f in COMMON_FIELDS)
     qual_cols = ",\n            ".join(f"{f} TEXT" for f in QUALIFICATION_FIELDS)
     plan_cols = ",\n            ".join(f"{f} TEXT" for f in BID_PLAN_FIELDS)
+    manage_cols = ",\n            ".join(f"{f} TEXT" for f in BID_MANAGE_FIELDS)
     conn.executescript(
         f"""
         CREATE TABLE IF NOT EXISTS opportunities (
@@ -233,6 +258,18 @@ def init_db(conn):
             created_at TEXT,
             updated_at TEXT,
             {plan_cols},
+            UNIQUE(bid_id),
+            FOREIGN KEY(bid_id) REFERENCES bids(id)
+        );
+
+        -- Stage 5 (Manage): one FOR003 CQLOG + pre-flight record per bid. UNIQUE
+        -- on bid_id so re-managing updates in place rather than duplicating.
+        CREATE TABLE IF NOT EXISTS bid_manage (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            bid_id     INTEGER NOT NULL,
+            created_at TEXT,
+            updated_at TEXT,
+            {manage_cols},
             UNIQUE(bid_id),
             FOREIGN KEY(bid_id) REFERENCES bids(id)
         );
@@ -318,7 +355,7 @@ def update_enrichment(conn, opp_id, fields):
 
 
 # JSON-valued columns across all stage tables — decoded on read by _row_dict.
-_JSON_FIELDS = QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS
+_JSON_FIELDS = QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS | BID_MANAGE_JSON_FIELDS
 
 
 def _row_dict(row):
@@ -482,6 +519,88 @@ def upsert_bid_plan(conn, bid_id, fields):
     return pid
 
 
+def get_bid_manage(conn, bid_id):
+    """The FOR003 manage record (clarifications + pre-flight) for one bid, or None
+    if not managed yet. JSON `clarifications`/`preflight` come back decoded."""
+    row = conn.execute(
+        "SELECT * FROM bid_manage WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def upsert_bid_manage(conn, bid_id, fields):
+    """Insert or update the FOR003 manage record for one bid.
+
+    Keyed on bid_id (one register per bid — re-managing updates in place). Only
+    keys in BID_MANAGE_FIELDS are written, so this can't smuggle in other columns.
+    The JSON `clarifications`/`preflight` fields may be passed as lists and are
+    encoded here. Returns the bid_manage row id.
+    """
+    rec = {f: fields[f] for f in BID_MANAGE_FIELDS if f in fields}
+    for f in BID_MANAGE_JSON_FIELDS:
+        if isinstance(rec.get(f), (dict, list)):
+            rec[f] = json.dumps(rec[f], ensure_ascii=False)
+
+    existing = conn.execute(
+        "SELECT id FROM bid_manage WHERE bid_id = ?", (bid_id,)
+    ).fetchone()
+    now = now_iso()
+
+    if existing:
+        if rec:
+            assignments = ", ".join(f"{c} = ?" for c in rec)
+            conn.execute(
+                f"UPDATE bid_manage SET {assignments}, updated_at = ? WHERE bid_id = ?",
+                [rec[c] for c in rec] + [now, bid_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE bid_manage SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
+            )
+        mid = existing["id"]
+    else:
+        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO bid_manage ({', '.join(cols)}) VALUES ({placeholders})",
+            [bid_id, now, now, *rec.values()],
+        )
+        mid = conn.execute(
+            "SELECT id FROM bid_manage WHERE bid_id = ?", (bid_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return mid
+
+
+def list_bids_for_manage(conn):
+    """Every bid joined with the fields the Manage board needs — from the
+    opportunity (title, buyer, submission deadline) and the manage record (the
+    FOR003 register + pre-flight + submitted flag). Raw values only; api.py
+    resolves the register and computes the derived deadlines/alerts. Ordered by
+    submission deadline (soonest first) so the board reads urgency-first."""
+    rows = conn.execute(
+        """
+        SELECT
+            b.id               AS bid_id,
+            b.opportunity_id   AS opportunity_id,
+            b.bid_name         AS bid_name,
+            b.status           AS bid_status,
+            o.title            AS title,
+            o.buyer_name       AS buyer_name,
+            o.deadline_date    AS submission_deadline,
+            o.url              AS url,
+            m.clarifications   AS clarifications,
+            m.preflight        AS preflight,
+            m.submitted        AS submitted
+        FROM bids b
+        JOIN opportunities o ON o.id = b.opportunity_id
+        LEFT JOIN bid_manage m ON m.bid_id = b.id
+        ORDER BY (o.deadline_date IS NULL), o.deadline_date ASC
+        """
+    ).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
 def list_bids_for_board(conn):
     """Every bid joined with the fields the Plan board needs — from the
     opportunity (title, buyer, the two deadlines, value), the qualification (the
@@ -551,6 +670,8 @@ if __name__ == "__main__":
     quals = conn.execute("SELECT COUNT(*) FROM qualifications").fetchone()[0]
     bids = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
     plans = conn.execute("SELECT COUNT(*) FROM bid_plans").fetchone()[0]
+    manage = conn.execute("SELECT COUNT(*) FROM bid_manage").fetchone()[0]
     print(f"qualifications: {quals}")
     print(f"bids: {bids}")
     print(f"bid_plans: {plans}")
+    print(f"bid_manage: {manage}")

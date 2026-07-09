@@ -14,12 +14,18 @@
       capacity + FOR002 timeline). `src/seed_plan_demo.py` for reviewable demo data. Live-verified.
 - [x] **Triage (B01) + AI pre-fill + Settings** (2026-07-09, session 3) — FOR001 form wired to `bids.db`;
       provider-agnostic AI seam (`src/llm.py`, Anthropic live, Azure OpenAI skeleton); `#settings` screen.
-- [ ] **User review of the journey shell** — click through all 6 stages, Triage's form, Settings, and
-      Plan's board + timeline in the browser (<http://localhost:5173>) and flag anything wrong.
-      **Still not observed by a human across 4 sessions** — only build/curl/TestClient verified so far.
-- [ ] **Manage (Stage 5) or Complete (Stage 4)** — next stage to build. Manage (FOR003 clarification log)
-      has no external blocker and directly encodes the clarification-deadline failure; Complete (FOR006)
-      is next in journey order but blocked on live SharePoint/MS Graph. Not decided — see handover.
+- [x] **Manage (Stage 5) — FOR003 clarification register + pre-flight gate** (2026-07-09, session 6) —
+      `src/clarification.py` (FOR003 rig: statuses, 9-item preflight, `resolve_preflight` enforcing
+      auto+expiry items, `alerts`), `bid_manage` table, `/api/manage/*` + `GET`/`PUT /api/bids/{id}/manage`
+      (gate enforced server-side → 409 if blocked), real board→detail UI, `seed_manage_demo.py`.
+      Live-verified over HTTP.
+- [ ] **User review of the journey shell** — click through all 6 stages, Triage's form, Settings,
+      Plan's board + timeline, and Manage's register + pre-flight gate in the browser
+      (<http://localhost:5173>) and flag anything wrong. **5 stages built, 0 observed by a human** —
+      only build/curl/TestClient verified so far.
+- [ ] **Learn (Stage 6) or Complete (Stage 4)** — the two stages left. Learn (B07 outcome → library
+      feedback) has no external blocker and closes the journey loop; Complete (FOR006) is next in
+      order but blocked on live SharePoint/MS Graph. Not decided — see handover.
 
 ## Surfaced / open
 

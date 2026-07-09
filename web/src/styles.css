@@ -78,7 +78,7 @@ body {
   line-height: 1.5;
 }
 
-.wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.wrap { max-width: 1600px; margin: 0 auto; padding: 0 28px; }
 .label {
   font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em;
   font-size: 11px; color: var(--faint); font-weight: 600;
@@ -536,11 +536,25 @@ header.top {
 .tsec { display: flex; flex-direction: column; gap: 10px; }
 
 .fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.fgrid.areas { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+/* Long-text fields sit two-up at equal width across the full row (not packed
+   into narrow auto-fill columns that leave the right side empty). Cells stretch
+   to a shared height and each textarea flexes to fill, so the two boxes line up
+   at equal height — the shorter one grows to match the taller. */
+.fgrid.areas { grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+.fgrid.areas .fld textarea { flex: 1; }
+/* A lone long-text field (e.g. Plan/Manage "Notes") spans the full row rather
+   than sitting in just the left column. */
+.fgrid.areas > .fld:only-child { grid-column: 1 / -1; }
 .fld { display: flex; flex-direction: column; font-size: 0.76rem; color: var(--muted); gap: 4px; }
 .fld input, .fld select, .fld textarea {
   padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
   font-size: 0.9rem; background: var(--paper); color: var(--ink); font-family: inherit; resize: vertical;
+}
+/* Grow textareas to fit their content (AI pre-fill can run several lines) so
+   nothing is clipped; min-height keeps a sensible box on browsers without
+   field-sizing, max-height caps a huge paste (scrolls past that). */
+.fld textarea {
+  field-sizing: content; min-height: 4.4em; max-height: 260px;
 }
 .fld-warn input { border-color: var(--warn); background: var(--warn-soft); }
 .fld-warn { color: var(--warn); font-weight: 600; }
@@ -578,6 +592,7 @@ header.top {
 @media (max-width: 760px) {
   .team-row { grid-template-columns: 1fr 60px; }
   .team-comment { grid-column: 1 / -1; }
+  .fgrid.areas { grid-template-columns: 1fr; }   /* stack the two long-text fields */
 }
 
 /* AI pre-fill — button + review banner (Triage). The banner is deliberately
@@ -678,3 +693,45 @@ header.top {
 .tl-row.st-in-progress { border-left-color: var(--accent); }
 .tl-row.st-done { border-left-color: var(--good); }
 .tl-row.st-blocked { border-left-color: var(--crit); }
+
+/* ── Stage 5 · Manage — FOR003 clarification register + pre-flight gate ──────
+   Reuses the board/kcard/alert-strip/checklist/pd-facts tokens; adds the
+   register-row editor and the gate's per-item controls. */
+.manage { display: flex; flex-direction: column; gap: 14px; }
+.alert-strip.ok-strip { background: var(--good-soft); color: var(--good); border-color: color-mix(in srgb, var(--good) 25%, transparent); }
+
+/* Board — a responsive grid of bid cards (not columned like Plan). */
+.manage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.manage-card { text-align: left; cursor: pointer; }
+.manage-card .manage-clar { justify-content: flex-start; }
+.manage-card .manage-foot { justify-content: space-between; margin-top: 8px; }
+.tag.warn-tag { background: var(--warn-soft); color: var(--warn); font-weight: 650; }
+
+/* Register rows — one editable FOR003 clarification per block. */
+.clar-row { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 9px 10px; background: var(--paper); display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.clar-row.is-resolved { border-left-color: var(--good); opacity: 0.85; }
+.clar-main { display: flex; flex-direction: column; gap: 6px; }
+.clar-q { font-size: 13px; font-weight: 600; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.clar-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.clar-meta input, .clar-meta select { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.clar-meta input { width: 130px; }
+.clar-del { margin-left: auto; border: 1px solid var(--line); background: transparent; color: var(--faint); border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 11px; }
+.clar-del:hover { color: var(--crit); border-color: var(--crit); }
+.clar-owners { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.mini-fld { display: flex; flex-direction: column; font-size: 0.68rem; color: var(--muted); gap: 3px; text-transform: uppercase; letter-spacing: .04em; font-family: var(--mono); }
+.mini-fld input { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; background: var(--paper); color: var(--ink); font-family: inherit; width: 120px; text-transform: none; letter-spacing: 0; }
+.clar-badge { align-self: center; }
+.add-clar { align-self: flex-start; }
+
+/* Pre-flight gate — extends the mock's .checklist with per-item controls. */
+.ck.na { opacity: 0.7; }
+.ck.na .box { background: var(--neutral-soft); color: var(--muted); border: 1px solid var(--line); }
+.preflight-ck { gap: 8px; }
+.preflight-ck .ck-label { display: flex; flex-direction: column; gap: 1px; }
+.ck-cat { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.ck-expiry { width: 130px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; background: var(--paper); color: var(--ink); font-family: var(--mono); }
+.ck-status { margin-left: auto; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; background: var(--paper); color: var(--ink); font-family: inherit; }
+.preflight-ck .ck-expiry + .ck-status { margin-left: 0; }
+.manage-actions .submit-btn { background: var(--good); border-color: var(--good); }
+.manage-actions .submit-btn:disabled { background: var(--neutral-soft); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
+.empty.sm { padding: 12px; text-align: left; font-size: 12.5px; }

@@ -46,6 +46,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import bidplan as P
+import clarification as M
 import config as app_config
 import cpv_catalog
 import db
@@ -652,6 +653,181 @@ def save_bid_plan(bid_id: int, body: dict = Body(default_factory=dict)):
     fields = {k: v for k, v in body.items() if k in db.BID_PLAN_FIELDS}
     db.upsert_bid_plan(conn, bid_id, fields)
     payload = _plan_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+# ---- Stage 5: Manage / FOR003 CQLOG + pre-flight gate ---------------------
+
+def _manage_summary(row):
+    """One Manage board card from a raw joined bid row (db.list_bids_for_manage).
+    Resolves the FOR003 register + pre-flight into the derived fields the board
+    reads: open-clarification count, the nearest live clarification deadline, and
+    whether the pre-flight gate is clear. The clarification deadline is the
+    founding-failure signal — losing track of it is why this tool exists."""
+    clars = [M.clarification_view(c) for c in (row.get("clarifications") or [])]
+    resolved_pf = M.resolve_preflight(row.get("preflight"), row.get("clarifications"))
+    pf = M.preflight_summary(resolved_pf)
+
+    pending = [c for c in clars if c["pending"]]
+    # Soonest live clarification deadline (skip the ones with no date set).
+    dated = [c for c in pending if c["days_to_deadline"] is not None]
+    nearest = min(dated, key=lambda c: c["days_to_deadline"], default=None)
+    return {
+        "bid_id": row["bid_id"],
+        "opportunity_id": row["opportunity_id"],
+        "title": row.get("title") or row.get("bid_name"),
+        "buyer_name": row.get("buyer_name"),
+        "url": row.get("url"),
+        "submission_deadline": row.get("submission_deadline"),
+        "days_to_submission": P.days_until(row.get("submission_deadline")),
+        "clarifications_total": len(clars),
+        "clarifications_open": len(pending),
+        "next_clarification_deadline": nearest["buyer_deadline"] if nearest else None,
+        "days_to_next_clarification": nearest["days_to_deadline"] if nearest else None,
+        "preflight": pf,
+        "submitted": (row.get("submitted") or "") == "yes",
+        # Kept for the alerts pass (they read the per-clarification views + pf).
+        "clarifications": clars,
+    }
+
+
+@app.get("/api/manage/reference")
+def manage_reference():
+    """FOR003 vocabulary (clarification statuses, the pre-flight checklist
+    template, imminent-days) for the Manage register + gate."""
+    return M.reference()
+
+
+@app.get("/api/manage/board")
+def manage_board():
+    """The cross-bid Manage board: every live bid with its clarification register
+    summary and pre-flight readiness, plus the computed clarification-deadline /
+    owner / gate alerts (most-urgent first). This answers the missed-clarification
+    failure directly — the register whose loss killed the G-Cloud 15 bid."""
+    conn = db.connect()
+    db.init_db(conn)
+    rows = db.list_bids_for_manage(conn)
+    conn.close()
+
+    items = [_manage_summary(r) for r in rows]
+    alerts = M.alerts(items)
+    # The per-clarification views were only needed to compute the alerts; drop
+    # them from the board payload (the detail view fetches the full register).
+    for it in items:
+        it.pop("clarifications", None)
+    return {"count": len(items), "bids": items, "alerts": alerts}
+
+
+def _manage_payload(conn, bid_id):
+    """Assemble the Manage detail for one bid: the FOR003 register (seeded empty),
+    the resolved pre-flight checklist + gate summary, and the bid/opportunity
+    context the register shows."""
+    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
+    if bid_row is None:
+        raise HTTPException(status_code=404, detail="bid not found")
+    bid = {k: bid_row[k] for k in bid_row.keys()}
+    opp = _row_to_dict(conn.execute(
+        "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
+    qual = db.get_qualification(conn, bid["opportunity_id"]) or {}
+
+    manage = db.get_bid_manage(conn, bid_id)
+    saved = manage is not None
+    if not saved:
+        manage = {f: None for f in db.BID_MANAGE_FIELDS}
+    clars = manage.get("clarifications") or []
+    preflight_stored = manage.get("preflight") or M.default_preflight()
+
+    resolved_pf = M.resolve_preflight(preflight_stored, clars)
+    pf_summary = M.preflight_summary(resolved_pf)
+    clar_views = [M.clarification_view(c) for c in clars]
+
+    # The authoritative clarification deadline captured upstream (enrichment wins,
+    # else the FOR001 value) — shown as the register's reference cut-off.
+    opp_clar = opp.get("clarification_deadline") or qual.get("clarification_deadline")
+    return {
+        "bid": {"id": bid_id, "bid_name": bid.get("bid_name"),
+                "stage": bid.get("stage"), "status": bid.get("status")},
+        "opportunity": {
+            "id": opp.get("id"), "title": opp.get("title"),
+            "buyer_name": opp.get("buyer_name"), "url": opp.get("url"),
+            "submission_deadline": opp.get("deadline_date"),
+            "clarification_deadline": opp_clar,
+            "currency": opp.get("currency") or "GBP",
+        },
+        "clarifications": clar_views,
+        "preflight": resolved_pf,
+        "preflight_summary": pf_summary,
+        "submitted": (manage.get("submitted") or "") == "yes",
+        "submitted_at": manage.get("submitted_at"),
+        "notes": manage.get("notes") or "",
+        "saved": saved,
+    }
+
+
+@app.get("/api/bids/{bid_id}/manage")
+def get_bid_manage(bid_id: int):
+    conn = db.connect()
+    db.init_db(conn)
+    payload = _manage_payload(conn, bid_id)
+    conn.close()
+    return payload
+
+
+@app.put("/api/bids/{bid_id}/manage")
+def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict)):
+    """Save (create or update) the FOR003 manage record for a bid: the
+    clarification register, the pre-flight checklist, notes, and the submitted
+    flag. Only BID_MANAGE_FIELDS are written. A `submitted == "yes"` is only
+    honoured when the pre-flight gate is actually clear — the tool won't let a
+    blocked bid be marked submitted (the whole point of the gate). The response
+    mirrors GET so the UI can re-render in place."""
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="bid not found")
+
+    fields = {k: v for k, v in body.items() if k in db.BID_MANAGE_FIELDS}
+
+    # Normalise the register: keep only known clarification fields per row, so the
+    # client can't smuggle extra columns into the JSON blob.
+    if isinstance(fields.get("clarifications"), list):
+        template = M.default_clarification()
+        fields["clarifications"] = [
+            {k: c.get(k, template[k]) for k in template}
+            for c in fields["clarifications"] if isinstance(c, dict)
+        ]
+    if isinstance(fields.get("preflight"), list):
+        fields["preflight"] = [
+            {"key": c.get("key"), "status": c.get("status", ""),
+             "note": c.get("note", ""), "expiry_date": c.get("expiry_date", "")}
+            for c in fields["preflight"]
+            if isinstance(c, dict) and c.get("key") in M.PREFLIGHT_KEYS
+        ]
+
+    # The submit gate: honour "yes" only if pre-flight actually clears. Recompute
+    # against the effective register/checklist, never trust the client's word.
+    if fields.get("submitted") == "yes":
+        clars = fields.get("clarifications")
+        pf = fields.get("preflight")
+        if clars is None or pf is None:
+            existing = db.get_bid_manage(conn, bid_id) or {}
+            if clars is None:
+                clars = existing.get("clarifications") or []
+            if pf is None:
+                pf = existing.get("preflight") or M.default_preflight()
+        summary = M.preflight_summary(M.resolve_preflight(pf, clars))
+        if not summary["ready"]:
+            conn.close()
+            raise HTTPException(
+                status_code=409,
+                detail=f"pre-flight gate blocked: {summary['blocking_count']} item(s) "
+                       f"outstanding — resolve them before marking submitted")
+        fields["submitted_at"] = db.now_iso()
+
+    db.upsert_bid_manage(conn, bid_id, fields)
+    payload = _manage_payload(conn, bid_id)
     conn.close()
     return payload
 

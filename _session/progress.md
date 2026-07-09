@@ -3,6 +3,69 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 6) — Manage (Stage 5): FOR003 clarification register + pre-flight gate
+
+**Context.** Structure was clean and the app ran through Stage 3; the open decision was which stage
+to build next. User chose **Manage (Stage 5)** — no external blocker (unlike Complete, which needs
+live SharePoint/MS Graph) and it directly encodes the missed-clarification failure this whole tool
+exists to prevent. Built as a close parallel to Plan (Stage 3): a new domain module, one new DB
+table, board + reference + detail endpoints, a real board→detail UI replacing the mock, and a demo
+seed. Grounded to the authoritative FOR003 vocabulary in `docs/design/data-model.md §5/§5b` — not
+invented.
+
+**Work done.**
+
+- **`src/clarification.py`** (new) — the FOR003 CQLOG + pre-flight domain rig, mirroring
+  `bidplan.py`. Vocabularies (clarification statuses Open→Drafting→Submitted→Answered; the 9-item
+  pre-flight checklist template from §5b). `resolve_preflight()` enforces the two items the tool
+  won't let anyone tick past: the *auto* "clarifications resolved" item (derived from the register)
+  and the *expiry* items (a credential past its `expiry_date` auto-fails — the expired-cert failure).
+  `preflight_summary()` gates submission (blocked unless every mandatory item passes). `alerts()` is
+  the founding-failure signal: clarification-deadline PASSED / imminent-with-no-owner / gate-blocked-
+  near-submission. Reuses `bidplan.days_until` for the date maths (one shared utility, not re-derived).
+- **`src/db.py`** — new `bid_manage` table (one row per bid, UNIQUE(bid_id)), holding the
+  `clarifications` + `preflight` repeating groups as JSON exactly like `bid_plans.phases`. Added
+  `BID_MANAGE_FIELDS`/`BID_MANAGE_JSON_FIELDS`, `get_bid_manage`/`upsert_bid_manage`, and
+  `list_bids_for_manage` (bids ⋈ opportunities ⋈ bid_manage). Kept outside the connector path.
+- **`src/api.py`** — `GET /api/manage/reference`, `GET /api/manage/board` (per-bid summaries +
+  computed alerts), `GET`/`PUT /api/bids/{id}/manage`. The PUT **enforces the gate server-side**:
+  `submitted:"yes"` is only honoured if pre-flight actually clears (else **409** with the reason) —
+  never trusts the client. Register/checklist rows are normalised to known fields on write.
+- **`web/src/`** — `api.js` client fns; `ManageStage.jsx` rewritten from the mock into a real
+  board→detail view (bid cards with open-clarification counts + deadline badges + gate pills; a
+  detail with an editable FOR003 register — owner, **backup**, deadline **with time + timezone** —
+  and the pre-flight checklist with a submit button that stays disabled until the gate clears);
+  `styles.css` Manage block (reuses kcard/alert-strip/checklist/pd-facts tokens); `journey.js` Manage
+  flipped `design → live` with honest asset copy.
+- **`src/seed_manage_demo.py`** (new) — hangs illustrative registers off the 3 existing demo bids,
+  exercising every signal: SUMIT (clarification deadline PASSED, no owner → the founding failure),
+  SPM (imminent but owned + backed up; gate blocked by an expired Cyber Essentials cert), RTPI
+  (answered, gate clear, submitted — the done state). `--clear` resets.
+
+**Verified (real HTTP, not just TestClient).** `python3 db.py` → `bid_manage: 3` after seed, other
+counts intact (21 opps / 3 quals / 3 bids / 3 plans). `GET /api/manage/board` 200 — alerts ordered
+most-urgent-first: "clarification CQ01 deadline PASSED 3d ago", gate-blocked-near-submission crits,
+imminent-but-owned warn. `GET /api/bids/8/manage` shows the auto item ("1 clarification still open")
+and the expiry item ("Cyber Essentials expired 24d ago") both enforced to fail → gate blocked ×2.
+`PUT …/manage {submitted:"yes"}` on a blocked bid → **409**. RTPI reads submitted=true, gate clear.
+`npm run build` compiles clean (39 modules). Services stopped; build artifact removed.
+
+**Browser review + UI polish (first human click-through, at last).** User walked the running app in
+the browser — the standing "0 stages reviewed" thread is now partly closed. Feedback was layout, not
+logic: the screens were too tight and AI-filled textareas were clipping. Fixes, all in
+`web/src/styles.css`: widened the shared `.wrap` container **1200px → 1600px** (28px gutter) so every
+screen uses more of the viewport while keeping a margin; textareas now **auto-grow** (`field-sizing:
+content`, min ~4.4em, max 260px) so AI pre-fill isn't clipped; the two Triage long-text fields
+(Project requirement / Scope summary) changed from a narrow `auto-fill` grid to an explicit two-up
+`1fr 1fr` that **stretches both to equal height** (each textarea `flex: 1`), and a lone `.fgrid.areas`
+field (Plan/Manage Notes) now spans full width. User confirmed "this looks good now." No JS/logic
+touched; verified live via Vite HMR.
+
+**Not done / deferred.** Full stage-by-stage review still light (user focused on Triage's form); the
+standing thread). Complete (Stage 4) remains the SharePoint-blocked one. The pre-flight gate
+re-checks on *save* (server-authoritative), not live per-keystroke — a deliberate simplicity call
+matching how Plan's capacity/alerts recompute on board reload.
+
 ## 2026-07-09 (session 5) — Repo restructured: flattened the nested sub-app
 
 **Context.** A folder rename dropped the chat history; on re-orientation the user flagged that the

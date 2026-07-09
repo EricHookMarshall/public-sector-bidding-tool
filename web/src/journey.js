@@ -137,9 +137,9 @@ export const STAGES = [
     n: "05",
     t: "Manage",
     d: "Clarify & submit",
-    state: "design",
-    stateLabel: "Designed (B05–B06)",
-    maps: "Skills B05–B06 · the exact failure that lost G-Cloud 15",
+    state: "live",
+    stateLabel: "Works today (FOR003)",
+    maps: "FOR003 CQLOG + pre-flight gate · the exact failure that lost G-Cloud 15",
     component: "manage",
     scope: {
       does: "Tracks every buyer clarification with an owner, a backup and a real deadline (date, time, timezone) — then runs a pre-flight gate before anyone submits.",
@@ -158,8 +158,8 @@ export const STAGES = [
       ],
     },
     asset: {
-      state: "design",
-      txt: "<b>Designed</b> — skills B05–B06. This directly encodes the lesson from the G-Cloud 15 disregard: a missed clarification is fatal.",
+      state: "live",
+      txt: "<b>Wired to real data</b> — every live bid shows its FOR003 clarification register (owner, backup, buyer deadline captured <i>with time + timezone</i>) reading <code>bids.db</code>, and the alerts fire on the real clarification deadlines. A pre-flight gate blocks “submitted” until every mandatory item passes — auto-checking that clarifications are resolved and that no credential has expired. Nothing auto-submits.",
     },
   },
   {
