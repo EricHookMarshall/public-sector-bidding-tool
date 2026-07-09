@@ -6,88 +6,105 @@
 
 ## Status
 
-`2026-07-09` — **Discovery UI is now the shell of the full 6-stage bidding journey**, not just the
-Search screen. Top-level project decided "app shell first" (see top-level `_session/handover.md`);
-this session extended the discovery front end into that shell rather than starting a separate app, per
-`docs/design/architecture.md`. Backend/API/connectors untouched this session — only `discovery/web/`
-changed. Search remains the one live, wired stage; Triage/Plan/Complete/Manage/Learn are illustrative
-preview screens (real UK-procurement-style mock data, ported from `docs/design/journey-mockups.html`),
-clearly banner-labelled as not-yet-built.
-
-What happened this session:
-
-- **`web/src/journey.js`** (new) — single source of truth for the 6 stages: id, stepper metadata,
-  build `state` (`live`/`design`/`gap`), `maps`-to (which skill/PoC it corresponds to), and the full
-  scope content (does / AI helps / human decides / in-v1 / out-later) ported verbatim from the
-  approved mockup.
-- **`web/src/App.jsx`** (rewritten) — was the Search-only page; is now the journey shell: sticky top
-  bar + brand, 6-stage stepper nav, hash-based stage routing (`#plan` etc., deep-linkable, back/forward
-  works), ←/→ keyboard stepping (ignored while typing in a field), light/dark theme toggle. Renders the
-  active stage via a `VIEWS` map keyed by `journey.js`'s `component` field.
-- **`web/src/stages/`** (new directory, 7 files):
-  - `SearchStage.jsx` — the old App.jsx search UI, logic unchanged, lifted out so the shell can host it.
-  - `MockStage.jsx` + `ScopeCard.jsx` — shared layout: browser-chrome screen + "Preview — illustrative
-    data, not built yet" banner on the left, the scope card on the right.
-  - `TriageStage.jsx`, `PlanStage.jsx`, `CompleteStage.jsx`, `ManageStage.jsx`, `LearnStage.jsx` — one
-    populated mock screen per stage (qualification gates, pipeline board, compliance matrix + AI
-    draft + evidence ledger, clarification register + pre-flight, outcome + library updates), all
-    ported from the mockup so each future stage shows a concrete picture, not just prose.
-  - `StagePlaceholder.jsx` — now unused (superseded by the per-stage mock screens) but left in place;
-    not wired into `VIEWS`.
-- **`web/src/styles.css`** — adopted the mockup's full design-token set (light + dark +
-  `data-theme` override), added shell/stepper/scope/pager/mock-screen CSS; legacy variable names
-  aliased (`--bg`, `--open`, …) so the original search-stage CSS needed no rewrite.
-- **`web/index.html`** — title → "Bidpath — Public Sector Bidding".
-
-**Verification (real runs, this session):**
-
-- `npm run build` (after the shell rewrite, Search-only): `✓ 31 modules transformed`, no errors.
-- `npm run build` (after adding the 5 mock stages): `✓ 38 modules transformed`, no errors.
-- Backend + dev server started for real: `python3 db.py` → 21 rows (FTS 19, CF 2); `uvicorn api:app
-  --port 8000` + `npm run dev` both came up; `curl :8000/api/meta` → `total: 21`; `curl
-  :5173/api/opportunities` (via Vite proxy) → `count: 21`; page title confirmed via curl.
-- Every new/changed module (`App.jsx`, `journey.js`, all 8 `stages/*.jsx`) fetched from the dev server
-  → HTTP 200, no transform errors in the Vite log.
-- **Not verified:** an actual in-browser click-through of the stepper/theme-toggle/routing — no browser
-  tool available in this environment. Build + module-transform success is a strong but not complete
-  proxy; the user was handed the running URL to look themselves.
-- Services stopped cleanly at session end (`pkill -f "uvicorn api:app"`, `pkill -f vite`) — confirmed
-  no leftover processes.
+`2026-07-09` (session 3) — **Triage (B01) fully wired to real data AND AI pre-fill built.** Two
+big pieces landed this session: (1) the FOR001 qualification/bid schema + real UI, and (2) a
+provider-agnostic AI drafting layer with a live Settings screen. Both are **verified against a
+real Anthropic key the user provided during this session** (in `discovery/.env`, gitignored,
+untracked — confirmed).
 
 ## Active task
 
-**None blocking on the discovery side.** The shell exists and builds clean; the user has been asked to
-look at it live and flag anything wrong. Likely next steps once they do:
+**Nothing blocking — pick the next stage or polish item.** Recommended next: **Plan (Stage 3)** —
+`docs/design/data-model.md` §3 (`BidPlan`: pipeline position + FOR002 phase timeline) is fully
+specified and Plan is flagged "highest-value missing piece" in `journey.js`. Alternative: keep
+building out Complete (FOR006 compliance matrix) since the AI-drafting pattern (`llm.py` +
+provider seam) now exists and could extend there.
 
-- **User review of the shell** — click through all 6 stages, both themes, confirm nothing looks off
-  (this is the natural next action — see also the top-level `_session/handover.md`).
-- **Wire a second real stage** — Triage (B01) is the smallest real next build: gate logic against a
-  real opportunity record needs the data model decision the top-level project still has open.
-- **`StagePlaceholder.jsx` cleanup** — now dead code (superseded by per-stage mock screens); either
-  delete it or repurpose it as the fallback for a stage that has no mock screen yet.
-- Carried over, still true: `.gitignore` for `bids.db`/`web/node_modules/`; cross-source dedupe (low
-  priority).
+Still parked, unchanged: **user still hasn't clicked through the running shell in a browser**
+(3 sessions now — Triage + Settings are both new UI surfaces worth a real look before more stages
+get wired on top).
+
+## What shipped this session
+
+**1. Triage schema + UI** (`db.py`, `qualification.py`, `api.py`, `TriageStage.jsx`)
+- `qualification.py` (new): FWF's FOR001 scoring rig as domain logic — the £500/day ×
+  complexity effort table (verified against the Reference-sheet totals exactly: Low
+  9d/£4,500 … Medium 16.5d/£8,250 … High 24d/£12,000), the 10 Win-Qualification RAG criteria,
+  pricing models, delivery roles.
+- `db.py`: two new tables outside the connector path — `qualifications` (full FOR001 schema,
+  JSON for delivery-team/RAG repeating groups) and `bids` (the spine, born on a Go). Migration
+  verified against the live DB: 21 opportunities intact, idempotent on rerun.
+- `api.py`: `GET /api/triage/reference`, `GET`/`PUT /api/opportunities/{id}/qualification`.
+  Derived fields (economics, RAG summary) **recomputed server-side**, never trusted from the
+  client; a Go promotes the opportunity into a Bid.
+- `TriageStage.jsx`: real form (opportunity picker, seeded FOR001 fields, live economics, RAG
+  scoring, decision buttons) replacing the mock. `SearchStage.jsx` got a "▲ Triage this →"
+  handoff button (sessionStorage-based, survives hash nav).
+
+**2. AI pre-fill for Triage** (`llm.py`, `triage_ai.py`, `config.py`, `SettingsView.jsx`)
+- `llm.py` (new): the provider seam — `complete_json()` via forced tool/function calling (chosen
+  because it maps 1:1 to Azure OpenAI's shape). `AnthropicProvider` built; `AzureOpenAIProvider`
+  is a documented skeleton, deliberately deferred (client requirement, not yet provisioned).
+  Default model **`claude-haiku-4-5`** (cost decision — this is a review-before-save drafting
+  task, not deep reasoning; ~5× cheaper than Opus). `ping()` added for live connection testing.
+- `triage_ai.py` (new): drafts the whole FOR001 from the opportunity notice + a concise FWF
+  profile (Microsoft Practice, the EFS/PCG gap, G-Cloud 15 framework-position gate). Schema-
+  constrained to FWF's real vocabulary (10 RAG keys, 5 complexity levels, 3 decisions). Draft is
+  **never auto-saved** — human reviews and clicks the decision.
+- `POST /api/opportunities/{id}/qualification/ai-draft` — returns `{draft, meta}`; 503 (not a
+  crash) if no LLM configured, so manual Triage always works.
+- **Settings screen** (`config.py`, new; `SettingsView.jsx`, new; routed at `#settings`, ⚙ button
+  in `TopBar`): provider/model dropdowns with cost hints, an API-key field that is **write-only**
+  (saved to gitignored `discovery/.env`, never returned to the browser — only "configured
+  ••••1234"), Save, and a **Test connection** button that does a real 8-token round-trip.
+  `config.py` writes are whitelisted to 3 env keys only.
+
+**Verification — all real, not asserted:**
+- DB migration + write-path smoke tests (qualification upsert, JSON round-trip, whitelist
+  ignoring a bogus field, idempotent bid promotion) — cleaned up after, DB left at 21/0/0.
+- API endpoints exercised via FastAPI `TestClient` and live `curl` against a running `uvicorn`:
+  triage reference, seeded qualification, PUT→Go→bid creation (Med-High → 19.5d/£9,750, RAG
+  2.4→"2 Med"), 404s, config validation (400 on bad model / unbuilt provider).
+- Frontend: `npm run build` clean at every stage; both the running Vite dev server and the API
+  were driven live via `curl`.
+- **Live model calls, with the user's real key**: `POST /api/config/test` → `{"ok": true,
+  "provider": "anthropic", "model": "claude-haiku-4-5", "reply": "ok"}`; a full AI draft on a
+  real opportunity ("SUMIT Project…") produced a schema-valid FOR001 draft whose rationale
+  correctly named FWF's EFS/framework gap — validates both the prompt and the Haiku cost call.
+- **Secret handling checked, not assumed**: `discovery/.env` (containing the real key) confirmed
+  git-ignored via `git check-ignore` and untracked via `git status` before this handover was written.
+
+## Surfaced / parked threads
+
+- **HubSpot integration** — future feature (pipeline ↔ CRM). Not scoped.
+- **`StagePlaceholder.jsx`** — still dead code (superseded by per-stage screens); not deleted yet.
+- **SharePoint data path for `LibraryItem`** — parked to the Complete stage, per data-model.md.
+- **Azure OpenAI provider** — skeleton written in `llm.py`, not implemented. Client requirement;
+  build when Azure access is provisioned.
+- **Cross-source dedupe** — unchanged, low priority.
 
 ## Open decisions
 
-1. **Data model** — the top-level project still has this open (shared bid record across all 6 stages).
-   Blocks wiring Triage/Plan/etc. to real data; doesn't block further shell/preview work.
-2. **Cross-source dedupe:** `(source, ocid)` dedupes within a source. Cross-source matching still
-   unsettled — low priority.
-3. **`.gitignore`:** `bids.db` and `web/node_modules/` should be gitignored now that the repo exists.
+1. **Storage for bid-lifecycle tables** — **resolved this session**: extended `bids.db` in place
+   (per data-model.md's recommendation), not a separate store.
+2. **Enum vs free-text** — followed the text-tolerant recommendation throughout (qualification
+   fields are TEXT; complexity/decision/pricing_model constrained only in the UI/API layer).
+3. **Which stage next** — Plan (3) is the recommended next per `journey.js` ("highest-value
+   missing piece"); no hard blocker either way.
 
-Settled: full ~18-field schema; `(source, ocid)` upsert key; two sources live (FTS + CF); FastAPI +
-React/Vite stack; flag-don't-delete cleanup via `refresh_clean.py`; live search via `POST /api/search`;
-CPV dropdown + region labels; export CSV; **journey shell built on top of the discovery UI** (not a
-separate app), stage routing via URL hash, mock screens carry the approved-mockup content for stages
-not yet built.
+Settled (carried forward, unchanged): mockups-first method; six-stage journey shape; local app
+now, Azure SPA later; library-provider seam for SharePoint; stack = FastAPI + SQLite + React/Vite;
+shared bid record shape from `docs/design/data-model.md`.
 
 ## Start-of-session checklist
 
 1. Read [CLAUDE.md](../CLAUDE.md), this file, and [_session/todo.md](todo.md).
-2. Confirm DB state: `python3 db.py` (should show `Find a Tender: 19`, `Contracts Finder: 2` → total 21 after planning-stage search this session).
-3. Spin up the stack: `uvicorn api:app --reload --port 8000` + `cd web && npm run dev` → `http://localhost:5173`.
-4. (Optional) Re-flag without network: `python3 refresh_clean.py --no-fetch`.
+2. Confirm DB state: `python3 db.py` → should show `Find a Tender: 19`, `Contracts Finder: 2`,
+   `qualifications: 0`, `bids: 0` (unless a prior session's manual testing left rows — check).
+3. Spin up the stack: `uvicorn api:app --reload --port 8000` + `cd web && npm run dev` →
+   `http://localhost:5173`.
+4. `discovery/.env` already holds a real Anthropic key (gitignored) — AI drafting and Settings
+   → Test connection should work live without setup.
 
 ## Resume prompt
 
@@ -103,17 +120,17 @@ Read these on resume:
 
 Pull deeper context on demand: support/brief.md (full brief), cpv_codes.md (relevance scope),
 find_tender_filter.py + contracts_finder_filter.py + db.py (connectors + DB layer),
-sources.py (source registry), regions.py (NUTS/ITL glossary), cpv_catalog.py (CPV descriptions),
-refresh_clean.py (refresh + lifecycle-flag cleanup), api.py (FastAPI JSON API),
-web/src/journey.js (6-stage metadata + scope content), web/src/App.jsx (journey shell),
-web/src/stages/ (SearchStage = real; TriageStage/PlanStage/CompleteStage/ManageStage/LearnStage =
-illustrative mock screens; MockStage/ScopeCard = shared layout), web/src/api.js, web/src/styles.css,
-_session/progress.md (cold dated history), support/public_sector_bid_apis.md,
-../docs/design/journey-mockups.html (source of the mock-screen content) and
-../docs/design/architecture.md (why this became a shell, not a separate app).
+qualification.py (FOR001 scoring rig), llm.py + triage_ai.py (AI pre-fill provider seam),
+config.py (Settings screen backend), sources.py (source registry), regions.py (NUTS/ITL glossary),
+cpv_catalog.py (CPV descriptions), refresh_clean.py (refresh + lifecycle-flag cleanup),
+api.py (FastAPI JSON API), web/src/journey.js (6-stage metadata + scope content),
+web/src/App.jsx (journey shell + #settings route), web/src/SettingsView.jsx (AI config screen),
+web/src/stages/ (SearchStage + TriageStage = real; Plan/Complete/Manage/Learn = illustrative
+mock screens), web/src/api.js, web/src/styles.css, _session/progress.md (cold dated history),
+../docs/design/data-model.md (the shared bid record spec).
 
-The discovery engine (Search stage) is built and working; the app is now the shell of the full
-6-stage journey, with 5 stages as labelled preview screens awaiting real data wiring. At session
+Search (Stage 1) and Triage (Stage 2, incl. AI pre-fill) are built and working. The app is the
+6-stage journey shell; Plan/Complete/Manage/Learn remain labelled preview screens. At session
 end, REPLACE the hot-state file, append a dated entry to _session/progress.md, and update
 _session/todo.md. Don't commit/push unless asked.
 ```

@@ -9,6 +9,12 @@ response into the COMMON_FIELDS shape below and calls upsert_opportunity().
 Schema follows support/public_sector_bid_apis.md (the richer ~18-field shape),
 not the older 12-field sketch in CLAUDE.md.
 
+Two column groups live on the `opportunities` table:
+  - COMMON_FIELDS   — source data every connector normalises into (the fetch path).
+  - ENRICHMENT_FIELDS — triage additions (FOR004-derived), filled when an
+    opportunity is promoted toward a bid/no-bid decision. Connector-untouched;
+    written only via update_enrichment(). See docs/design/data-model.md.
+
 Dedupe / freshness:
   - Upsert is keyed on (source, ocid) — re-running a connector UPDATES the
     existing row rather than inserting a duplicate. ocid is the stable OCDS
@@ -49,6 +55,93 @@ COMMON_FIELDS = [
     "last_seen_at",      # ISO timestamp this record was last seen in a fetch
 ]
 
+# Triage-enrichment fields — added when an opportunity is looked at properly and
+# carried forward into the bid/no-bid decision (Stage 2). These are NOT populated
+# by connectors: like `lifecycle`, they live outside COMMON_FIELDS so the fetch
+# path never touches them. They are reverse-engineered from FWF's real
+# `FOR004 Bid Opportunity Overview` (see docs/design/data-model.md) — the fields
+# FWF records to promote a raw notice into a considered opportunity. All nullable;
+# written via update_enrichment(), not upsert_opportunity().
+ENRICHMENT_FIELDS = [
+    "sector",                 # e.g. "Housing / Registered Provider", "Central Gov"
+    "opportunity_type",       # PPN / PQQ / SQ / ITT / DPS / Framework / Further Competition / Direct Award
+    "procurement_portal",     # e.g. "MyTenders", "Jaggaer", "In-Tend"
+    "portal_ref",             # buyer/portal reference, e.g. "FTS Ref 2025/S 000-036416"
+    "clarification_deadline", # DISTINCT from deadline_date — the missed-clarification failure this tool exists to prevent
+    "scope_summary",          # human summary of what's actually being bought
+    "client_objectives",      # what the buyer is trying to achieve
+    "evaluation_criteria",    # quality/price split, weightings, what's scored
+    "known_competitors",      # incumbents / likely bidders
+]
+
+# --- Stage 2 (Triage) ------------------------------------------------------
+# The bid/no-bid gate, reverse-engineered from FWF's real FOR001 Bid
+# Qualification Questionnaire. Two tables:
+#   qualifications — one FOR001 record per opportunity (the work-in-progress
+#                    triage form; a decision may still be pending).
+#   bids           — the spine (data-model.md "one record, six stages"). A Bid
+#                    is born when a Qualification decision is "Go"; every later
+#                    stage attaches to it. `stage` is what the app stepper reads.
+# Both are kept OUTSIDE the connector/upsert path — only the Triage write path
+# (upsert_qualification / create_bid_from_qualification) touches them.
+
+# FOR001 "Qualification" sheet, field-for-field. All TEXT (text-tolerant per the
+# PoC — data-model.md "start tolerant, tighten later"). Two fields hold repeating
+# groups as JSON text: `delivery_team` ([{role, count, comments}], the FOR001
+# fixed role set) and `win_qualification_rag` ({criterion_key: 1|2|3}). The
+# economics (`estimated_bid_effort_days`, `estimated_bid_cost`) are computed from
+# `complexity` via qualification.py and persisted here, so Planning can read the
+# "cost to chase" directly and the number is snapshotted against the day-rate
+# table in force when the call was made. See qualification.py for the vocab.
+QUALIFICATION_FIELDS = [
+    "client_name",
+    "summary",
+    "sales_owner",
+    "framework",
+    "project_requirement_sentence",
+    "scope_summary",
+    "platforms",
+    "estimated_value",
+    "estimated_start_date",
+    "estimated_duration",
+    "pricing_model",              # Fixed / T&M / Risk Reward
+    "pricing_weighting",
+    "lots_breakdown",
+    "team_location",
+    "partner_required",
+    "delivery_team",             # JSON: [{role, count, comments}]
+    "response_open_date",
+    "clarification_deadline",    # FOR001 keeps this DISTINCT from submission_deadline
+    "submission_deadline",
+    "presentation_date",
+    "complexity",                # Low / Low-Med / Medium / Med-High / High
+    "estimated_bid_effort_days", # computed from complexity (persisted snapshot)
+    "estimated_bid_cost",        # computed from complexity (persisted snapshot)
+    "winning_strategy",
+    "delivery_risks",
+    "win_qualification_rag",     # JSON: {criterion_key: 1|2|3}
+    "rag_summary_rating",        # 1|2|3 (rounded avg of the criteria)
+    "rag_summary_label",         # Low / Med / High (risk-facing: high score = low risk)
+    "decision",                  # Go / No go / "" (undecided)
+    "qualify_out_reason",
+    "caveats",
+]
+
+# JSON-valued qualification columns — encoded on write, decoded on read.
+QUALIFICATION_JSON_FIELDS = {"delivery_team", "win_qualification_rag"}
+
+# The bid spine. Minimal now (Triage's job is to create it and set stage);
+# Plan/Complete/Manage/Learn hang their own tables off bid_id later.
+BID_FIELDS = [
+    "opportunity_id",
+    "qualification_id",
+    "bid_name",
+    "stage",     # Search / Triage / Plan / Complete / Manage / Learn
+    "status",    # active / withdrawn / submitted / closed
+    "created_at",
+    "updated_at",
+]
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -63,6 +156,7 @@ def connect(db_path=DB_PATH):
 
 def init_db(conn):
     cols = ",\n        ".join(f"{f} TEXT" for f in COMMON_FIELDS)
+    qual_cols = ",\n            ".join(f"{f} TEXT" for f in QUALIFICATION_FIELDS)
     conn.executescript(
         f"""
         CREATE TABLE IF NOT EXISTS opportunities (
@@ -80,6 +174,33 @@ def init_db(conn):
             scanned         INTEGER,
             kept            INTEGER
         );
+
+        -- Stage 2 (Triage): one FOR001 qualification per opportunity. UNIQUE on
+        -- opportunity_id so a re-triage updates in place rather than duplicating.
+        CREATE TABLE IF NOT EXISTS qualifications (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            opportunity_id INTEGER NOT NULL,
+            created_at     TEXT,
+            updated_at     TEXT,
+            {qual_cols},
+            UNIQUE(opportunity_id),
+            FOREIGN KEY(opportunity_id) REFERENCES opportunities(id)
+        );
+
+        -- The bid spine — born when a qualification decides "Go".
+        CREATE TABLE IF NOT EXISTS bids (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            opportunity_id INTEGER NOT NULL,
+            qualification_id INTEGER,
+            bid_name       TEXT,
+            stage          TEXT,
+            status         TEXT,
+            created_at     TEXT,
+            updated_at     TEXT,
+            UNIQUE(opportunity_id),
+            FOREIGN KEY(opportunity_id) REFERENCES opportunities(id),
+            FOREIGN KEY(qualification_id) REFERENCES qualifications(id)
+        );
         """
     )
     # Lightweight migration: `lifecycle` is a persisted flag (open / closed /
@@ -91,6 +212,11 @@ def init_db(conn):
     existing = {r["name"] for r in conn.execute("PRAGMA table_info(opportunities)")}
     if "lifecycle" not in existing:
         conn.execute("ALTER TABLE opportunities ADD COLUMN lifecycle TEXT")
+    # Triage-enrichment columns (see ENRICHMENT_FIELDS) — added the same way:
+    # nullable, connector-untouched, filled when an opportunity is triaged.
+    for f in ENRICHMENT_FIELDS:
+        if f not in existing:
+            conn.execute(f"ALTER TABLE opportunities ADD COLUMN {f} TEXT")
     conn.commit()
 
 
@@ -136,6 +262,133 @@ def upsert_opportunity(conn, record):
         return "inserted"
 
 
+def update_enrichment(conn, opp_id, fields):
+    """Set triage-enrichment fields on one opportunity, by row id.
+
+    `fields` is a dict; only keys in ENRICHMENT_FIELDS are written (everything
+    else is ignored, so this can't be used to smuggle in connector/source data).
+    This is the Stage 2 (Triage) write path — the connector upsert path never
+    touches these columns. Returns the number of fields written.
+    """
+    cols = [f for f in ENRICHMENT_FIELDS if f in fields]
+    if not cols:
+        return 0
+    assignments = ", ".join(f"{c} = ?" for c in cols)
+    conn.execute(
+        f"UPDATE opportunities SET {assignments} WHERE id = ?",
+        [fields[c] for c in cols] + [opp_id],
+    )
+    conn.commit()
+    return len(cols)
+
+
+def _row_dict(row):
+    """sqlite3.Row → plain dict (or None), decoding JSON qualification fields."""
+    if row is None:
+        return None
+    rec = {k: row[k] for k in row.keys()}
+    for f in QUALIFICATION_JSON_FIELDS:
+        if isinstance(rec.get(f), str) and rec[f]:
+            try:
+                rec[f] = json.loads(rec[f])
+            except ValueError:
+                pass  # leave the raw string if it isn't valid JSON
+    return rec
+
+
+def get_qualification(conn, opp_id):
+    """The FOR001 qualification for one opportunity, or None if not triaged yet.
+    JSON fields (delivery_team, win_qualification_rag) come back decoded."""
+    row = conn.execute(
+        "SELECT * FROM qualifications WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def upsert_qualification(conn, opp_id, fields):
+    """Insert or update the FOR001 qualification for one opportunity.
+
+    Keyed on opportunity_id (one qualification per opportunity — re-triaging
+    updates in place). `fields` is a dict; only keys in QUALIFICATION_FIELDS are
+    written, so this can't smuggle in connector/source columns. JSON-valued
+    fields (delivery_team, win_qualification_rag) may be passed as dict/list and
+    are encoded here. Returns the qualification row id.
+    """
+    rec = {f: fields[f] for f in QUALIFICATION_FIELDS if f in fields}
+    for f in QUALIFICATION_JSON_FIELDS:
+        if isinstance(rec.get(f), (dict, list)):
+            rec[f] = json.dumps(rec[f], ensure_ascii=False)
+
+    existing = conn.execute(
+        "SELECT id FROM qualifications WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    now = now_iso()
+
+    if existing:
+        if rec:
+            assignments = ", ".join(f"{c} = ?" for c in rec)
+            conn.execute(
+                f"UPDATE qualifications SET {assignments}, updated_at = ? WHERE opportunity_id = ?",
+                [rec[c] for c in rec] + [now, opp_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE qualifications SET updated_at = ? WHERE opportunity_id = ?",
+                (now, opp_id),
+            )
+        qid = existing["id"]
+    else:
+        cols = ["opportunity_id", "created_at", "updated_at", *rec.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO qualifications ({', '.join(cols)}) VALUES ({placeholders})",
+            [opp_id, now, now, *rec.values()],
+        )
+        qid = conn.execute(
+            "SELECT id FROM qualifications WHERE opportunity_id = ?", (opp_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return qid
+
+
+def get_bid_for_opportunity(conn, opp_id):
+    """The bid spun off an opportunity's Go decision, or None."""
+    row = conn.execute(
+        "SELECT * FROM bids WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def create_bid_from_qualification(conn, opp_id, qualification_id, bid_name, stage="Triage"):
+    """Promote an opportunity into a Bid (the spine) — called when a
+    qualification decides Go. Idempotent: if a bid already exists for this
+    opportunity, its stage/qualification link is refreshed rather than
+    duplicated (UNIQUE(opportunity_id) also guards it). Returns the bid id.
+    """
+    now = now_iso()
+    existing = conn.execute(
+        "SELECT id FROM bids WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE bids SET qualification_id = ?, bid_name = ?, stage = ?, updated_at = ? "
+            "WHERE opportunity_id = ?",
+            (qualification_id, bid_name, stage, now, opp_id),
+        )
+        bid_id = existing["id"]
+    else:
+        conn.execute(
+            "INSERT INTO bids (opportunity_id, qualification_id, bid_name, stage, status, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?)",
+            (opp_id, qualification_id, bid_name, stage, now, now),
+        )
+        bid_id = conn.execute(
+            "SELECT id FROM bids WHERE opportunity_id = ?", (opp_id,)
+        ).fetchone()["id"]
+    conn.commit()
+    return bid_id
+
+
 def record_source_run(conn, source, source_endpoint, scanned, kept):
     """Stamp when a source was last checked and how much it yielded."""
     conn.execute(
@@ -164,3 +417,7 @@ if __name__ == "__main__":
     print(f"opportunities: {total}")
     for s, n in by_source:
         print(f"  {s}: {n}")
+    quals = conn.execute("SELECT COUNT(*) FROM qualifications").fetchone()[0]
+    bids = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
+    print(f"qualifications: {quals}")
+    print(f"bids: {bids}")

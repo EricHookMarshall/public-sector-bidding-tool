@@ -2,3 +2,7 @@
 # Standard library covers the connectors and db.py; these are for the JSON API.
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# AI pre-fill for Triage (llm.py / triage_ai.py). Lazily imported, so the API
+# still boots without it — the AI-draft endpoint just returns 503. ADD the Azure
+# OpenAI SDK (`openai`) here when the azure_openai provider is built.
+anthropic>=0.102

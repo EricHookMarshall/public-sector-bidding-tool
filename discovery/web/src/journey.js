@@ -47,9 +47,9 @@ export const STAGES = [
     n: "02",
     t: "Triage",
     d: "Bid or no-bid",
-    state: "design",
-    stateLabel: "Designed (B01)",
-    maps: "Skill B01 — qualification gates + bid economics",
+    state: "live",
+    stateLabel: "Works today (B01)",
+    maps: "Skill B01 — FWF's FOR001 qualification + bid economics",
     component: "triage",
     scope: {
       does: "Runs a consistent bid/no-bid check on one opportunity: hard gates first (knockouts), then a weighted score and a plain effort-vs-value-vs-win view.",
@@ -68,8 +68,8 @@ export const STAGES = [
       ],
     },
     asset: {
-      state: "design",
-      txt: "<b>Designed, not built</b> — skill B01 defines the gates + scoring; not yet wired to a real opportunity record.",
+      state: "live",
+      txt: "<b>Wired to real data + AI pre-fill</b> — pick a stored opportunity, let AI draft the FOR001 qualification from the notice (RAG gates, complexity, go/no-go rationale) for review, then a Go promotes it into a bid. Provider-agnostic (Anthropic now, Azure OpenAI later); needs an API key set in <code>discovery/.env</code>.",
     },
   },
   {

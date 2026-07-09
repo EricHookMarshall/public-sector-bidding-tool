@@ -511,11 +511,25 @@ function Detail({ opp, onClose }) {
           {opp.status && <span className="badge">{opp.status}</span>}
         </div>
 
-        {opp.url && (
-          <a className="cta" href={opp.url} target="_blank" rel="noreferrer">
-            View original notice ↗
-          </a>
-        )}
+        <div className="detail-actions">
+          {opp.url && (
+            <a className="cta" href={opp.url} target="_blank" rel="noreferrer">
+              View original notice ↗
+            </a>
+          )}
+          {/* The Search → Triage handoff: hand this opportunity to Stage 2. The
+              id rides in sessionStorage so it survives the hash navigation; the
+              Triage stage picks it up on mount. */}
+          <button
+            className="cta cta-triage"
+            onClick={() => {
+              sessionStorage.setItem("bidpath.triage.opp", String(opp.id));
+              window.location.hash = "triage";
+            }}
+          >
+            ▲ Triage this →
+          </button>
+        </div>
 
         <table className="fields">
           <tbody>

@@ -19,25 +19,49 @@ import datetime
 import io
 import json
 import math
+import os
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+
+def _load_dotenv():
+    """Load discovery/.env into os.environ if present (no dependency). Real keys
+    live here, not in git — .env is git-ignored. Existing env vars win, so an
+    explicit `export` still overrides the file."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
+
+
+_load_dotenv()
+
+from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+import config as app_config
 import cpv_catalog
 import db
+import qualification as Q
 import regions
 import sources
+import triage_ai
+from llm import LLMUnavailable, get_provider
 
 app = FastAPI(title="Public Sector Bidding API", version="0.1.0")
 
 # Local PoC: the Vite dev server (5173) calls this API (8000). Allow it.
-# POST is needed now that the UI can trigger live searches.
+# POST triggers live searches; PUT saves a Triage qualification.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
 
@@ -298,6 +322,192 @@ def search(req: SearchRequest):
 
     total_kept = sum(r.get("kept", 0) for r in runs if r["ok"])
     return {"runs": runs, "total_kept": total_kept}
+
+
+# ---- Stage 2: Triage / FOR001 qualification -------------------------------
+
+# Opportunity → qualification pre-fill: the fields FWF re-keys from a notice into
+# FOR001 when it first triages. We seed them so the triager edits rather than
+# retypes. (source column on the opportunity → qualification field.)
+_QUAL_SEED_FROM_OPP = {
+    "client_name": "buyer_name",
+    "summary": "title",
+    "scope_summary": "scope_summary",       # enrichment, if triaged already
+    "estimated_value": "value_max",
+    "clarification_deadline": "clarification_deadline",
+    "submission_deadline": "deadline_date",
+    "framework": "opportunity_type",
+}
+
+
+def _seed_qualification(opp):
+    """A blank FOR001 pre-filled from the opportunity — never persisted until
+    the user saves. `opp` is the _row_to_dict of the opportunity."""
+    seed = {f: None for f in db.QUALIFICATION_FIELDS}
+    for qual_field, opp_field in _QUAL_SEED_FROM_OPP.items():
+        val = opp.get(opp_field)
+        seed[qual_field] = str(val) if val not in (None, "") else None
+    # The FOR001 fixed role set, zero-count, ready for the triager to fill.
+    seed["delivery_team"] = [{"role": r, "count": 0, "comments": ""} for r in Q.DELIVERY_ROLES]
+    seed["win_qualification_rag"] = {}
+    return seed
+
+
+def _qualification_payload(conn, opp_id):
+    """Assemble the Triage view for one opportunity: the qualification (saved or
+    seeded), whether it's been saved, the live bid economics, and any spun-off
+    bid. Shared by the GET and the post-save response so both return one shape."""
+    opp_row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
+    if opp_row is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    opp = _row_to_dict(opp_row)
+
+    qual = db.get_qualification(conn, opp_id)
+    saved = qual is not None
+    if not saved:
+        qual = _seed_qualification(opp)
+
+    return {
+        "opportunity": {
+            "id": opp_id, "title": opp.get("title"), "buyer_name": opp.get("buyer_name"),
+            "source": opp.get("source"), "deadline_date": opp.get("deadline_date"),
+            "clarification_deadline": opp.get("clarification_deadline"),
+            "value_max": opp.get("value_max"), "currency": opp.get("currency"),
+            "url": opp.get("url"),
+        },
+        "qualification": qual,
+        "saved": saved,
+        "economics": Q.compute_bid_economics(qual.get("complexity")),
+        "bid": db.get_bid_for_opportunity(conn, opp_id),
+    }
+
+
+@app.get("/api/triage/reference")
+def triage_reference():
+    """FOR001 vocabulary (complexity levels, day-rate table, pricing models,
+    delivery roles, RAG criteria, economics-by-complexity) for the Triage form."""
+    return Q.reference()
+
+
+@app.get("/api/opportunities/{opp_id}/qualification")
+def get_qualification(opp_id: int):
+    conn = db.connect()
+    db.init_db(conn)
+    payload = _qualification_payload(conn, opp_id)
+    conn.close()
+    return payload
+
+
+# ---- Settings: LLM config ---------------------------------------------------
+
+@app.get("/api/config")
+def get_config():
+    """Current LLM settings for the Settings screen. Never returns the API key —
+    only whether it's set + its last 4 chars."""
+    return app_config.current()
+
+
+class ConfigUpdate(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    api_key: str | None = None   # write-only; blank/omitted leaves the stored key untouched
+
+
+@app.put("/api/config")
+def put_config(body: ConfigUpdate):
+    """Persist LLM settings to git-ignored discovery/.env (and live env). Validates
+    provider/model against the known options so the screen can't set unbuilt ones."""
+    updates = {}
+    if body.provider:
+        if body.provider not in app_config.AVAILABLE_PROVIDERS:
+            raise HTTPException(400, f"provider '{body.provider}' is not available yet")
+        updates["LLM_PROVIDER"] = body.provider
+    if body.model:
+        if body.model not in app_config.MODEL_IDS:
+            raise HTTPException(400, f"unknown model '{body.model}'")
+        updates["ANTHROPIC_MODEL"] = body.model
+    if body.api_key and body.api_key.strip():
+        updates["ANTHROPIC_API_KEY"] = body.api_key.strip()
+    app_config.upsert_env(updates)
+    return app_config.current()
+
+
+@app.post("/api/config/test")
+def test_config():
+    """Do a cheap live round-trip with the current settings to verify the key +
+    model actually work. 503 with the reason if not."""
+    try:
+        result = get_provider().ping()
+    except LLMUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return {"ok": True, **result}
+
+
+@app.post("/api/opportunities/{opp_id}/qualification/ai-draft")
+def ai_draft_qualification(opp_id: int):
+    """AI-draft the FOR001 qualification from the opportunity notice (Stage-2
+    pre-fill). Returns a *draft* + the AI's rationale — never saved; the UI puts
+    it in the form for human review. 503 (not a crash) if no LLM is configured,
+    so the manual Triage flow keeps working."""
+    conn = db.connect()
+    db.init_db(conn)
+    row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    opp = _row_to_dict(row)  # read Row (with region_label etc.) before closing
+    conn.close()
+    try:
+        draft, meta = triage_ai.draft_qualification(opp)
+    except LLMUnavailable as e:
+        raise HTTPException(status_code=503, detail=f"AI drafting unavailable: {e}")
+    return {"draft": draft, "meta": meta}
+
+
+@app.put("/api/opportunities/{opp_id}/qualification")
+def save_qualification(opp_id: int, body: dict = Body(default_factory=dict)):
+    """Save (create or update) the FOR001 qualification for an opportunity.
+
+    Derived fields are recomputed server-side from the authoritative rig, never
+    trusted from the client: `estimated_bid_effort_days`/`estimated_bid_cost`
+    from `complexity`, and `rag_summary_rating`/`rag_summary_label` from
+    `win_qualification_rag`. A `decision == "Go"` promotes the opportunity into a
+    Bid (the spine); the response mirrors GET so the UI can re-render in place.
+    """
+    conn = db.connect()
+    db.init_db(conn)
+    if conn.execute("SELECT 1 FROM opportunities WHERE id = ?", (opp_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    fields = {k: v for k, v in body.items() if k in db.QUALIFICATION_FIELDS}
+
+    # Recompute derived fields against whatever the effective complexity / RAG is
+    # after this save (payload value if present, else the stored one).
+    existing = db.get_qualification(conn, opp_id) or {}
+    complexity = fields.get("complexity", existing.get("complexity"))
+    econ = Q.compute_bid_economics(complexity)
+    fields["estimated_bid_effort_days"] = econ["effort_days"]
+    fields["estimated_bid_cost"] = econ["cost"]
+
+    rag = fields.get("win_qualification_rag", existing.get("win_qualification_rag"))
+    rating, label = Q.rag_summary(rag)
+    fields["rag_summary_rating"] = rating
+    fields["rag_summary_label"] = label
+
+    qid = db.upsert_qualification(conn, opp_id, fields)
+
+    # A Go decision spins up the bid spine that later stages attach to.
+    decision = fields.get("decision", existing.get("decision"))
+    if decision == "Go":
+        bid_name = fields.get("client_name") or existing.get("client_name") \
+            or _row_to_dict(conn.execute(
+                "SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()).get("title")
+        db.create_bid_from_qualification(conn, opp_id, qid, bid_name)
+
+    payload = _qualification_payload(conn, opp_id)
+    conn.close()
+    return payload
 
 
 @app.get("/api/opportunities/{opp_id}")

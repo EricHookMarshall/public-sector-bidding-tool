@@ -5,18 +5,29 @@
 
 ## Active queue
 
-- [ ] **User review of the journey shell** — click through all 6 stages + theme toggle in the browser
-      (<http://localhost:5173>) and flag anything wrong. Not yet observed by a human; only build/curl
-      verified so far.
-- [ ] **Wire a second real stage (Triage/B01)** — blocked on the top-level project's open data-model
-      decision (shared bid record across stages).
+- [x] **Wire Triage (B01) for real** (2026-07-09, session 3) — `qualification.py` (FOR001 scoring
+      rig), `db.py` (`qualifications`/`bids` tables), `api.py` (reference/GET/PUT), `TriageStage.jsx`
+      (real form). Storage decision resolved: extended `bids.db` in place.
+- [x] **AI pre-fill for Triage** (2026-07-09, session 3) — `llm.py` provider seam (Anthropic built,
+      Azure OpenAI skeleton), `triage_ai.py` FOR001 drafting, `POST /…/qualification/ai-draft`,
+      "✦ AI draft" button + review banner. Default model `claude-haiku-4-5` (cost decision).
+      Live-verified with a real key: draft + test-connection both succeeded.
+- [x] **Settings screen** (2026-07-09, session 3) — `config.py` + `SettingsView.jsx`, routed at
+      `#settings`. Provider/model/key management, write-only key storage, live Test connection.
+- [ ] **Plan (Stage 3)** — `data-model.md` §3 (`BidPlan`: pipeline position + FOR002 phase
+      timeline) is fully specified; `journey.js` flags it "highest-value missing piece". Recommended
+      next stage.
+- [ ] **User review of the journey shell** — click through all 6 stages, Triage's new form, and the
+      new Settings screen in the browser (<http://localhost:5173>) and flag anything wrong. Still
+      not observed by a human across 3 sessions now; only build/curl verified so far.
 
 ## Surfaced / open
 
+- [ ] **Azure OpenAI provider** — `llm.py` has a documented skeleton (`AzureOpenAIProvider`), not
+      implemented. Build when Azure access is provisioned (client requirement, flagged this session).
 - [ ] **`StagePlaceholder.jsx` is now dead code** (2026-07-09) — superseded by the per-stage mock
       screens (TriageStage etc.); not referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose as a
       fallback for a stage with no mock screen yet.
-- [ ] **`.gitignore`** — `bids.db` and `web/node_modules/` should be gitignored. The repo exists; easy first commit.
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source. Cross-source matching (same notice on FTS and CF) is not yet handled. Low priority given value-band split.
 
 ## Parked / optional polish

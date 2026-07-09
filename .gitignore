@@ -19,11 +19,16 @@ dist/
 npm-debug.log*
 
 # --- Local data / secrets (never commit) ---
+# Client-confidential bid content (financials, certs, CVs, past submissions) —
+# hard rule in CLAUDE.md: this belongs in SharePoint, never committed here.
+knowledge/SharePoint Folder/
+
 # SQLite PoC database is rebuildable from the connectors; keep it out of git.
 discovery/bids.db
 *.sqlite
 *.sqlite3
 .env
 .env.*
+!.env.example
 secrets.*
 credentials.*

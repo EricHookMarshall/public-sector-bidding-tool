@@ -487,6 +487,12 @@ header.top {
   font-weight: 600; text-decoration: none; font-size: 0.9rem;
 }
 .cta:hover { text-decoration: underline; }
+.detail-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.cta-triage {
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 650;
+}
+.cta-triage:hover { text-decoration: none; filter: brightness(1.05); }
 
 .fields { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .fields th {
@@ -508,3 +514,109 @@ header.top {
   .filters { position: static; }
   .search-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Stage 02 — Triage (FOR001 qualification form). Reuses the mock
+   tokens (.gates/.gate/.pill/.econ/.stat/.decide/.mini-btn) now
+   that the stage is wired to real data, plus a real form grid.
+   ============================================================ */
+.triage-pick {
+  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+.triage-pick label { display: block; font-size: 0.78rem; color: var(--muted); flex: 1; min-width: 280px; }
+.triage-pick select {
+  width: 100%; margin-top: 4px; padding: 8px 9px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 0.9rem; background: var(--paper); color: var(--ink);
+}
+.triage-hint { font-size: 0.8rem; color: var(--muted); }
+.triage-hint.ok { color: var(--good); font-weight: 600; }
+
+.triage-form { display: flex; flex-direction: column; gap: 20px; }
+.tsec { display: flex; flex-direction: column; gap: 10px; }
+
+.fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.fgrid.areas { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.fld { display: flex; flex-direction: column; font-size: 0.76rem; color: var(--muted); gap: 4px; }
+.fld input, .fld select, .fld textarea {
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 0.9rem; background: var(--paper); color: var(--ink); font-family: inherit; resize: vertical;
+}
+.fld-warn input { border-color: var(--warn); background: var(--warn-soft); }
+.fld-warn { color: var(--warn); font-weight: 600; }
+
+/* Delivery-team role rows */
+.team { display: flex; flex-direction: column; gap: 6px; }
+.team-row { display: grid; grid-template-columns: 180px 70px 1fr; gap: 8px; align-items: center; }
+.team-role { font-size: 0.85rem; }
+.team-count, .team-comment {
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--paper); color: var(--ink); font-size: 0.85rem; font-family: inherit;
+}
+
+/* Complexity segmented control (5 options, wraps on narrow screens) */
+.complexity-seg { flex-wrap: wrap; }
+.complexity-seg button { flex: 1; min-width: 84px; }
+.complexity-seg button:not(:first-child) { border-radius: 0; }
+.complexity-seg button:first-child { border-radius: 8px 0 0 8px; }
+.complexity-seg button:last-child { border-radius: 0 8px 8px 0; }
+.econ-break { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.76rem; color: var(--faint); font-family: var(--mono); }
+
+/* RAG scoring — three buttons per criterion */
+.gate .rag-set { display: flex; gap: 5px; }
+.rag-btn {
+  width: 30px; height: 30px; border-radius: 7px; font-weight: 700; font-size: 0.82rem;
+  cursor: pointer; border: 1px solid var(--line-strong); background: var(--paper); color: var(--muted);
+  opacity: 0.55;
+}
+.rag-btn.on { opacity: 1; border-color: transparent; }
+.rag-btn.p-pass.on { background: var(--good-soft); color: var(--good); }
+.rag-btn.p-unk.on  { background: var(--warn-soft); color: var(--warn); }
+.rag-btn.p-fail.on { background: var(--crit-soft); color: var(--crit); }
+.rag-sum { margin-left: 10px; }
+
+@media (max-width: 760px) {
+  .team-row { grid-template-columns: 1fr 60px; }
+  .team-comment { grid-column: 1 / -1; }
+}
+
+/* AI pre-fill — button + review banner (Triage). The banner is deliberately
+   loud: an AI draft must read as "review me", not "done". */
+.ai-btn {
+  border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent);
+  border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; font-weight: 650;
+  cursor: pointer; white-space: nowrap;
+}
+.ai-btn:hover:not(:disabled) { filter: brightness(1.03); }
+.ai-btn:disabled { opacity: 0.6; cursor: default; }
+.ai-banner {
+  border: 1px solid var(--accent); background: var(--accent-soft);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 0.86rem;
+}
+.ai-banner-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.ai-banner-head b { color: var(--accent); }
+.ai-banner .ai-suggest { font-size: 0.82rem; }
+.ai-banner .ai-model { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.ai-banner p { margin: 4px 0 0; color: var(--ink-2); }
+
+/* Settings (#settings view) */
+.settings { padding-top: 20px; padding-bottom: 40px; }
+.settings-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.settings-head h2 { margin: 0; font-size: 1.15rem; }
+.settings-card {
+  max-width: 560px; display: flex; flex-direction: column; gap: 16px;
+  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel);
+  padding: 20px; box-shadow: var(--shadow);
+}
+.settings-card .fld { font-size: 0.82rem; }
+.settings-card .fld input, .settings-card .fld select {
+  padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 0.92rem; background: var(--paper); color: var(--ink); font-family: inherit;
+}
+.fld-help { font-size: 0.75rem; color: var(--faint); margin-top: 2px; }
+.settings-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.test-result {
+  border-radius: 8px; padding: 10px 12px; font-size: 0.86rem; border: 1px solid var(--line);
+}
+.test-result.ok { color: var(--good); background: var(--good-soft); border-color: transparent; }
+.test-result.bad { color: var(--crit); background: var(--crit-soft); border-color: transparent; }

@@ -6,6 +6,118 @@
 
 ---
 
+## 2026-07-09 (session 3) — Triage wired + AI pre-fill + Settings screen
+
+**Context.** Resumed via `/resume-prompt` mid-session-2-thread; the top-level Active task was
+"Wire Triage (B01) for real" (data-model.md §2, FWF's FOR001). User chose "DB + UI together" and
+"full FOR001 schema" when asked. After Triage shipped, user asked to add AI pre-fill (flagged as
+the biggest time-saver), specifying up front it would run on Anthropic now but might move to
+Azure OpenAI later — so the design had to plan for that swap. After building it, user asked to
+switch the default model to the cheaper option since cost is a factor; then asked for a Settings
+screen to manage it, specifying: enter/save the key in-screen (write-only to `.env`), AI/LLM
+settings only (not search defaults), and its own `#settings` view (not a modal).
+
+**Work done.**
+- **Triage schema**: `qualification.py` (new) — FOR001 scoring rig (day-rate table, RAG criteria,
+  complexity levels, delivery roles). Verified the effort/cost table against FOR001's Reference
+  sheet exactly (Low 9d/£4,500 … Medium 16.5d/£8,250 … High 24d/£12,000).
+- `db.py`: two new tables (`qualifications`, `bids`) outside the connector path, full FOR001
+  field set, JSON-encoded repeating groups (delivery_team, win_qualification_rag). Migration ran
+  clean against the live DB (21 opportunities intact, idempotent on rerun).
+- `api.py`: `GET /api/triage/reference`, `GET`/`PUT /api/opportunities/{id}/qualification` — server
+  recomputes economics + RAG summary from whatever the client sent, never trusts client-computed
+  derived values; a `decision: "Go"` promotes the opportunity into a `Bid`.
+- `TriageStage.jsx` rewritten from mock to a real form; `SearchStage.jsx` got a Search→Triage
+  handoff button. `journey.js` updated to mark Triage `live` (previously `design`).
+- **AI pre-fill**: `llm.py` (new) — provider seam via forced tool/function calling, chosen because
+  it maps identically onto Azure OpenAI's function-calling shape. `AnthropicProvider` built;
+  `AzureOpenAIProvider` is a documented skeleton (deferred — Azure access not provisioned, per
+  CLAUDE.md's "out of scope is explicit" rule). Default model set to **`claude-haiku-4-5`** after
+  the user flagged cost — a review-before-save drafting task doesn't need Opus-tier reasoning.
+- `triage_ai.py` (new) — drafts the full FOR001 from the opportunity + a concise FWF profile
+  (Microsoft Practice capability, the EFS/PCG gap, G-Cloud 15 disregard). Schema-constrained;
+  never auto-saves. `POST /…/qualification/ai-draft` degrades to 503 (not a crash) with no key.
+- **Settings screen**: `config.py` (new) — read/write LLM config to gitignored `discovery/.env`;
+  API key is write-only (never returned, only "set" + last-4 shown); writes whitelisted to 3 env
+  keys. `SettingsView.jsx` (new) — provider/model dropdowns with cost hints, key field, Save, and
+  a **Test connection** button (`llm.py` gained `ping()`). Routed at `#settings`, ⚙ button in
+  `App.jsx`'s `TopBar`.
+- `.env.example`, `requirements.txt` (added `anthropic>=0.102`) updated to document the new config.
+
+**Verification — all real:**
+- DB write-path smoke tests: qualification upsert + JSON round-trip + whitelist rejecting a bogus
+  field + idempotent bid promotion, cleaned up after each — DB left at 21 opportunities / 0
+  qualifications / 0 bids.
+- API exercised via FastAPI `TestClient` *and* live `curl` against a running `uvicorn`: seeded
+  qualification pre-fill, PUT→Go→bid (Med-High → 19.5d/£9,750, RAG 2.4→"2 Med"), 404s, config
+  `PUT` 400s on an invalid model / the not-yet-built `azure_openai` provider.
+- `npm run build` clean at every checkpoint.
+- **Live model calls** — a real Anthropic key appeared in `discovery/.env` mid-session (user
+  action, confirmed gitignored + untracked via `git check-ignore`/`git status` before this was
+  written): `POST /api/config/test` returned `{"ok": true, "model": "claude-haiku-4-5", "reply":
+  "ok"}`; a live AI draft on a real stored opportunity ("SUMIT Project…") produced a schema-valid
+  FOR001 with a rationale correctly citing FWF's EFS/framework-position weakness — the first real
+  evidence the prompt and the cheaper model both work for this task.
+
+**Decisions.**
+- Structured output via **forced tool/function calling**, not `output_config`/`messages.parse()`
+  — works on the pinned SDK version and is the shape that ports 1:1 to Azure OpenAI.
+- Default AI model: **Haiku 4.5**, not Opus — explicit cost tradeoff, user-directed, and now
+  empirically validated (the live draft's judgment held up).
+- Settings screen accepts and stores the API key itself (not "config only, edit `.env` by hand")
+  — user chose novice-friendliness over a smaller secret-handling surface.
+- Settings is a routed `#settings` view outside the 6-stage stepper, not a modal — user's call.
+- Storage: extended `bids.db` with the new tables in place, resolving the last open data-model
+  question from session 2.
+
+**Open questions raised.**
+- None new that block work. Carried forward: Azure OpenAI provider still unimplemented (skeleton
+  only); user still hasn't reviewed the running shell in a browser (3 sessions now).
+
+**Next.** Plan (Stage 3) is the recommended next stage — `data-model.md` §3 is fully specified and
+`journey.js` flags it "highest-value missing piece". No hard blocker on sequencing.
+
+---
+
+## 2026-07-09 (session 2) — Opportunity record extended with triage-enrichment fields
+
+**Context.** Resumed via `/resume-prompt`; user copied FWF's real SharePoint bid store into
+`knowledge/SharePoint Folder/` and asked what could be derived from it. That research produced
+`docs/design/data-model.md` at the top level (shared bid record across all 6 stages, reverse-engineered
+from FWF's `FOR001–FOR006` forms + trackers across 26 real bids). User then said "go ahead and start" —
+this session applied the first slice (§1, the `Opportunity` extension) to `discovery/db.py`.
+
+**Work done.**
+- `db.py`: added `ENRICHMENT_FIELDS` (9 nullable columns: `sector`, `opportunity_type`,
+  `procurement_portal`, `portal_ref`, `clarification_deadline`, `scope_summary`, `client_objectives`,
+  `evaluation_criteria`, `known_competitors`) + idempotent migration in `init_db`, following the
+  existing `lifecycle` pattern (outside `COMMON_FIELDS`, connector-untouched).
+- `db.py`: added `update_enrichment(conn, opp_id, fields)` — whitelisted write path for Stage 2 (Triage).
+- Top-level `.gitignore`: added `knowledge/SharePoint Folder/` — it was untracked and unignored,
+  containing client-confidential content (financials, insurance certs, personal CVs). Fixed a
+  first-attempt mistake (quoted the glob, which broke the match) before confirming with
+  `git check-ignore -v`.
+- Verification, all real: `python3 db.py` migration against the live DB (21 rows intact, 9 columns
+  added, idempotent on rerun); `update_enrichment` smoke-tested (2 valid fields written, 1 bogus key
+  correctly ignored, read-back verified, test write cleaned up); API pass-through checked in-process
+  (`get_opportunity` auto-includes new fields via `SELECT *`, `list_opportunities` correctly excludes
+  them — no `api.py` change needed).
+- Found and stopped services left running from the previous session (`uvicorn`, `vite`) at this
+  session's start — a gap in the prior end-session pass.
+
+**Decisions.** Triage-enrichment fields live outside `COMMON_FIELDS` (mirrors `lifecycle`), not as a
+separate table — keeps the `Opportunity` record queryable in one place until Triage needs its own
+table (per `data-model.md`'s "extend `bids.db` with new tables" recommendation, not yet done).
+
+**Open questions raised.** None new beyond what `data-model.md` already flagged (storage: extend
+`bids.db` vs. separate store; enum vs. free-text for fields like `opportunity_type`).
+
+**Next.** Wire the Triage stage (B01) for real: add the `Qualification`/`Bid` entity from
+`data-model.md` §2 (FWF's `FOR001`) as new `db.py` table(s), including the go/no-go scoring rig
+(complexity × day-rate → estimated bid cost), then connect `TriageStage.jsx` to it.
+
+---
+
 ## 2026-07-09 — Discovery UI extended into the 6-stage journey shell
 
 **Context.** Resumed the top-level project via `/resume-prompt`; the open decision was "data model

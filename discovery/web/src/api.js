@@ -43,3 +43,79 @@ export async function runSearch(body) {
   }
   return res.json();
 }
+
+// ---- Stage 2: Triage / FOR001 qualification ----
+
+// FOR001 vocabulary (complexity levels, day-rate table, RAG criteria, roles).
+export const getTriageReference = () => getJSON("/api/triage/reference");
+
+// The Triage view for one opportunity: qualification (saved or seeded), the live
+// bid economics, and any spun-off bid.
+export const getQualification = (oppId) =>
+  getJSON(`/api/opportunities/${oppId}/qualification`);
+
+// Save the FOR001 qualification; server recomputes economics + RAG and, on a Go
+// decision, promotes the opportunity into a Bid. Returns the same shape as GET.
+export async function saveQualification(oppId, fields) {
+  const res = await fetch(`/api/opportunities/${oppId}/qualification`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// AI-draft the qualification from the notice. Returns {draft, meta}; the draft is
+// for review only (not saved). Throws with the server detail on 503 (no LLM
+// configured) or other errors, so the UI can show why AI drafting is unavailable.
+export async function aiDraftQualification(oppId) {
+  const res = await fetch(`/api/opportunities/${oppId}/qualification/ai-draft`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ---- Settings: LLM config ----
+
+async function sendJSON(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch { /* keep status text */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// Never returns the API key — only provider/model/options + key status.
+export const getConfig = () => getJSON("/api/config");
+
+// Save provider/model/key. Omit api_key (or send blank) to leave the stored key
+// untouched. Returns the refreshed config.
+export const saveConfig = (body) => sendJSON("/api/config", "PUT", body);
+
+// Cheap live round-trip to verify the current key + model. Throws on failure.
+export const testConfig = () => sendJSON("/api/config/test", "POST");

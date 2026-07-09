@@ -11,6 +11,7 @@ import CompleteStage from "./stages/CompleteStage.jsx";
 import ManageStage from "./stages/ManageStage.jsx";
 import LearnStage from "./stages/LearnStage.jsx";
 import StagePlaceholder from "./stages/StagePlaceholder.jsx";
+import SettingsView from "./SettingsView.jsx";
 
 // Which component renders each stage. Only "search" is live; the rest are
 // labelled preview screens (see MockStage) until their stage is built.
@@ -23,18 +24,26 @@ const VIEWS = {
   learn: LearnStage,
 };
 
+function hashId() {
+  return window.location.hash.replace(/^#/, "");
+}
+
 function stageIndexFromHash() {
-  const id = window.location.hash.replace(/^#/, "");
-  const i = STAGES.findIndex((s) => s.id === id);
+  const i = STAGES.findIndex((s) => s.id === hashId());
   return i === -1 ? 0 : i;
 }
 
 export default function App() {
   const [cur, setCur] = useState(stageIndexFromHash);
+  // "settings" is a route outside the 6-stage journey (its own #settings view).
+  const [route, setRoute] = useState(() => (hashId() === "settings" ? "settings" : "journey"));
 
   // Keep state in sync with the hash (back/forward, manual edits, deep links).
   useEffect(() => {
-    const onHash = () => setCur(stageIndexFromHash());
+    const onHash = () => {
+      setRoute(hashId() === "settings" ? "settings" : "journey");
+      setCur(stageIndexFromHash());
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -45,9 +54,11 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Left/right arrows step through the journey (ignore while typing in a field).
+  // Left/right arrows step through the journey (ignore while typing in a field,
+  // and while on the Settings view — arrows there shouldn't jump to a stage).
   useEffect(() => {
     const onKey = (e) => {
+      if (hashId() === "settings") return;
       const t = e.target;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.key === "ArrowRight") go(cur + 1);
@@ -59,6 +70,15 @@ export default function App() {
 
   const stage = STAGES[cur];
   const StageView = VIEWS[stage.component] || (() => <StagePlaceholder stage={stage} />);
+
+  if (route === "settings") {
+    return (
+      <>
+        <TopBar />
+        <SettingsView />
+      </>
+    );
+  }
 
   return (
     <>
@@ -139,6 +159,13 @@ function TopBar() {
           </div>
         </div>
         <div className="top-spacer" />
+        <button
+          className="ghost-btn"
+          onClick={() => { window.location.hash = "settings"; }}
+          aria-label="Settings"
+        >
+          ⚙ Settings
+        </button>
         <button className="ghost-btn" onClick={toggleTheme} aria-label="Toggle colour theme">
           ◐ Theme
         </button>

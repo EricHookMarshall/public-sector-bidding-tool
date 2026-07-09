@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""
+AI pre-fill for Triage (Stage 2) — drafts FWF's FOR001 bid-qualification from a
+stored opportunity so a novice edits rather than faces a blank form. This is the
+"AI drives task completion" piece the journey promises for Triage.
+
+Provider-agnostic: the prompt and the FOR001 field-mapping here don't know or
+care which model runs — that's isolated in `llm.py`. The draft is **never
+auto-saved**: the API returns it for human review, and a Go still requires a
+person to click it (the "AI drafts, human approves" rule; this project exists
+because an unreviewed admin failure lost a real bid).
+"""
+import qualification as Q
+from llm import get_provider
+
+# Concise FWF profile the model needs to judge fit. Kept short and factual —
+# facts decay (see knowledge/VERIFIED_FACTS.md), so only the load-bearing points
+# live here: the Microsoft Practice capability and the EFS/PCG + framework gates
+# this tool exists to catch. Re-check against knowledge/ before relying on it.
+FWF_PROFILE = """FWF (Future WorkForce UK Ltd) is a UK subsidiary of Romania-based Arobs Group.
+Core capability: a Microsoft Practice (Power Platform, Power BI, .NET, Azure, data & AI), with
+delivery largely from a Romanian team. Standing weaknesses to weigh honestly:
+- Economic & financial standing (EFS): FWF's UK standalone accounts are thin; larger contracts
+  usually need the Arobs parent-company guarantee (PCG) attached — flag this whenever EFS is a gate.
+- Framework position: FWF was disregarded from G-Cloud 15; check whether a framework place is
+  actually held before assuming eligibility.
+- Social-value / UK-local-presence evidence can be thin, and incumbents often compete hard."""
+
+
+def _draft_schema():
+    """JSON schema for the AI draft — the FOR001 fields worth pre-filling. Enums
+    keep complexity, the RAG scores, and the decision inside FWF's real vocabulary."""
+    rag_props = {c["key"]: {"type": "integer", "enum": [1, 2, 3]} for c in Q.RAG_CRITERIA}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "scope_summary": {"type": "string"},
+            "project_requirement_sentence": {"type": "string"},
+            "platforms": {"type": "string"},
+            "estimated_value": {"type": "string"},
+            "estimated_duration": {"type": "string"},
+            "framework": {"type": "string"},
+            "complexity": {"type": "string", "enum": Q.COMPLEXITY_LEVELS},
+            "complexity_rationale": {"type": "string"},
+            "win_qualification_rag": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": rag_props,
+                "required": list(rag_props),
+            },
+            "gate_notes": {"type": "string"},
+            "winning_strategy": {"type": "string"},
+            "delivery_risks": {"type": "string"},
+            "known_competitors": {"type": "string"},
+            "suggested_decision": {"type": "string", "enum": ["Go", "No go", "Needs review"]},
+            "decision_rationale": {"type": "string"},
+        },
+        "required": [
+            "scope_summary", "complexity", "win_qualification_rag",
+            "winning_strategy", "delivery_risks", "suggested_decision", "decision_rationale",
+        ],
+    }
+
+
+def _prompt(opp):
+    """Build the user prompt from the opportunity record (search + enrichment fields)."""
+    rag_lines = "\n".join(
+        f"  - {c['key']}: {c['label']}" + (f" — {c['hint']}" if c.get("hint") else "")
+        for c in Q.RAG_CRITERIA
+    )
+    fields = "\n".join(
+        f"{label}: {val}" for label, val in [
+            ("Title", opp.get("title")),
+            ("Buyer", opp.get("buyer_name")),
+            ("Sector", opp.get("sector")),
+            ("Opportunity type", opp.get("opportunity_type")),
+            ("CPV codes", opp.get("cpv_codes")),
+            ("Value (max)", opp.get("value_max")),
+            ("Currency", opp.get("currency")),
+            ("Region", opp.get("region_label") or opp.get("region")),
+            ("Submission deadline", opp.get("deadline_date")),
+            ("Clarification deadline", opp.get("clarification_deadline")),
+            ("Scope summary (if recorded)", opp.get("scope_summary")),
+            ("Evaluation criteria (if recorded)", opp.get("evaluation_criteria")),
+            ("Known competitors (if recorded)", opp.get("known_competitors")),
+            ("Description", (opp.get("description") or "")[:4000]),
+        ] if val not in (None, "")
+    )
+    return f"""Draft FWF's FOR001 bid-qualification for this UK public-sector opportunity, so a
+non-expert can review and edit rather than start from scratch. Be realistic and honest — this
+tool exists because a missed admin detail lost a real bid; do not overstate fit.
+
+OPPORTUNITY (from the discovery engine):
+{fields}
+
+Score each Win-Qualification criterion 1 (weak / high risk) to 3 (strong / low risk):
+{rag_lines}
+
+Pick a complexity from {Q.COMPLEXITY_LEVELS} — it drives the bid-cost estimate. Give a suggested
+decision (Go / No go / Needs review) with a short rationale grounded in the FWF profile,
+especially the EFS/PCG and framework-position gates. Record everything via the tool."""
+
+
+def draft_qualification(opp):
+    """Draft a FOR001 qualification for one opportunity.
+
+    Returns `(draft, meta)`: `draft` is qualification-shaped (the same field names
+    db.py / the Triage form use), `meta` carries the AI's rationale for the human
+    reviewer. Nothing is persisted. Raises `LLMUnavailable` (→ 503) if no provider
+    is configured. Derived economics / RAG summary are intentionally NOT computed
+    here — the UI shows them live and the server recomputes them on save.
+    """
+    provider = get_provider()
+    raw = provider.complete_json(
+        system="You are a UK public-sector bid manager assisting FWF. " + FWF_PROFILE,
+        user=_prompt(opp),
+        schema=_draft_schema(),
+        tool_name="record_qualification",
+        tool_description="Record the drafted FOR001 bid-qualification fields for human review.",
+        max_tokens=4096,
+    )
+
+    draft = {
+        "scope_summary": raw.get("scope_summary"),
+        "project_requirement_sentence": raw.get("project_requirement_sentence"),
+        "platforms": raw.get("platforms"),
+        "estimated_value": raw.get("estimated_value")
+        or (str(opp["value_max"]) if opp.get("value_max") not in (None, "") else None),
+        "estimated_duration": raw.get("estimated_duration"),
+        "framework": raw.get("framework"),
+        "complexity": raw.get("complexity"),
+        "win_qualification_rag": raw.get("win_qualification_rag") or {},
+        "winning_strategy": raw.get("winning_strategy"),
+        "delivery_risks": raw.get("delivery_risks"),
+        "known_competitors": raw.get("known_competitors"),
+    }
+    # Go / No go map straight through; "Needs review" leaves the decision blank
+    # (undecided) so no Bid is created until a person makes the call.
+    decision = raw.get("suggested_decision")
+    draft["decision"] = decision if decision in ("Go", "No go") else ""
+
+    meta = {
+        "provider": provider.name,
+        "model": getattr(provider, "model", None),
+        "suggested_decision": decision,
+        "decision_rationale": raw.get("decision_rationale"),
+        "complexity_rationale": raw.get("complexity_rationale"),
+        "gate_notes": raw.get("gate_notes"),
+    }
+    return draft, meta

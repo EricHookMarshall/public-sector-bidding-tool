@@ -3,6 +3,92 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-09 (session 3) — Triage (B01) live + AI pre-fill + Settings screen
+
+**Context.** Continued straight from session 2's Active task ("wire Triage for real"), then the
+user asked to add AI pre-fill for the Triage form — flagged as the biggest time-saver in the whole
+tool, with an explicit heads-up that the provider would need to move from Anthropic to Azure
+OpenAI later, so the design had to plan for that swap up front. After it shipped, the user flagged
+cost as a factor and asked to move off the default (more expensive) model, then asked for a
+Settings screen to manage the AI config day-to-day.
+
+**Work done.** Full file-level detail lives in `discovery/_session/progress.md` (this session's
+entry there). Summary: (1) Triage — FWF's real FOR001 qualification form (go/no-go RAG scoring +
+complexity→cost rig, verified against the source spreadsheet's totals exactly) wired to two new
+`bids.db` tables and a real form in `TriageStage.jsx`, replacing the mock; a Go decision now
+promotes an opportunity into a `Bid`. (2) AI pre-fill — a provider-agnostic seam (`discovery/llm.py`)
+using forced tool/function calling (chosen because it maps identically onto Azure OpenAI's shape),
+with `AnthropicProvider` built and an `AzureOpenAIProvider` skeleton deferred until Azure access
+exists; `triage_ai.py` drafts the full FOR001 from a notice + a concise FWF profile, for human
+review only — never auto-saved. Default model set to `claude-haiku-4-5` after the cost
+conversation. (3) Settings — a new `#settings` screen (`config.py` + `SettingsView.jsx`) where a
+non-technical user can pick provider/model, enter an API key (write-only — stored in gitignored
+`discovery/.env`, never sent back to the browser), and hit **Test connection** for a live check.
+
+**Decisions.**
+- Structured AI output via forced tool/function calling, not a newer SDK-specific API — it is the
+  shape common to both Anthropic and Azure OpenAI, which is what makes the seam thin.
+- AI default model: Haiku 4.5, not Opus — an explicit, user-directed cost tradeoff for a
+  review-before-save task, and validated live (the draft's reasoning held up on a real notice).
+- Settings screen accepts and stores the API key itself (novice-friendly) rather than requiring
+  hand-edited `.env` — user's explicit choice, weighed against a smaller secret-handling surface.
+- Storage question from session 2 (extend `bids.db` vs. a separate store) is now resolved:
+  extended `bids.db` in place.
+
+**Open questions raised.** None new that block the project. Carried forward: Azure OpenAI provider
+still to build (client will need it, timing depends on their Azure provisioning); the running
+shell is still unreviewed by a human in a browser, now 3 sessions running.
+
+**Next.** Plan (Stage 3) — `docs/design/data-model.md` §3 is fully specified and the app itself
+flags it as the highest-value missing piece. See `discovery/_session/handover.md` for the
+file-level starting point.
+
+---
+
+## 2026-07-09 (session 2) — Data model derived from FWF's real SharePoint bid store
+
+**Context.** Resumed via `/resume-prompt` after the app-shell session. User had copied FWF's actual
+SharePoint bid store (26 real bids, forms, trackers) into `knowledge/SharePoint Folder/` and asked what
+could be derived from it to shape the data model — the open decision the previous session left behind.
+
+**Work done.**
+- Explored the SharePoint mirror (512 files, 26 per-bid folders under `03 FWF Bids/`, a repeated
+  taxonomy `00 Bid Admin → ... → 07 Post Submission`). Parsed the key structured artifacts with
+  openpyxl/python-docx: `FOR001` (Bid Qualification Questionnaire — incl. a real go/no-go scoring rig,
+  complexity × day-rate → estimated bid cost), `FOR002` (BidPlan timeline), `FOR003` (CQLOG /
+  clarification log), `FOR004` (Bid Opportunity Overview), `FOR006` (Tender Response Master — the
+  compliance-matrix / AI-prefill schema), `Tender Pipeline.xlsx`, `Bid Library Tracker.xlsx`,
+  `Bid_Discovery_Assessment.xlsx`, and the `Public Sector Bidding Framework.docx` process doc.
+- Wrote `docs/design/data-model.md` — the shared bid record across all six journey stages, derived
+  (not invented) from those real artifacts: `Opportunity` → `Qualification`/`Bid` → `BidPlan` →
+  `ResponseItem`/`LibraryItem` → `Clarification`/`ComplianceCheck` → `Outcome`. Flags
+  `clarification_deadline` and credential `expiry_date` as first-class fields — both tie directly to
+  the admin-failure story that motivates this whole project.
+- User said "go ahead and start" — applied the first slice (§1, `Opportunity` extension) to
+  `discovery/db.py`. See `discovery/_session/progress.md` (2026-07-09, session 2) for the file-level
+  detail and verification.
+- **Found and fixed a real exposure**: the copied SharePoint folder (financials, insurance certs,
+  personal CVs, contract examples) was untracked and unignored in git — a direct hit against the
+  CLAUDE.md hard rule on client-confidential content. Added `knowledge/SharePoint Folder/` to
+  `.gitignore`; confirmed excluded via `git check-ignore -v` (first attempt failed because the pattern
+  was mistakenly quoted — gitignore doesn't need shell-style quoting for spaces in paths).
+- Found services left running from the prior session (`uvicorn`, `vite`) — stopped at this session's
+  start; a gap in that session's end-session pass.
+
+**Decisions.** The data model is derived from FWF's real usage, not designed fresh — this is treated as
+higher-confidence than a from-scratch design since it reflects what a working bid team already does.
+Triage-enrichment fields added as columns on the existing `opportunities` table (not a new table yet),
+mirroring the existing `lifecycle` pattern.
+
+**Open questions raised.** (1) Extend `bids.db` with further tables vs. a separate store for
+`Qualification`/`Bid`/etc. — recommended to extend, not yet decided formally. (2) Enum vs. free-text for
+fields FWF's own forms treat inconsistently (`opportunity_type`, `pipeline_stage`).
+
+**Next.** Build the Triage (B01) entity for real: `Qualification`/`Bid` table(s) in `discovery/db.py`
+per `data-model.md` §2, then wire `TriageStage.jsx` off it instead of the mock screen.
+
+---
+
 ## 2026-07-09 — App shell built (definition step (b) chosen)
 
 **Context.** Resumed via `/resume-prompt`. The standing question was data model vs. app shell; user

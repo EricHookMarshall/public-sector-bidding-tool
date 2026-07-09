@@ -5,17 +5,27 @@
 
 ## Active queue
 
-- [x] **Next definition step chosen: (b) app shell** (2026-07-09) — built on the discovery front end;
-      6-stage shell with Search live + 5 illustrative preview stages. See `discovery/_session/`.
-- [ ] **User review of the running shell** — click through all 6 stages + theme toggle, flag issues.
-- [ ] **Data model** — now the next real build step (see below); blocks wiring the mock stages.
+- [x] **Wire Triage (B01) for real** (2026-07-09, session 3) — FOR001 qualification/bid schema +
+      real form in `TriageStage.jsx`. Storage decision resolved: extended `discovery/bids.db`.
+- [x] **AI pre-fill for Triage** (2026-07-09, session 3) — provider-agnostic seam (Anthropic built,
+      Azure OpenAI planned), FOR001 drafting, default model `claude-haiku-4-5` for cost. Live-verified
+      with a real key. See `discovery/_session/todo.md` for file-level detail.
+- [x] **Settings screen** (2026-07-09, session 3) — `#settings` view for AI provider/model/key,
+      write-only key storage, live Test connection.
+- [ ] **Plan (Stage 3)** — `data-model.md` §3 (`BidPlan`: pipeline position + FOR002 timeline) is
+      fully specified; flagged as the highest-value missing piece. Recommended next.
+- [ ] **User review of the running shell** — click through all 6 stages + the new Triage form and
+      Settings screen, flag issues. Still outstanding after 3 sessions.
 
 ## Surfaced / open
 
-- [ ] **Data model** — define the record that flows Opportunity → Qualified Bid → Answers → Evidence →
-      Clarifications → Outcome. Feeds every stage.
+- [ ] **Azure OpenAI provider** — the client will need AI drafting on Azure OpenAI, not just
+      Anthropic. Seam is built (`discovery/llm.py`); implementation deferred until Azure access is
+      provisioned outside the session.
 - [ ] **Library-provider seam** — one interface for the bid library; `LocalMirror` now → `GraphSharePoint`
-      later (see `docs/design/architecture.md`). Decide how `LocalMirror` gets seeded (parked to Stage 4).
+      later (see `docs/design/architecture.md`). `data-model.md` recommends seeding `LibraryItem` by
+      parsing the mirrored `knowledge/SharePoint Folder/` trackers now (proven working this session) —
+      decide when building the Complete stage.
 - [ ] **HubSpot integration** — future feature (pipeline ↔ CRM). Noted, not scoped.
 - [ ] **Cleanse FWF strategy docs** (`knowledge/01–03`) — strip `.docx` export artefacts. Low priority.
 
