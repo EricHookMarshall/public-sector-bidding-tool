@@ -237,30 +237,6 @@ export default function SettingsView() {
               <span className="fld-help">{dr.note}</span>
             </div>
           )}
-
-          {tc && (
-            <div className="settings-card">
-              <h3 className="settings-section">Team capacity</h3>
-              <label className="fld">
-                Bid-writing capacity (person-days)
-                <input
-                  type="number" min="1" step="1"
-                  value={capacity ?? ""}
-                  onChange={(e) => setCapacity(e.target.value)}
-                />
-                <span className="fld-help">
-                  Default {tc.default} days. The Plan board measures committed
-                  effort against this and warns when the team is over-committed.
-                </span>
-              </label>
-              <div className="settings-actions">
-                <button className="run-btn" onClick={onSaveCapacity} disabled={tcSaving}>
-                  {tcSaving ? "Saving…" : "Save capacity"}
-                </button>
-                {tcSaved && <span className="triage-hint ok">Saved.</span>}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="settings-col">
@@ -347,6 +323,30 @@ export default function SettingsView() {
                   {apSaving ? "Saving…" : "Save prompts"}
                 </button>
                 {apSaved && <span className="triage-hint ok">Saved.</span>}
+              </div>
+            </div>
+          )}
+
+          {tc && (
+            <div className="settings-card">
+              <h3 className="settings-section">Team capacity</h3>
+              <label className="fld">
+                Bid-writing capacity (person-days)
+                <input
+                  type="number" min="1" step="1"
+                  value={capacity ?? ""}
+                  onChange={(e) => setCapacity(e.target.value)}
+                />
+                <span className="fld-help">
+                  Default {tc.default} days. The Plan board measures committed
+                  effort against this and warns when the team is over-committed.
+                </span>
+              </label>
+              <div className="settings-actions">
+                <button className="run-btn" onClick={onSaveCapacity} disabled={tcSaving}>
+                  {tcSaving ? "Saving…" : "Save capacity"}
+                </button>
+                {tcSaved && <span className="triage-hint ok">Saved.</span>}
               </div>
             </div>
           )}
