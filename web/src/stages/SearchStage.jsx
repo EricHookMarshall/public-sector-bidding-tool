@@ -252,11 +252,19 @@ function SearchPanel({ meta, onSearched }) {
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState(null);
   const [err, setErr] = useState(null);
+  const [seeded, setSeeded] = useState(false);
 
-  // Seed sources + CPV scope from the API options the first time they arrive.
+  // Seed the whole form from the team's persisted search defaults (S3) the first
+  // time the options arrive — falling back to the code defaults if unset.
   useEffect(() => {
-    if (opts && sources.length === 0) setSources(opts.sources.map((s) => s.key));
-    if (opts && cpv.length === 0) setCpv(opts.default_cpv);
+    if (!opts || seeded) return;
+    const d = opts.defaults || {};
+    setSources(d.sources ?? opts.sources.map((s) => s.key));
+    setCpv(d.cpv_codes ?? opts.default_cpv);
+    setStage(d.stage ?? "tender");
+    setOpenOnly(d.open_only ?? true);
+    setDays(d.days ?? 120);
+    setSeeded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts]);
 

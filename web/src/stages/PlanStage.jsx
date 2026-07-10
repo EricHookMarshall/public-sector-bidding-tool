@@ -275,8 +275,10 @@ function PlanDetail({ bidId, ref_, imminent, onBack }) {
             Owner
             <input list="owner-roles" value={form.owner ?? ""} onChange={setField("owner")}
                    placeholder="person or role" />
+            {/* Roster people first (real owners), then the FOR002 role vocabulary. */}
             <datalist id="owner-roles">
-              {ref_.owner_roles.map((r) => <option key={r} value={r} />)}
+              {(ref_.roster || []).map((p) => <option key={`p:${p}`} value={p} />)}
+              {ref_.owner_roles.map((r) => <option key={`r:${r}`} value={r} />)}
             </datalist>
           </label>
           <label className="fld">

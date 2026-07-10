@@ -526,7 +526,7 @@ header.top {
    that the stage is wired to real data, plus a real form grid.
    ============================================================ */
 .triage-pick {
-  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--line);
 }
 .triage-pick label { display: block; font-size: 0.78rem; color: var(--muted); flex: 1; min-width: 280px; }
@@ -534,8 +534,37 @@ header.top {
   width: 100%; margin-top: 4px; padding: 8px 9px; border: 1px solid var(--line);
   border-radius: 8px; font-size: 0.9rem; background: var(--paper); color: var(--ink);
 }
+.triage-selected { margin: 0; font-size: 1rem; font-weight: 640; }
+.triage-buyer { font-size: 0.85rem; color: var(--muted); }
+.link.back { font-weight: 600; }
 .triage-hint { font-size: 0.8rem; color: var(--muted); }
 .triage-hint.ok { color: var(--good); font-weight: 600; }
+
+/* Triage card board — the pickable opportunities as a filtered board (U1). */
+.triage-board-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 14px;
+}
+.triage-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.triage-chip {
+  font-size: 0.8rem; padding: 5px 11px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer;
+}
+.triage-chip:hover { border-color: var(--accent); color: var(--ink); }
+.triage-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.triage-chip .n { font-weight: 700; opacity: 0.85; }
+.triage-search {
+  padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 0.85rem; background: var(--paper); color: var(--ink); min-width: 220px;
+}
+.card-top-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.triage-x {
+  border: 1px solid var(--line); background: var(--paper); color: var(--muted);
+  border-radius: 6px; font-size: 0.75rem; line-height: 1; padding: 4px 7px;
+  cursor: pointer; white-space: nowrap;
+}
+.triage-x:hover { border-color: var(--crit); color: var(--crit); }
+.triage-x.restore:hover { border-color: var(--good); color: var(--good); }
 
 .triage-form { display: flex; flex-direction: column; gap: 20px; }
 .tsec { display: flex; flex-direction: column; gap: 10px; }
@@ -638,6 +667,11 @@ header.top {
 .settings-section { margin: 0; font-size: 0.95rem; font-weight: 640; }
 .rate-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 @media (max-width: 520px) { .rate-grid { grid-template-columns: 1fr; } }
+
+/* Team roster — one editable row per person. */
+.roster-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.roster-row { display: flex; align-items: center; gap: 8px; }
+.roster-row input { flex: 1; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; background: var(--paper); color: var(--ink); font-family: inherit; }
 
 /* Two-up layout: cards fill their column (drop the standalone 560px cap). */
 .settings-grid {

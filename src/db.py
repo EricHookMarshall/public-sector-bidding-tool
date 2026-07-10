@@ -352,6 +352,16 @@ app_settings = Table(
     Column("updated_at", UnicodeText),
 )
 
+# Triage dismissals — a reversible "not pursuing this" flag, kept OUT of the
+# opportunities table on purpose: Search stays untouched (a dismissal only hides
+# the opp from the Triage board) and the shared record shape doesn't change. A
+# row present = dismissed; delete it to restore.
+triage_dismissals = Table(
+    "triage_dismissals", metadata,
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id"), primary_key=True),
+    Column("dismissed_at", UnicodeText),
+)
+
 
 class _Row(Mapping):
     """Dict-like view over a SQLAlchemy Row that mirrors sqlite3.Row: supports
@@ -999,6 +1009,57 @@ def list_bids_for_board(conn):
         """
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_triage_states(conn):
+    """Per-opportunity triage state for the Triage board: the qualification's
+    decision / complexity / RAG (if the opportunity has been triaged at all) and
+    whether it has been promoted into a bid. Returns two dicts keyed by
+    opportunity_id: {states, bid_stage}. One small query each — the board joins
+    them onto the opportunity list in api.py."""
+    quals = conn.execute(
+        "SELECT opportunity_id, decision, complexity, rag_summary_label, "
+        "rag_summary_rating FROM qualifications"
+    ).fetchall()
+    bids = conn.execute("SELECT opportunity_id, stage FROM bids").fetchall()
+
+    states = {
+        q["opportunity_id"]: {
+            "decision": q["decision"] or "",
+            "complexity": q["complexity"] or "",
+            "rag_label": q["rag_summary_label"] or "",
+            "rag_rating": q["rag_summary_rating"],
+        }
+        for q in quals
+    }
+    bid_stage = {b["opportunity_id"]: b["stage"] for b in bids}
+    return states, bid_stage
+
+
+def dismissed_opportunity_ids(conn):
+    """The set of opportunity ids dismissed from the Triage board (reversible)."""
+    rows = conn.execute("SELECT opportunity_id FROM triage_dismissals").fetchall()
+    return {r["opportunity_id"] for r in rows}
+
+
+def set_triage_dismissed(conn, opp_id, dismissed):
+    """Reversibly dismiss (or restore) an opportunity on the Triage board. Idempotent:
+    dismissing an already-dismissed opp (or restoring an active one) is a no-op.
+    Returns the resulting dismissed state."""
+    exists = conn.execute(
+        "SELECT 1 FROM triage_dismissals WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    if dismissed and not exists:
+        conn.execute(
+            "INSERT INTO triage_dismissals (opportunity_id, dismissed_at) VALUES (?, ?)",
+            (opp_id, now_iso()),
+        )
+    elif not dismissed and exists:
+        conn.execute(
+            "DELETE FROM triage_dismissals WHERE opportunity_id = ?", (opp_id,)
+        )
+    conn.commit()
+    return bool(dismissed)
 
 
 def get_setting(conn, key, default=None):

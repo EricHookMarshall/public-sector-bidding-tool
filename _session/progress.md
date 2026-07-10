@@ -3,6 +3,52 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-10 (session 13) — Cleared the walkthrough quick-wins queue + a user-requested Triage "dismiss" & demo cleanse
+
+**Context.** Resumed from session 12's handover (Active task = quick-wins-first). Worked the Session-12
+walkthrough queue in priority order, then the user asked for a way to remove items from Triage, which
+surfaced that the 24 opportunities are all real (genuine FTS/CF OCIDs) — only 4 had seeded demo bids.
+
+**Work done (all live-verified; committed at session end).**
+- **S5 — team roster.** `team_roster` in `app_settings`; `_team_roster` resolver (trim/case-insensitive
+  dedupe/cap 100×80) + `GET`/`PUT /api/settings/team-roster` (Admin PUT); roster injected into the Plan +
+  Manage reference payloads; Settings "Team roster" card; owner `<datalist>`s on Plan (people + FOR002
+  roles) and Manage (Owner/Backup). Verified: clean/dedupe, 400 on over-long, roster in both refs.
+- **S3 — search defaults.** `search_defaults` in `app_settings`; read-time `_search_defaults` resolver
+  re-validates every field vs the live source/stage registry (silent fallback), `_search_defaults_code`
+  baseline; `GET`/`PUT /api/settings/search-defaults` (Admin PUT, strict 400s); folded into `/api/meta`
+  `search_options.defaults`; Settings "Search defaults" card (source toggles, CPV chip editor, stage,
+  window, open-only, reset-to-built-in); the "Run a live search" panel seeds its whole form from it.
+  Verified: partial PUT persists + surfaces in meta; all 6 bad-input cases → 400.
+- **U1 — Triage card board.** `db.list_triage_states` + `GET /api/triage/board` (funnel summary,
+  mutually-exclusive states with bid-live precedence); TriageStage dropdown → filtered card board (chips +
+  counts + keyword); card → form with a "← Board" back header + selected-opp title; board refreshes after
+  a save. The Search→Triage "Triage this" handoff already existed. User confirmed S5/S3/U1 in the browser.
+- **U2 — dismiss from Triage (reversible) + demo cleanse.** New `triage_dismissals` side table (kept OUT
+  of `opportunities` so Search + the record shape are unchanged) + `db.dismissed_opportunity_ids` /
+  `set_triage_dismissed`; `PUT /api/opportunities/{id}/triage-dismiss`; board flags `dismissed` + a
+  "Dismissed (n)" chip; card ✕ Dismiss / ↩ Restore (stopPropagation so it doesn't open the form).
+  **Dismissal hides from Triage only — the opp stays in Search** (user's explicit choice via
+  AskUserQuestion). Also **cleansed the 4 seeded demo bids** (wiped qualifications/bids/bid_plans/
+  bid_manage/bid_responses/bid_outcomes) → **24 real opps, empty pipeline**; `bids.db` backup left in the
+  session scratchpad. Verified end-to-end: dismiss 2 → active 24→22 + dismissed 2 (sum 24); restore →
+  24/0; 404 on missing opp; `create_all(checkfirst=True)` auto-creates the new table.
+
+**Verification.** `python3 -c import api` clean after every backend change; each feature exercised live over
+HTTP against the bypass API on :8000; `npm run build` clean at each step (final 486.8 kB / 134.3 kB gz);
+Vite HMR compiled cleanly. DB left at 24 opps / empty pipeline / 0 dismissals for the user to test.
+
+**Decisions.** (1) "Remove from Triage" = **reversible dismiss**, not delete; **stays in Search** (user).
+(2) Cleanse the seeded demo bids now so the user tests a real bid on a clean pipeline (user). (3) Dismissal
+lives in a **side table**, not an `opportunities` column, to leave Search and the shared record shape
+untouched — mirrors how per-stage state hangs off separate tables.
+
+**Open questions raised.** If the user later wants a dismissed opp to vanish from Search too, it's a
+one-line filter add on the Search query (parked). The C-series still needs a scoping conversation before build.
+
+**Next.** Scope the **C-series "Compliance & Renewals" view** *with the user* (don't start cold), then build.
+See the handover Active task.
+
 ## 2026-07-10 (session 12) — UI walkthrough with the user: quick-win fixes + a findings punch-list
 
 **Context.** New workstream, separate from the Azure migration. The user did a live click-through of the

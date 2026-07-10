@@ -126,6 +126,15 @@ export const runSearch = (body) => sendJSON("/api/search", "POST", body);
 // FOR001 vocabulary (complexity levels, day-rate table, RAG criteria, roles).
 export const getTriageReference = () => getJSON("/api/triage/reference");
 
+// The Triage card board: every pickable opportunity with its triage state
+// (untriaged / decided / bid live) + a funnel summary.
+export const getTriageBoard = () => getJSON("/api/triage/board");
+
+// Reversibly dismiss an opportunity from the Triage board (or restore it).
+// Dismissal only hides it from Triage — it stays in Search and the DB.
+export const setTriageDismissed = (oppId, dismissed) =>
+  sendJSON(`/api/opportunities/${oppId}/triage-dismiss`, "PUT", { dismissed });
+
 // The Triage view for one opportunity: qualification (saved or seeded), the live
 // bid economics, and any spun-off bid.
 export const getQualification = (oppId) =>
@@ -253,3 +262,14 @@ export const saveAiPrompts = (body) =>
 export const getTeamCapacity = () => getJSON("/api/settings/team-capacity");
 export const saveTeamCapacity = (capacity_days) =>
   sendJSON("/api/settings/team-capacity", "PUT", { capacity_days });
+
+// Team roster — the people who own bids/phases/clarifications; feeds the owner
+// dropdowns on Plan and Manage.
+export const getTeamRoster = () => getJSON("/api/settings/team-roster");
+export const saveTeamRoster = (people) =>
+  sendJSON("/api/settings/team-roster", "PUT", { people });
+
+// Live-search defaults (CPV scope, sources, stage, window) the Search form seeds from.
+export const getSearchDefaults = () => getJSON("/api/settings/search-defaults");
+export const saveSearchDefaults = (body) =>
+  sendJSON("/api/settings/search-defaults", "PUT", body);

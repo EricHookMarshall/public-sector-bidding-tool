@@ -11,6 +11,8 @@ import {
   getDayRates, saveDayRates,
   getAiPrompts, saveAiPrompts,
   getTeamCapacity, saveTeamCapacity,
+  getTeamRoster, saveTeamRoster,
+  getSearchDefaults, saveSearchDefaults,
 } from "./api.js";
 
 export default function SettingsView() {
@@ -36,6 +38,23 @@ export default function SettingsView() {
   const [tcSaving, setTcSaving] = useState(false);
   const [tcSaved, setTcSaved] = useState(false);
 
+  // --- Team roster ---
+  const [tr, setTr] = useState(null);        // { people, note }
+  const [people, setPeople] = useState([]);  // editable [name]
+  const [trSaving, setTrSaving] = useState(false);
+  const [trSaved, setTrSaved] = useState(false);
+
+  // --- Search defaults ---
+  const [sd, setSd] = useState(null);        // { defaults, code_defaults, sources, stages, cpv_catalog, days_range, note }
+  const [sdSources, setSdSources] = useState([]);
+  const [sdCpv, setSdCpv] = useState([]);
+  const [sdCpvInput, setSdCpvInput] = useState("");
+  const [sdStage, setSdStage] = useState("");
+  const [sdOpenOnly, setSdOpenOnly] = useState(true);
+  const [sdDays, setSdDays] = useState(120);
+  const [sdSaving, setSdSaving] = useState(false);
+  const [sdSaved, setSdSaved] = useState(false);
+
   // --- AI prompts ---
   const [ap, setAp] = useState(null);        // { profile_default, note, tokens... }
   const [profile, setProfile] = useState("");
@@ -56,6 +75,12 @@ export default function SettingsView() {
       .catch((e) => setError(e.message));
     getTeamCapacity()
       .then((t) => { setTc(t); setCapacity(t.capacity_days); })
+      .catch((e) => setError(e.message));
+    getTeamRoster()
+      .then((r) => { setTr(r); setPeople(r.people); })
+      .catch((e) => setError(e.message));
+    getSearchDefaults()
+      .then((s) => { setSd(s); applySearchDefaults(s.defaults); })
       .catch((e) => setError(e.message));
     getAiPrompts()
       .then((p) => {
@@ -104,6 +129,51 @@ export default function SettingsView() {
       const t = await saveTeamCapacity(Number(capacity));
       setTc(t); setCapacity(t.capacity_days); setTcSaved(true);
     } catch (e) { setError(e.message); } finally { setTcSaving(false); }
+  };
+
+  // Load a defaults object into the editable Search-defaults fields (shared by
+  // first load and the "Reset to built-in" action).
+  const applySearchDefaults = (d) => {
+    setSdSources(d.sources);
+    setSdCpv(d.cpv_codes);
+    setSdStage(d.stage);
+    setSdOpenOnly(d.open_only);
+    setSdDays(d.days);
+  };
+
+  const toggleSdSource = (key) =>
+    setSdSources((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]));
+
+  const addSdCpv = () => {
+    const codes = sdCpvInput
+      .split(/[\s,]+/)
+      .map((c) => c.trim())
+      .filter((c) => /^\d{2,8}$/.test(c) && !sdCpv.includes(c));
+    if (codes.length) setSdCpv((c) => [...c, ...codes]);
+    setSdCpvInput("");
+  };
+  const removeSdCpv = (code) => setSdCpv((c) => c.filter((x) => x !== code));
+
+  const onSaveSearchDefaults = async () => {
+    setSdSaving(true); setError(null); setSdSaved(false);
+    try {
+      const s = await saveSearchDefaults({
+        sources: sdSources,
+        cpv_codes: sdCpv,
+        stage: sdStage,
+        open_only: sdOpenOnly,
+        days: Number(sdDays),
+      });
+      setSd(s); applySearchDefaults(s.defaults); setSdSaved(true);
+    } catch (e) { setError(e.message); } finally { setSdSaving(false); }
+  };
+
+  const onSaveRoster = async () => {
+    setTrSaving(true); setError(null); setTrSaved(false);
+    try {
+      const r = await saveTeamRoster(people);
+      setTr(r); setPeople(r.people); setTrSaved(true);
+    } catch (e) { setError(e.message); } finally { setTrSaving(false); }
   };
 
   const onSavePrompts = async () => {
@@ -237,6 +307,85 @@ export default function SettingsView() {
               <span className="fld-help">{dr.note}</span>
             </div>
           )}
+
+          {sd && (
+            <div className="settings-card">
+              <h3 className="settings-section">Search defaults</h3>
+              <p className="fld-help" style={{ marginTop: 0 }}>{sd.note}</p>
+
+              <label className="fld">Sources</label>
+              <div className="checks">
+                {sd.sources.map((s) => (
+                  <label key={s.key} className="check" title={s.note}>
+                    <input type="checkbox" checked={sdSources.includes(s.key)}
+                           onChange={() => toggleSdSource(s.key)} />
+                    {s.name}
+                  </label>
+                ))}
+              </div>
+
+              <label className="fld" style={{ marginTop: 12 }}>CPV scope ({sdCpv.length})</label>
+              <div className="chips">
+                {sdCpv.map((code) => {
+                  const label = (sd.cpv_catalog.find((c) => c.code === code) || {}).description;
+                  return (
+                    <span className="chip" key={code} title={label || "custom code"}>
+                      {code}
+                      {label && <span className="chip-desc">{label}</span>}
+                      <button type="button" onClick={() => removeSdCpv(code)}
+                              aria-label={`remove ${code}`}>×</button>
+                    </span>
+                  );
+                })}
+                {sdCpv.length === 0 && <span className="chip-empty">none — add at least one</span>}
+              </div>
+              <div className="cpv-add">
+                <select className="cpv-picker" value=""
+                        onChange={(e) => { if (e.target.value && !sdCpv.includes(e.target.value)) setSdCpv((c) => [...c, e.target.value]); }}>
+                  <option value="">＋ Add from CPV list…</option>
+                  {sd.cpv_catalog.map((c) => (
+                    <option key={c.code} value={c.code} disabled={sdCpv.includes(c.code)}>
+                      {c.code} — {c.description}
+                    </option>
+                  ))}
+                </select>
+                <input type="text" value={sdCpvInput} placeholder="or type code(s)"
+                       onChange={(e) => setSdCpvInput(e.target.value)}
+                       onKeyDown={(e) => {
+                         if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addSdCpv(); }
+                       }} />
+                <button type="button" onClick={addSdCpv}>Add</button>
+              </div>
+
+              <div className="rate-grid" style={{ marginTop: 12 }}>
+                <label className="fld">Stage
+                  <select value={sdStage} onChange={(e) => setSdStage(e.target.value)}>
+                    {sd.stages.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label className="fld">Window (days)
+                  <input type="number" min={sd.days_range.min} max={sd.days_range.max} step="1"
+                         value={sdDays} onChange={(e) => setSdDays(e.target.value)} />
+                </label>
+              </div>
+              <label className="check inline" style={{ marginTop: 8 }}>
+                <input type="checkbox" checked={sdOpenOnly}
+                       onChange={(e) => setSdOpenOnly(e.target.checked)} />
+                Only still-open notices
+              </label>
+
+              <div className="settings-actions">
+                <button className="run-btn" onClick={onSaveSearchDefaults} disabled={sdSaving}>
+                  {sdSaving ? "Saving…" : "Save search defaults"}
+                </button>
+                <button type="button" className="link sm"
+                        onClick={() => applySearchDefaults(sd.code_defaults)}>
+                  Reset to built-in
+                </button>
+                {sdSaved && <span className="triage-hint ok">Saved.</span>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="settings-col">
@@ -347,6 +496,43 @@ export default function SettingsView() {
                   {tcSaving ? "Saving…" : "Save capacity"}
                 </button>
                 {tcSaved && <span className="triage-hint ok">Saved.</span>}
+              </div>
+            </div>
+          )}
+
+          {tr && (
+            <div className="settings-card">
+              <h3 className="settings-section">Team roster</h3>
+              <p className="fld-help" style={{ marginTop: 0 }}>{tr.note}</p>
+              <div className="roster-list">
+                {people.map((name, i) => (
+                  <div className="roster-row" key={i}>
+                    <input
+                      value={name}
+                      placeholder="Full name"
+                      onChange={(e) => setPeople((ps) =>
+                        ps.map((p, j) => (j === i ? e.target.value : p)))}
+                    />
+                    <button type="button" className="mini-btn tonal" title="Remove"
+                            onClick={() => setPeople((ps) => ps.filter((_, j) => j !== i))}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {people.length === 0 && (
+                  <p className="empty sm">No people yet. Add the team so owners can be
+                    picked, not free-typed.</p>
+                )}
+              </div>
+              <div className="settings-actions">
+                <button type="button" className="mini-btn tonal"
+                        onClick={() => setPeople((ps) => [...ps, ""])}>
+                  + Add person
+                </button>
+                <button className="run-btn" onClick={onSaveRoster} disabled={trSaving}>
+                  {trSaving ? "Saving…" : "Save roster"}
+                </button>
+                {trSaved && <span className="triage-hint ok">Saved.</span>}
               </div>
             </div>
           )}

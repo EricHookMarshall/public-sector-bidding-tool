@@ -20,6 +20,7 @@ import io
 import json
 import math
 import os
+import re
 from contextlib import asynccontextmanager
 
 
@@ -204,8 +205,9 @@ def meta(conn=Depends(get_conn)):
         "value_bounds": {"min": bounds["lo"], "max": bounds["hi"]},
         "source_runs": [dict(r) for r in runs],
         # Options that drive the UI's live-search form (toggleable sources,
-        # stages, default CPV scope) + a glossary for the region codes present.
-        "search_options": sources.options(),
+        # stages, default CPV scope) + the team's persisted starting defaults
+        # (S3) so the form opens pre-tuned + a glossary for the region codes.
+        "search_options": {**sources.options(), "defaults": _search_defaults(conn)},
         "cpv_catalog": cpv_catalog.catalog(),
         "region_labels": regions.labels_for(distinct("region")),
         # Non-secret auth posture (Phase C) — lets ops/the SPA confirm whether
@@ -415,6 +417,74 @@ def _team_capacity(conn):
     return P.DEFAULT_TEAM_CAPACITY_DAYS
 
 
+def _team_roster(conn):
+    """The team roster (people who own bids/phases/clarifications) from
+    app_settings — a cleaned list of names, or [] if unset/invalid. Fed to the
+    owner dropdowns on Plan and Manage so a novice picks a real person, not a
+    free-typed role."""
+    stored = db.get_setting(conn, "team_roster")
+    if not isinstance(stored, list):
+        return []
+    seen, people = set(), []
+    for name in stored:
+        if not isinstance(name, str):
+            continue
+        clean = name.strip()
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            people.append(clean)
+    return people
+
+
+# Live-search defaults (app_settings) — the team's pre-tuned starting point for
+# the "Run a live search" form, so a novice isn't handed the raw code defaults.
+_SEARCH_DAYS_MIN, _SEARCH_DAYS_MAX = 1, 365
+_CPV_RE = re.compile(r"\d{2,8}")
+
+
+def _search_defaults_code():
+    """The built-in live-search defaults (all sources, the reference CPV scope,
+    live tender stage, open-only, a 120-day window) — the fallback baseline."""
+    return {
+        "sources": list(sources.SOURCES),
+        "cpv_codes": list(sources.DEFAULT_CPV),
+        "stage": sources.STAGES[0],
+        "open_only": True,
+        "days": 120,
+    }
+
+
+def _search_defaults(conn):
+    """The team's persisted live-search defaults merged over the code baseline.
+    Every stored value is re-validated against the current source/stage registry
+    so a stale or hand-corrupted setting can't wedge the search form — an invalid
+    field silently falls back rather than blocking the search."""
+    base = _search_defaults_code()
+    stored = db.get_setting(conn, "search_defaults")
+    if not isinstance(stored, dict):
+        return base
+
+    src = [k for k in stored.get("sources", []) if k in sources.SOURCES]
+    if src:
+        base["sources"] = src
+    cpv = [c for c in stored.get("cpv_codes", [])
+           if isinstance(c, str) and _CPV_RE.fullmatch(c)]
+    if cpv:
+        base["cpv_codes"] = cpv
+    if stored.get("stage") in sources.STAGES:
+        base["stage"] = stored["stage"]
+    if isinstance(stored.get("open_only"), bool):
+        base["open_only"] = stored["open_only"]
+    try:
+        d = int(stored.get("days"))
+        if _SEARCH_DAYS_MIN <= d <= _SEARCH_DAYS_MAX:
+            base["days"] = d
+    except (TypeError, ValueError):
+        pass
+    return base
+
+
 # AI prompt settings (app_settings) — the editable context the drafts run with.
 _AI_PROMPT_KEYS = ("ai_profile", "ai_triage_guidance", "ai_complete_guidance",
                    "ai_triage_template")
@@ -453,6 +523,81 @@ def _qualification_payload(conn, opp_id):
         "economics": Q.compute_bid_economics(qual.get("complexity"), _day_rates(conn)),
         "bid": db.get_bid_for_opportunity(conn, opp_id),
     }
+
+
+@app.get("/api/triage/board")
+def triage_board(conn=Depends(get_conn)):
+    """Every pickable opportunity with its triage state — the same set the old
+    dropdown offered, now enriched so a card can show where each one stands:
+    untriaged, decided (Go / No go / needs-review), and whether it's a live bid.
+    Ordered by submission deadline (soonest first), plus a funnel summary."""
+    opps = _query_opportunities(
+        conn, q=None, source=None, status=None, bid_status=None, lifecycle=None,
+        country=None, region=None, currency=None, notice_type=None,
+        min_value=None, max_value=None, sort="deadline_date", order="asc")
+    states, bid_stage = db.list_triage_states(conn)
+    dismissed = db.dismissed_opportunity_ids(conn)
+
+    def state_key(triaged, decision, has_bid):
+        # Mutually exclusive; must match the frontend's triageState precedence
+        # (bid-live wins over the raw Go decision) so the funnel counts equal
+        # what each filter chip actually shows.
+        if has_bid:
+            return "bids"
+        if decision == "Go":
+            return "go"
+        if decision == "No go":
+            return "no_go"
+        if triaged:
+            return "review"
+        return "untriaged"
+
+    items = []
+    for o in opps:
+        st = states.get(o["id"])
+        triaged = st is not None
+        decision = (st or {}).get("decision", "")
+        has_bid = o["id"] in bid_stage
+        items.append({
+            **o,
+            "triaged": triaged,
+            "decision": decision,
+            "complexity": (st or {}).get("complexity", ""),
+            "rag_label": (st or {}).get("rag_label", ""),
+            "rag_rating": (st or {}).get("rag_rating"),
+            "bid_stage": bid_stage.get(o["id"]),
+            "dismissed": o["id"] in dismissed,
+            "state": state_key(triaged, decision, has_bid),
+        })
+
+    # Funnel counts are over ACTIVE (non-dismissed) items — that's what the state
+    # chips filter — with a separate dismissed count for the "Dismissed" chip.
+    summary = {"total": 0, "untriaged": 0, "review": 0,
+               "go": 0, "no_go": 0, "bids": 0, "dismissed": 0}
+    for i in items:
+        if i["dismissed"]:
+            summary["dismissed"] += 1
+        else:
+            summary["total"] += 1
+            summary[i["state"]] += 1
+    return {"items": items, "summary": summary}
+
+
+class TriageDismissUpdate(BaseModel):
+    dismissed: bool
+
+
+@app.put("/api/opportunities/{opp_id}/triage-dismiss")
+def set_triage_dismiss(opp_id: int, body: TriageDismissUpdate, conn=Depends(get_conn)):
+    """Reversibly dismiss an opportunity from the Triage board, or restore it.
+    Dismissal only hides it from Triage — it stays in Search and the DB. 404 if
+    the opportunity doesn't exist."""
+    exists = conn.execute(
+        "SELECT 1 FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
+    if exists is None:
+        raise HTTPException(404, "opportunity not found")
+    state = db.set_triage_dismissed(conn, opp_id, body.dismissed)
+    return {"opportunity_id": opp_id, "dismissed": state}
 
 
 @app.get("/api/triage/reference")
@@ -600,6 +745,126 @@ def put_team_capacity(body: TeamCapacityUpdate, conn=Depends(get_conn)):
         raise HTTPException(400, "capacity must be a positive number of days")
     db.set_setting(conn, "team_capacity_days", body.capacity_days)
     return _team_capacity_payload(conn)
+
+
+# Team roster — the people who own bids, phases and clarifications. Kept small
+# and generous: a list of names, no roles or emails (a PoC, single-team tool).
+_ROSTER_MAX_PEOPLE = 100
+_ROSTER_MAX_NAME_LEN = 80
+
+
+def _team_roster_payload(conn):
+    """The Settings shape for the team roster: the current people list + a note."""
+    return {
+        "people": _team_roster(conn),
+        "note": "The people who own bids, plan phases and clarifications. These "
+                "names fill the owner dropdowns on Plan and Manage, so a missed "
+                "clarification always has a named owner to chase.",
+    }
+
+
+@app.get("/api/settings/team-roster")
+def get_team_roster(conn=Depends(get_conn)):
+    """The team roster (people) for the Settings screen."""
+    return _team_roster_payload(conn)
+
+
+class TeamRosterUpdate(BaseModel):
+    people: list[str]
+
+
+@app.put("/api/settings/team-roster", dependencies=[Depends(require_roles("Admin"))])
+def put_team_roster(body: TeamRosterUpdate, conn=Depends(get_conn)):
+    """Persist the team roster to app_settings (bids.db). Names are trimmed,
+    blanks dropped and duplicates removed (case-insensitive); order is kept."""
+    seen, people = set(), []
+    for raw in body.people:
+        clean = raw.strip()
+        if len(clean) > _ROSTER_MAX_NAME_LEN:
+            raise HTTPException(400, f"a name exceeds {_ROSTER_MAX_NAME_LEN} characters")
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            people.append(clean)
+    if len(people) > _ROSTER_MAX_PEOPLE:
+        raise HTTPException(400, f"the roster is capped at {_ROSTER_MAX_PEOPLE} people")
+    db.set_setting(conn, "team_roster", people)
+    return _team_roster_payload(conn)
+
+
+def _search_defaults_payload(conn):
+    """The Settings shape for live-search defaults: the effective defaults, the
+    code baseline (for a Reset), and the option lists the card renders from."""
+    return {
+        "defaults": _search_defaults(conn),
+        "code_defaults": _search_defaults_code(),
+        "sources": [{"key": k, "name": v["name"], "note": v.get("note", "")}
+                    for k, v in sources.SOURCES.items()],
+        "stages": list(sources.STAGES),
+        "cpv_catalog": cpv_catalog.catalog(),
+        "days_range": {"min": _SEARCH_DAYS_MIN, "max": _SEARCH_DAYS_MAX},
+        "note": "The starting point for the 'Run a live search' form on Search. "
+                "Set the CPV scope, sources, stage and window your team searches "
+                "most, so a novice runs the right search without tuning it first.",
+    }
+
+
+@app.get("/api/settings/search-defaults")
+def get_search_defaults(conn=Depends(get_conn)):
+    """The team's live-search defaults for the Settings screen."""
+    return _search_defaults_payload(conn)
+
+
+class SearchDefaultsUpdate(BaseModel):
+    # All optional — send only what changed; omitted fields keep their value.
+    sources: list[str] | None = None
+    cpv_codes: list[str] | None = None
+    stage: str | None = None
+    open_only: bool | None = None
+    days: int | None = None
+
+
+@app.put("/api/settings/search-defaults", dependencies=[Depends(require_roles("Admin"))])
+def put_search_defaults(body: SearchDefaultsUpdate, conn=Depends(get_conn)):
+    """Persist live-search defaults to app_settings (bids.db). Overlays the given
+    fields on the current defaults; unlike the read-time resolver this validates
+    strictly (bad input → 400) so the user gets feedback, then stores the full
+    resolved object so it's self-contained."""
+    resolved = _search_defaults(conn)
+
+    if body.sources is not None:
+        unknown = [k for k in body.sources if k not in sources.SOURCES]
+        if unknown:
+            raise HTTPException(400, f"unknown source(s): {', '.join(unknown)}")
+        if not body.sources:
+            raise HTTPException(400, "select at least one source")
+        # de-dupe, keep order
+        resolved["sources"] = list(dict.fromkeys(body.sources))
+
+    if body.cpv_codes is not None:
+        bad = [c for c in body.cpv_codes if not _CPV_RE.fullmatch(str(c))]
+        if bad:
+            raise HTTPException(400, f"CPV codes must be 2–8 digits: {', '.join(map(str, bad))}")
+        if not body.cpv_codes:
+            raise HTTPException(400, "keep at least one CPV code in scope")
+        resolved["cpv_codes"] = list(dict.fromkeys(str(c) for c in body.cpv_codes))
+
+    if body.stage is not None:
+        if body.stage not in sources.STAGES:
+            raise HTTPException(400, f"unknown stage: {body.stage}")
+        resolved["stage"] = body.stage
+
+    if body.open_only is not None:
+        resolved["open_only"] = body.open_only
+
+    if body.days is not None:
+        if not (_SEARCH_DAYS_MIN <= body.days <= _SEARCH_DAYS_MAX):
+            raise HTTPException(
+                400, f"days must be between {_SEARCH_DAYS_MIN} and {_SEARCH_DAYS_MAX}")
+        resolved["days"] = body.days
+
+    db.set_setting(conn, "search_defaults", resolved)
+    return _search_defaults_payload(conn)
 
 
 def _ai_prompts_payload(conn):
@@ -781,6 +1046,7 @@ def plan_reference(conn=Depends(get_conn)):
     the team's configured Settings value so the board seeds from it."""
     ref = P.reference()
     ref["default_capacity_days"] = _team_capacity(conn)
+    ref["roster"] = _team_roster(conn)
     return ref
 
 
@@ -905,10 +1171,10 @@ def _manage_summary(row):
 
 
 @app.get("/api/manage/reference")
-def manage_reference():
+def manage_reference(conn=Depends(get_conn)):
     """FOR003 vocabulary (clarification statuses, the pre-flight checklist
-    template, imminent-days) for the Manage register + gate."""
-    return M.reference()
+    template, imminent-days) plus the team roster for the owner dropdowns."""
+    return {**M.reference(), "roster": _team_roster(conn)}
 
 
 @app.get("/api/manage/board")

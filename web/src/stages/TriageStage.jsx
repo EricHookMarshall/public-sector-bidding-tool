@@ -6,8 +6,8 @@
 // later stages attach to). No mock data — everything here reads/writes bids.db.
 import { useEffect, useMemo, useState } from "react";
 import {
-  getOpportunities, getTriageReference, getQualification, saveQualification,
-  aiDraftQualification,
+  getTriageBoard, getTriageReference, getQualification, saveQualification,
+  aiDraftQualification, setTriageDismissed,
 } from "../api.js";
 
 // Handoff key set by Search's "Triage this" action (sessionStorage, so it
@@ -46,6 +46,31 @@ function fmtMoney(n) {
   }).format(Number(n));
 }
 
+function fmtDate(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", {
+    year: "numeric", month: "short", day: "numeric",
+  });
+}
+
+// A board item's triage state → a labelled pill. Drives the card's status chip
+// and the funnel filter. Bid-live wins over the raw decision (it's further along).
+function triageState(it) {
+  if (it.bid_stage) return { key: "bids", label: "Bid live", cls: "p-pass" };
+  if (it.decision === "Go") return { key: "go", label: "Go", cls: "p-pass" };
+  if (it.decision === "No go") return { key: "no_go", label: "No-bid", cls: "p-fail" };
+  if (it.triaged) return { key: "review", label: "Needs review", cls: "p-unk" };
+  return { key: "untriaged", label: "Untriaged", cls: "p-wait" };
+}
+
+// Funnel filter chips (key → label). "all" clears the filter; "dismissed" shows
+// the reversibly-hidden opportunities (with a Restore action).
+const TRIAGE_FILTERS = [
+  ["all", "All"], ["untriaged", "Untriaged"], ["review", "Needs review"],
+  ["go", "Go"], ["no_go", "No-bid"], ["bids", "Bid live"], ["dismissed", "Dismissed"],
+];
+
 // Client-side mirror of qualification.rag_summary — instant feedback while the
 // user scores; the server recomputes authoritatively on save. Score is a green
 // rating (high = low risk), so 3→Low, 2→Med, 1→High risk.
@@ -60,7 +85,9 @@ const RAG_PILL = { 3: "p-pass", 2: "p-unk", 1: "p-fail" };
 
 export default function TriageStage() {
   const [ref, setRef] = useState(null);
-  const [opps, setOpps] = useState([]);
+  const [board, setBoard] = useState(null);   // { items, summary } for the card board
+  const [q, setQ] = useState("");             // board keyword filter
+  const [stateFilter, setStateFilter] = useState("all");
   const [oppId, setOppId] = useState("");
   const [view, setView] = useState(null);   // full /qualification payload
   const [form, setForm] = useState(null);    // editable qualification
@@ -71,12 +98,20 @@ export default function TriageStage() {
   const [drafting, setDrafting] = useState(false);
   const [aiMeta, setAiMeta] = useState(null);   // AI rationale, shown for review
 
-  // Load the FOR001 vocabulary + the pickable opportunity list once.
+  const loadBoard = () => getTriageBoard().then(setBoard).catch((e) => setError(e.message));
+
+  // Dismiss (or restore) an opportunity, then refresh the board's counts.
+  const dismiss = (oppId, dismissed) =>
+    setTriageDismissed(oppId, dismissed)
+      .then(loadBoard)
+      .catch((e) => setError(e.message));
+
+  // Load the FOR001 vocabulary + the triage card board once.
   useEffect(() => {
-    Promise.all([getTriageReference(), getOpportunities({ sort: "deadline_date", order: "asc" })])
-      .then(([r, list]) => {
+    Promise.all([getTriageReference(), getTriageBoard()])
+      .then(([r, b]) => {
         setRef(r);
-        setOpps(list.results || []);
+        setBoard(b);
         // Honour a handoff from Search, if one is waiting.
         const handoff = sessionStorage.getItem(HANDOFF_KEY);
         if (handoff) {
@@ -136,6 +171,7 @@ export default function TriageStage() {
           ? `Saved — bid created (“${p.bid.bid_name || "untitled"}”, stage ${p.bid.stage}).`
           : "Saved."
       );
+      loadBoard();   // keep the board's state badges/funnel in sync for the return
     } catch (e) {
       setError(e.message);
     } finally {
@@ -172,27 +208,31 @@ export default function TriageStage() {
 
   return (
     <div className="triage">
-      <div className="triage-pick">
-        <label>
-          Opportunity to triage
-          <select value={oppId} onChange={(e) => setOppId(e.target.value)}>
-            <option value="">Select an opportunity…</option>
-            {opps.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.title} — {o.buyer_name || "Unknown buyer"}
-              </option>
-            ))}
-          </select>
-        </label>
-        {view?.bid && <span className="pill p-pass" title={`stage ${view.bid.stage}`}>● Bid live</span>}
-        {view && !view.saved && <span className="triage-hint">Not triaged yet — seeded from the notice.</span>}
-        {form && (
-          <button className="ai-btn" onClick={runAiDraft} disabled={drafting}
-                  title="Draft the whole qualification from the notice — you review & edit before saving">
-            {drafting ? "✦ Drafting…" : "✦ AI draft"}
-          </button>
-        )}
-      </div>
+      {!oppId && (
+        <TriageBoard
+          board={board} q={q} setQ={setQ}
+          stateFilter={stateFilter} setStateFilter={setStateFilter}
+          onPick={setOppId} onDismiss={dismiss}
+        />
+      )}
+
+      {oppId && (
+        <div className="triage-pick">
+          <button className="link back" onClick={() => setOppId("")}>← Board</button>
+          <h3 className="triage-selected">{view?.opportunity?.title || "Loading…"}</h3>
+          {view?.opportunity?.buyer_name && (
+            <span className="triage-buyer">· {view.opportunity.buyer_name}</span>
+          )}
+          {view?.bid && <span className="pill p-pass" title={`stage ${view.bid.stage}`}>● Bid live</span>}
+          {view && !view.saved && <span className="triage-hint">Not triaged yet — seeded from the notice.</span>}
+          {form && (
+            <button className="ai-btn" onClick={runAiDraft} disabled={drafting}
+                    title="Draft the whole qualification from the notice — you review & edit before saving">
+              {drafting ? "✦ Drafting…" : "✦ AI draft"}
+            </button>
+          )}
+        </div>
+      )}
 
       {error && <p className="error">⚠ {error}</p>}
       {loading && <p className="empty">Loading qualification…</p>}
@@ -392,9 +432,108 @@ export default function TriageStage() {
           </section>
         </div>
       )}
+    </div>
+  );
+}
 
-      {!oppId && !loading && (
-        <p className="empty">Pick an opportunity above to run the bid/no-bid qualification.</p>
+// ---- The triage card board: the pickable opportunities as a filtered board
+// (funnel counts + keyword + state chips), replacing the old dropdown. ----
+function TriageBoard({ board, q, setQ, stateFilter, setStateFilter, onPick, onDismiss }) {
+  const showingDismissed = stateFilter === "dismissed";
+  const items = useMemo(() => {
+    const all = board?.items || [];
+    const needle = q.trim().toLowerCase();
+    return all.filter((it) => {
+      // The Dismissed chip shows only dismissed opps; every other view hides them.
+      if (stateFilter === "dismissed") {
+        if (!it.dismissed) return false;
+      } else {
+        if (it.dismissed) return false;
+        if (stateFilter !== "all" && triageState(it).key !== stateFilter) return false;
+      }
+      if (!needle) return true;
+      return (
+        (it.title || "").toLowerCase().includes(needle) ||
+        (it.buyer_name || "").toLowerCase().includes(needle)
+      );
+    });
+  }, [board, q, stateFilter]);
+
+  if (!board) return <p className="empty">Loading opportunities…</p>;
+
+  const s = board.summary;
+  const count = (key) =>
+    key === "all" ? s.total : s[key] ?? 0;
+
+  return (
+    <div className="triage-board">
+      <div className="triage-board-head">
+        <div className="triage-chips">
+          {TRIAGE_FILTERS.map(([key, label]) => (
+            <button
+              key={key}
+              className={`triage-chip${stateFilter === key ? " on" : ""}`}
+              onClick={() => setStateFilter(key)}
+            >
+              {label} <span className="n">{count(key)}</span>
+            </button>
+          ))}
+        </div>
+        <input
+          type="search" className="triage-search" value={q}
+          placeholder="Filter by title or buyer…"
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
+
+      <ul className="cards">
+        {items.map((it) => {
+          const st = triageState(it);
+          return (
+            <li key={it.id} className="card" onClick={() => onPick(String(it.id))}>
+              <div className="card-top">
+                <h3>{it.title}</h3>
+                <div className="card-top-right">
+                  <span className={`st-pill ${st.cls}`}>{st.label}</span>
+                  {it.dismissed ? (
+                    <button
+                      className="triage-x restore" title="Restore to the Triage board"
+                      onClick={(e) => { e.stopPropagation(); onDismiss(it.id, false); }}
+                    >↩ Restore</button>
+                  ) : (
+                    <button
+                      className="triage-x"
+                      title="Dismiss from Triage — it stays in Search, and you can restore it"
+                      onClick={(e) => { e.stopPropagation(); onDismiss(it.id, true); }}
+                    >✕</button>
+                  )}
+                </div>
+              </div>
+              <p className="buyer">{it.buyer_name || "Unknown buyer"}</p>
+              <div className="card-meta">
+                <span className="source-tag">{it.source}</span>
+                <span>Closes {fmtDate(it.deadline_date)}</span>
+                <span>{fmtMoney(it.value_max)}</span>
+                {it.region && (
+                  <span title={it.region_label !== it.region ? `Region code: ${it.region}` : undefined}>
+                    📍 {it.region_label || it.region}
+                  </span>
+                )}
+                {it.complexity && <span>Complexity: {it.complexity}</span>}
+                {it.rag_label && <span>{it.rag_label} risk</span>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {items.length === 0 && (
+        <p className="empty">
+          {showingDismissed
+            ? "Nothing dismissed — dismissed opportunities show here to restore."
+            : board.items.length === 0
+              ? "No opportunities stored yet — run a search in Stage 1 first."
+              : "No opportunities match this filter."}
+        </p>
       )}
     </div>
   );

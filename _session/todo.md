@@ -12,12 +12,25 @@
 > New infra: `app_settings` (key→JSON) table + `db.get_setting/set_setting`.
 
 **Quick wins (do first):**
-- [ ] **S5 — team roster / owners** — a Settings-managed list of people that feeds the owner dropdowns
-      (Plan/Manage). Natural next after S4; reuses `app_settings`.
-- [ ] **S3 — search defaults in Settings** — default CPV scope, regions, source toggles, result cap so
-      Search starts pre-tuned. Medium.
-- [ ] **U1 — Triage as cards, not a dropdown** — show in-triage opportunities as a filtered card board
-      (like Search) + a Search→Triage "send to triage" action. Medium (screen redesign).
+- [x] **S5 — team roster / owners** (2026-07-10, session 13) — `team_roster` in `app_settings` +
+      `GET`/`PUT /api/settings/team-roster` (Admin PUT); roster injected into the Plan + Manage reference
+      payloads; Settings "Team roster" card; owner `<datalist>`s on Plan (people + FOR002 roles) and Manage
+      (Owner/Backup). Verified live (clean/dedupe/400 on over-long) + `npm build` clean. Uncommitted.
+- [x] **S3 — search defaults in Settings** (2026-07-10, session 13) — `search_defaults` in `app_settings`
+      (read-time resolver re-validates vs the source/stage registry) + `GET`/`PUT /api/settings/search-defaults`
+      (Admin PUT, strict 400s); folded into `/api/meta` `search_options.defaults`; Settings "Search defaults"
+      card; the "Run a live search" panel seeds its whole form from it. Verified live (partial PUT + 6 bad-input
+      400s) + `npm build` clean. Uncommitted.
+- [x] **U1 — Triage as cards, not a dropdown** (2026-07-10, session 13) — Triage now a filtered card
+      board (funnel chips + counts + keyword) via `GET /api/triage/board` (+ `db.list_triage_states`);
+      picking a card opens the form with a "← Board" back header; board refreshes after a save. The
+      Search→Triage "Triage this" handoff already existed. Verified live + `npm build` clean.
+- [x] **U2 — Dismiss from Triage (reversible) + demo-data cleanse** (2026-07-10, session 13) — new
+      `triage_dismissals` side table (kept out of `opportunities` so Search + record shape unchanged) +
+      `PUT /api/opportunities/{id}/triage-dismiss` `{dismissed}`; card ✕ Dismiss / ↩ Restore + a
+      "Dismissed (n)" funnel chip. **Dismissal hides from Triage only — stays in Search** (user choice).
+      Also cleansed the 4 seeded demo bids (all downstream tables) → 24 real opps, empty pipeline, so the
+      user can push a real test bid. bids.db backup in the session scratchpad. Verified live end-to-end.
 
 **Bigger / needs scoping:**
 - [ ] **C-series — "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff). **C3:** the

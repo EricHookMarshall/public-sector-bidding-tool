@@ -6,22 +6,33 @@
 
 ## Status
 
-`2026-07-10` (session 12) — **UI walkthrough workstream: shipped 7 quick-win fixes from the user's live
-click-through, all committed + live-verified.** B1/B2 (Triage→Plan card now shows buyer; AI extracts
-response dates from the notice text), F4 (editable per-role bid **day rates**), S1 (editable **AI prompts**
-+ Settings **two-column redesign**), S1+ (editable **Triage extraction template**, token-guarded so
-`{opportunity}` can't be dropped), F3 (Plan **date-pickers** — user-confirmed live), S4 (**team capacity**
-as a persisted Setting), layout rebalance (screenshot-verified, user pass). Commits `2bfd948` → `8535877`.
-**New infra:** `app_settings` (key→JSON) table + `db.get_setting/set_setting` — the home for tunable
-business settings (day rates, AI prompts, capacity) that travel with `bids.db` and stay editable on Azure,
-unlike the `.env`/`config.py` LLM secrets. **Round-2 findings captured in todo.md** (Session 12 walkthrough
-queue) + full analysis in progress.md — notably the compliance-doc register **already exists** in
-`library.py` and **ISO reads EXPIRED 2025-10-31 in live data**; biggest opportunity = an org-level
-"Compliance & Renewals" view (C3+C4).
+`2026-07-10` (session 13) — **Cleared the Session-12 walkthrough quick-wins queue: S5, S3, U1 shipped,
+plus a user-requested "dismiss from Triage" (U2) and a demo-data cleanse. All committed + live-verified;
+user confirmed S5/S3/U1 in the browser.**
+- **S5 — team roster** → `team_roster` in `app_settings` + `GET`/`PUT /api/settings/team-roster` (Admin
+  PUT); roster injected into the Plan + Manage reference payloads; Settings "Team roster" card; owner
+  `<datalist>`s on Plan (people + FOR002 roles) and Manage (Owner/Backup).
+- **S3 — search defaults** → `search_defaults` in `app_settings` (read-time resolver re-validates vs the
+  live source/stage registry; strict 400s on PUT) + `GET`/`PUT /api/settings/search-defaults`; folded into
+  `/api/meta` `search_options.defaults`; Settings "Search defaults" card; the "Run a live search" panel
+  seeds its whole form from it.
+- **U1 — Triage card board** → `GET /api/triage/board` (+ `db.list_triage_states`) replaces the dropdown
+  with a filtered card board (mutually-exclusive funnel chips + counts + keyword); card → form with a
+  "← Board" back header; board refreshes after a save. Search→Triage handoff already existed.
+- **U2 — dismiss from Triage (reversible) + cleanse** → new `triage_dismissals` side table (kept OUT of
+  `opportunities`, so Search + the record shape are unchanged) + `PUT /api/opportunities/{id}/triage-dismiss`;
+  card ✕ Dismiss / ↩ Restore + a "Dismissed (n)" chip. **Dismissal hides from Triage only — stays in
+  Search** (user's explicit choice). Cleansed the 4 seeded demo bids → **24 real opportunities, empty
+  pipeline** (0 quals/bids/plans/manage/responses/outcomes), so the user can push a real test bid through.
+  `bids.db` backup left in the session scratchpad.
 
-_Azure migration (parallel workstream, untouched this session):_ Phase C (auth) committed `0f35c70`; Wave
-0/1 remediation verified done; **Phase D (hosting scaffold) is the next Azure step** when the user returns
-to it. Detail below + in the session-11 progress entry.
+**New infra this session:** `db.list_triage_states`, `triage_dismissals` table (+ `db.dismissed_opportunity_ids`
+/ `set_triage_dismissed`), and two new `app_settings` keys (`team_roster`, `search_defaults`) on top of
+session-12's `app_settings` store. `create_all(checkfirst=True)` auto-creates the new table on startup.
+
+_Azure migration (parallel workstream, untouched since session 11):_ Phase C (auth) committed `0f35c70`;
+Wave 0/1 remediation verified done; **Phase D (hosting scaffold) is the next Azure step** when the user
+returns to it.
 
 `2026-07-10` (session 11) — **Phase C committed + the code-review Wave 0 (security) and Wave 1
 (Azure-promotion) remediation confirmed complete and verified green.** Phase C is now in git as
@@ -76,12 +87,22 @@ default) and an authenticated caller with no mapped group gets a configurable `A
 
 ## Active task
 
-**New session, quick wins first (user's stated preference).** Pull from the **Session 12 walkthrough queue**
-in todo.md, in priority order: **S5** (team roster → owner dropdowns; reuses the new `app_settings`, natural
-next after S4), then **S3** (search defaults), then the **C-series "Compliance & Renewals" view** (C3+C4 —
-**scope with the user before building**; highest founding-purpose payoff, and the expiry plumbing already
-exists in `library.py`). Concrete enough to start cold: **S5** = a Settings-managed people list persisted in
-`app_settings`, fed to the Plan/Manage owner `<datalist>`s.
+**The quick-wins queue is cleared. Next up: the C-series "Compliance & Renewals" view — but SCOPE IT WITH
+THE USER FIRST (don't start cold).** It's the highest founding-purpose payoff (the missed-renewal/expiry
+failure the tool exists to prevent), and the expiry plumbing already exists in `library.py` (*Company
+Credentials*; **ISO already reads EXPIRED 2025-10-31 in live data**). The gap is an **org-level** view — today
+the ledger is buried per-bid in Complete. **C3** = structured renewal dates for the rest of the credentials +
+an org-level compliance view; **C4** = framework/contract membership-period tracker (RM6263-expired precedent).
+Open scoping questions to ask: what exactly to track, where the renewal dates come from, and where the
+org-level view lives (a new stage/screen vs a Settings-adjacent page). See todo.md "C-series".
+
+Lower-priority alternatives if the user redirects: **U-series polish** on the new Triage board, the **Wave 2
+correctness bugs** (FTS deadline string-compare; the 3.12-only f-string in `seed_learn_demo.py`), or the
+**Azure Phase D** hosting scaffold (needs a subscription).
+
+_Note for the new session:_ the pipeline is deliberately empty now (demo bids cleansed) — Plan/Manage/
+Complete/Learn boards will read 0 bids until the user triages a real opportunity to "Go". That's expected,
+not a regression. Re-seed with `seed_*_demo.py --clear` if reviewable demo data is wanted again.
 
 _Parallel Azure track (only if the user redirects there):_ next step is **Phase D** hosting scaffold. The
 original Azure option list follows for reference:
@@ -176,9 +197,11 @@ FastAPI + (now dual-mode) SQLAlchemy/SQLite + React/Vite; shared bid record from
 ## Start-of-session checklist
 
 1. Read [CLAUDE.md](../CLAUDE.md), this file, and [todo.md](todo.md).
-2. Confirm DB state: `python3 src/db.py` → `opportunities: 21`, `qualifications: 3`, `bids: 3`,
-   `bid_plans: 3`, `bid_manage: 3`, `bid_responses: 1`, `bid_outcomes: 2` — unless prior testing left
-   different rows; check before assuming.
+2. Confirm DB state: `python3 src/db.py` → `opportunities: 24`, and an **empty pipeline** (`qualifications:
+   0`, `bids: 0`, `bid_plans/manage/responses/outcomes: 0`, `triage_dismissals: 0`) — the session-13 cleanse
+   removed the seeded demo bids on purpose so the user could test a real bid. **Empty boards are expected,
+   not a regression.** Re-seed with `seed_*_demo.py --clear` if reviewable demo data is wanted. `app_settings:
+   2` (day_rates/capacity may have been set; `team_roster`/`search_defaults` appear once saved).
 3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev` →
    `http://localhost:5173`. Seeders: `seed_plan_demo.py` / `seed_manage_demo.py` / `seed_complete_demo.py`
    / `seed_learn_demo.py` (each takes `--clear`).

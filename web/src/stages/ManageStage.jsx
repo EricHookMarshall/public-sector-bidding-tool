@@ -247,6 +247,10 @@ function ManageDetail({ bidId, ref_, imminent, onBack }) {
       {/* FOR003 clarification register — the step the last bid missed */}
       <section className="tsec">
         <div className="label">Clarification register (FOR003 CQLOG)</div>
+        {/* Team roster → owner/backup dropdowns, so every CQ has a named owner. */}
+        <datalist id="manage-owners">
+          {(ref_.roster || []).map((p) => <option key={p} value={p} />)}
+        </datalist>
         {clars.length === 0 && (
           <p className="empty sm">No clarifications logged. Add each buyer question with an owner, a
           backup, and its deadline — <b>with time and timezone</b>. That captured detail is what was
@@ -273,11 +277,11 @@ function ManageDetail({ bidId, ref_, imminent, onBack }) {
               </div>
               <div className="clar-owners">
                 <label className="mini-fld">Owner
-                  <input value={c.owner} placeholder="who owns it"
+                  <input list="manage-owners" value={c.owner} placeholder="who owns it"
                          onChange={(e) => setClar(i, "owner", e.target.value)} />
                 </label>
                 <label className="mini-fld">Backup
-                  <input value={c.backup_owner} placeholder="cover"
+                  <input list="manage-owners" value={c.backup_owner} placeholder="cover"
                          onChange={(e) => setClar(i, "backup_owner", e.target.value)} />
                 </label>
                 <label className="mini-fld">Buyer deadline
