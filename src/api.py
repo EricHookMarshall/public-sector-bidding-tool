@@ -402,6 +402,16 @@ def _day_rates(conn):
     return Q.resolve_day_rates(db.get_setting(conn, "day_rates"))
 
 
+# AI prompt settings (app_settings) — the editable context the drafts run with.
+_AI_PROMPT_KEYS = ("ai_profile", "ai_triage_guidance", "ai_complete_guidance")
+
+
+def _ai_prompts(conn):
+    """The stored AI prompt overrides (raw values; blanks mean 'use the default').
+    The draft functions apply the profile default themselves via resolve_profile."""
+    return {k: (db.get_setting(conn, k) or "") for k in _AI_PROMPT_KEYS}
+
+
 def _qualification_payload(conn, opp_id):
     """Assemble the Triage view for one opportunity: the qualification (saved or
     seeded), whether it's been saved, the live bid economics, and any spun-off
@@ -548,6 +558,57 @@ def put_day_rates(body: DayRatesUpdate, conn=Depends(get_conn)):
     return _day_rates_payload(conn)
 
 
+def _ai_prompts_payload(conn):
+    """The Settings shape for AI prompts: the stored overrides plus the built-in
+    default profile, so the screen can show/reset to it. Guidance fields default
+    to empty (no extra instructions)."""
+    stored = _ai_prompts(conn)
+    return {
+        "profile": stored["ai_profile"],
+        "profile_default": triage_ai.DEFAULT_FWF_PROFILE,
+        "triage_guidance": stored["ai_triage_guidance"],
+        "complete_guidance": stored["ai_complete_guidance"],
+        "note": "The profile is the AI's context for Triage and Complete drafts. "
+                "Guidance is optional house-style, appended to each draft prompt. "
+                "The data (opportunity, question, library) is always supplied by the app.",
+    }
+
+
+@app.get("/api/settings/ai-prompts")
+def get_ai_prompts(conn=Depends(get_conn)):
+    """The editable AI prompt context (profile + per-stage guidance) for Settings."""
+    return _ai_prompts_payload(conn)
+
+
+_AI_PROMPT_MAXLEN = 8000
+
+
+class AiPromptsUpdate(BaseModel):
+    # All optional — send only what changed. Blank profile falls back to the default.
+    profile: str | None = None
+    triage_guidance: str | None = None
+    complete_guidance: str | None = None
+
+
+@app.put("/api/settings/ai-prompts", dependencies=[Depends(require_roles("Admin"))])
+def put_ai_prompts(body: AiPromptsUpdate, conn=Depends(get_conn)):
+    """Persist AI prompt overrides to app_settings (bids.db). Length-capped; the
+    values are prose (no templating), so no other validation is needed — a blank
+    profile simply resolves back to the built-in default at draft time."""
+    mapping = {
+        "ai_profile": body.profile,
+        "ai_triage_guidance": body.triage_guidance,
+        "ai_complete_guidance": body.complete_guidance,
+    }
+    for key, val in mapping.items():
+        if val is None:
+            continue  # omitted → leave the stored value untouched
+        if len(val) > _AI_PROMPT_MAXLEN:
+            raise HTTPException(400, f"{key} exceeds {_AI_PROMPT_MAXLEN} characters")
+        db.set_setting(conn, key, val.strip())
+    return _ai_prompts_payload(conn)
+
+
 @app.post("/api/opportunities/{opp_id}/qualification/ai-draft")
 def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     """AI-draft the FOR001 qualification from the opportunity notice (Stage-2
@@ -558,8 +619,10 @@ def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     if row is None:
         raise HTTPException(status_code=404, detail="opportunity not found")
     opp = _row_to_dict(row)  # materialise the Row (region_label etc.) before the LLM call
+    prompts = _ai_prompts(conn)
     try:
-        draft, meta = triage_ai.draft_qualification(opp)
+        draft, meta = triage_ai.draft_qualification(
+            opp, profile=prompts["ai_profile"], guidance=prompts["ai_triage_guidance"])
     except LLMUnavailable as e:
         raise HTTPException(status_code=503, detail=f"AI drafting unavailable: {e}")
     return {"draft": draft, "meta": meta}
@@ -1071,8 +1134,11 @@ def ai_draft_response(bid_id: int, item_index: int, conn=Depends(get_conn)):
     provider = LIB.get_provider()
     matches = LIB.search(provider.items(), question.get("question_text", ""),
                          question.get("tags", ""), limit=5) if provider.available() else []
+    prompts = _ai_prompts(conn)
     try:
-        draft, meta = complete_ai.draft_response(question, matches)
+        draft, meta = complete_ai.draft_response(
+            question, matches, profile=prompts["ai_profile"],
+            guidance=prompts["ai_complete_guidance"])
     except LLMUnavailable as e:
         raise HTTPException(status_code=503, detail=f"AI drafting unavailable: {e}")
     return {"item_index": item_index, "question_ref": question.get("question_ref"),

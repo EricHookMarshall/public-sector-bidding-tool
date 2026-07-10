@@ -17,7 +17,9 @@ from llm import get_provider
 # facts decay (see knowledge/VERIFIED_FACTS.md), so only the load-bearing points
 # live here: the Microsoft Practice capability and the EFS/PCG + framework gates
 # this tool exists to catch. Re-check against knowledge/ before relying on it.
-FWF_PROFILE = """FWF (Future WorkForce UK Ltd) is a UK subsidiary of Romania-based Arobs Group.
+# This is the DEFAULT — Settings can override it (stored in app_settings, so a
+# team keeps the AI's context current without a code change). See resolve_profile.
+DEFAULT_FWF_PROFILE = """FWF (Future WorkForce UK Ltd) is a UK subsidiary of Romania-based Arobs Group.
 Core capability: a Microsoft Practice (Power Platform, Power BI, .NET, Azure, data & AI), with
 delivery largely from a Romanian team. Standing weaknesses to weigh honestly:
 - Economic & financial standing (EFS): FWF's UK standalone accounts are thin; larger contracts
@@ -25,6 +27,16 @@ delivery largely from a Romanian team. Standing weaknesses to weigh honestly:
 - Framework position: FWF was disregarded from G-Cloud 15; check whether a framework place is
   actually held before assuming eligibility.
 - Social-value / UK-local-presence evidence can be thin, and incumbents often compete hard."""
+
+# Back-compat alias: the constant name other modules import.
+FWF_PROFILE = DEFAULT_FWF_PROFILE
+
+
+def resolve_profile(stored):
+    """The effective AI profile: a non-blank Settings override, else the default."""
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    return DEFAULT_FWF_PROFILE
 
 
 def _draft_schema():
@@ -71,7 +83,15 @@ def _draft_schema():
     }
 
 
-def _prompt(opp):
+def _guidance_block(guidance):
+    """An optional house-style instruction block (from Settings), appended to the
+    prompt. Empty when unset — the base prompt is unchanged."""
+    if isinstance(guidance, str) and guidance.strip():
+        return f"\n\nADDITIONAL FWF GUIDANCE (from Settings — weight this):\n{guidance.strip()}"
+    return ""
+
+
+def _prompt(opp, guidance=None):
     """Build the user prompt from the opportunity record (search + enrichment fields)."""
     rag_lines = "\n".join(
         f"  - {c['key']}: {c['label']}" + (f" — {c['hint']}" if c.get("hint") else "")
@@ -113,10 +133,10 @@ highest-value catch here; missing it is the exact failure this tool exists to pr
 
 Pick a complexity from {Q.COMPLEXITY_LEVELS} — it drives the bid-cost estimate. Give a suggested
 decision (Go / No go / Needs review) with a short rationale grounded in the FWF profile,
-especially the EFS/PCG and framework-position gates. Record everything via the tool."""
+especially the EFS/PCG and framework-position gates. Record everything via the tool.{_guidance_block(guidance)}"""
 
 
-def draft_qualification(opp):
+def draft_qualification(opp, profile=None, guidance=None):
     """Draft a FOR001 qualification for one opportunity.
 
     Returns `(draft, meta)`: `draft` is qualification-shaped (the same field names
@@ -127,8 +147,8 @@ def draft_qualification(opp):
     """
     provider = get_provider()
     raw = provider.complete_json(
-        system="You are a UK public-sector bid manager assisting FWF. " + FWF_PROFILE,
-        user=_prompt(opp),
+        system="You are a UK public-sector bid manager assisting FWF. " + resolve_profile(profile),
+        user=_prompt(opp, guidance),
         schema=_draft_schema(),
         tool_name="record_qualification",
         tool_description="Record the drafted FOR001 bid-qualification fields for human review.",

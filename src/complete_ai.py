@@ -17,7 +17,7 @@ studies, not invented. The answer must respect the question's word-count limit (
 hard compliance gate the tool also checks independently in response.py).
 """
 from llm import get_provider
-from triage_ai import FWF_PROFILE
+from triage_ai import resolve_profile, _guidance_block
 
 
 def _draft_schema():
@@ -35,7 +35,7 @@ def _draft_schema():
     }
 
 
-def _prompt(question, matches):
+def _prompt(question, matches, guidance=None):
     """Build the user prompt from the FOR006 question + the retrieved library items."""
     limit = question.get("word_count_limit")
     q_lines = "\n".join(
@@ -73,10 +73,10 @@ FWF LIBRARY — best matches (the Approved Answer Bank / evidence register):
 
 Write a first-draft answer, name the win themes to emphasise, list which library items you drew on
 (`evidence_used`), and flag any gaps where FWF lacks the evidence to back a claim. Record everything
-via the tool."""
+via the tool.{_guidance_block(guidance)}"""
 
 
-def draft_response(question, matches):
+def draft_response(question, matches, profile=None, guidance=None):
     """Draft a FOR006 answer for one question, grounded in retrieved library items.
 
     `question` is a ResponseItem-shaped dict; `matches` are LibraryItems from
@@ -89,8 +89,8 @@ def draft_response(question, matches):
 
     provider = get_provider()
     raw = provider.complete_json(
-        system="You are a UK public-sector bid writer for FWF. " + FWF_PROFILE,
-        user=_prompt(question, matches),
+        system="You are a UK public-sector bid writer for FWF. " + resolve_profile(profile),
+        user=_prompt(question, matches, guidance),
         schema=_draft_schema(),
         tool_name="record_response",
         tool_description="Record the drafted FOR006 tender answer for human review.",

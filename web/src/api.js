@@ -242,3 +242,9 @@ export const testConfig = () => sendJSON("/api/config/test", "POST");
 export const getDayRates = () => getJSON("/api/settings/day-rates");
 export const saveDayRates = (rates) =>
   sendJSON("/api/settings/day-rates", "PUT", { rates });
+
+// Editable AI prompt context (profile + per-stage guidance). Send only what
+// changed; a blank profile falls back to the built-in default.
+export const getAiPrompts = () => getJSON("/api/settings/ai-prompts");
+export const saveAiPrompts = (body) =>
+  sendJSON("/api/settings/ai-prompts", "PUT", body);
