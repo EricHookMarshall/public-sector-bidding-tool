@@ -134,6 +134,7 @@ function BidCard({ card, imminent, onOpen }) {
   return (
     <button className={`kcard t-${tone} plan-card`} onClick={onOpen} title="Open the FOR002 plan">
       <div className="kt">{card.title}</div>
+      {card.buyer_name && <div className="km-sub">{card.buyer_name}</div>}
       <div className="km">
         {card.owner
           ? <span className="who">{card.owner}</span>

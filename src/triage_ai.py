@@ -41,6 +41,14 @@ def _draft_schema():
             "estimated_value": {"type": "string"},
             "estimated_duration": {"type": "string"},
             "framework": {"type": "string"},
+            # Response dates the AI may read out of the notice *text* when the
+            # structured record didn't carry them (ISO 8601). The founding failure
+            # was a missed clarification deadline, so these are worth extracting —
+            # but only as a fallback: an authoritative enrichment date always wins
+            # (see draft_qualification). Blank when the notice doesn't state one.
+            "response_open_date": {"type": "string"},
+            "clarification_deadline": {"type": "string"},
+            "submission_deadline": {"type": "string"},
             "complexity": {"type": "string", "enum": Q.COMPLEXITY_LEVELS},
             "complexity_rationale": {"type": "string"},
             "win_qualification_rag": {
@@ -97,6 +105,12 @@ OPPORTUNITY (from the discovery engine):
 Score each Win-Qualification criterion 1 (weak / high risk) to 3 (strong / low risk):
 {rag_lines}
 
+If the structured fields above show no submission or clarification deadline, read the
+Description for any dates the notice states (a closing/return date, a clarification/question
+deadline, a response-open date) and record them as ISO 8601 (YYYY-MM-DD). Leave a date blank
+if the notice doesn't state it — never invent one. A stated clarification deadline is the
+highest-value catch here; missing it is the exact failure this tool exists to prevent.
+
 Pick a complexity from {Q.COMPLEXITY_LEVELS} — it drives the bid-cost estimate. Give a suggested
 decision (Go / No go / Needs review) with a short rationale grounded in the FWF profile,
 especially the EFS/PCG and framework-position gates. Record everything via the tool."""
@@ -129,6 +143,13 @@ def draft_qualification(opp):
         or (str(opp["value_max"]) if opp.get("value_max") not in (None, "") else None),
         "estimated_duration": raw.get("estimated_duration"),
         "framework": raw.get("framework"),
+        # Response dates: the structured enrichment is authoritative — the AI's
+        # notice-read only fills a gap the record didn't carry (e.g. a notice that
+        # arrived dateless). response_open_date has no structured source, so the
+        # AI's value stands on its own.
+        "submission_deadline": opp.get("deadline_date") or raw.get("submission_deadline"),
+        "clarification_deadline": opp.get("clarification_deadline") or raw.get("clarification_deadline"),
+        "response_open_date": raw.get("response_open_date"),
         "complexity": raw.get("complexity"),
         "win_qualification_rag": raw.get("win_qualification_rag") or {},
         "winning_strategy": raw.get("winning_strategy"),
