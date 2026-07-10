@@ -714,11 +714,11 @@ header.top {
 /* FOR002 phase timeline — a compact editable grid. */
 .timeline { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
 .tl-row {
-  display: grid; grid-template-columns: 1.4fr 1fr 0.9fr 0.9fr 1fr 1.6fr; gap: 6px;
-  align-items: center; min-width: 640px;
+  display: grid; grid-template-columns: 1.3fr 1fr 1.1fr 1.1fr 1fr 1.5fr; gap: 6px;
+  align-items: center; min-width: 720px;
 }
 .tl-row.tl-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; padding: 0 2px 2px; }
-.tl-row input, .tl-row select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; background: var(--paper); color: var(--ink); font-family: inherit; min-width: 0; }
+.tl-row input, .tl-row select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; background: var(--paper); color: var(--ink); font-family: inherit; min-width: 0; width: 100%; box-sizing: border-box; }
 .tl-phase { font-size: 12px; font-weight: 600; padding: 4px 2px; }
 /* Status tint on the phase row's left edge. */
 .tl-row:not(.tl-head) { border-left: 3px solid transparent; padding-left: 5px; border-radius: 3px; }

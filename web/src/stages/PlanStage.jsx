@@ -11,6 +11,11 @@ import { getPlanReference, getPlanBoard, getBidPlan, saveBidPlan } from "../api.
 // Trim float noise (19.5 stays 19.5, 5.0 → 5) for the capacity readout.
 const round1 = (n) => Math.round(Number(n) * 10) / 10;
 
+// A native <input type="date"> needs a YYYY-MM-DD value. Coerce an ISO
+// date/datetime to its date part; anything non-ISO (legacy free text) → "" so the
+// picker stays usable rather than silently rejecting the value.
+const dateOnly = (v) => (/^\d{4}-\d{2}-\d{2}/.test(v || "") ? v.slice(0, 10) : "");
+
 function fmtMoney(n, currency = "GBP") {
   if (n === null || n === undefined || n === "" || Number.isNaN(Number(n))) return "—";
   return new Intl.NumberFormat("en-GB", {
@@ -276,12 +281,12 @@ function PlanDetail({ bidId, ref_, imminent, onBack }) {
           </label>
           <label className="fld">
             Bid work starts
-            <input value={form.start_date ?? ""} onChange={setField("start_date")} placeholder="e.g. 2026-07-20" />
+            <input type="date" value={dateOnly(form.start_date)} onChange={setField("start_date")} />
           </label>
           <label className="fld">
             Internal target submission
-            <input value={form.target_submission ?? ""} onChange={setField("target_submission")}
-                   placeholder="e.g. 2026-08-10" />
+            <input type="date" value={dateOnly(form.target_submission)}
+                   onChange={setField("target_submission")} />
           </label>
         </div>
       </section>
@@ -297,8 +302,8 @@ function PlanDetail({ bidId, ref_, imminent, onBack }) {
             <div className={`tl-row st-${(ph.status || "").replace(/\s+/g, "-").toLowerCase()}`} key={ph.phase || i}>
               <span className="tl-phase">{ph.phase}</span>
               <input list="owner-roles" value={ph.owner ?? ""} onChange={(e) => setPhase(i, "owner", e.target.value)} placeholder="—" />
-              <input value={ph.start_date ?? ""} onChange={(e) => setPhase(i, "start_date", e.target.value)} placeholder="—" />
-              <input value={ph.completion_date ?? ""} onChange={(e) => setPhase(i, "completion_date", e.target.value)} placeholder="—" />
+              <input type="date" value={dateOnly(ph.start_date)} onChange={(e) => setPhase(i, "start_date", e.target.value)} />
+              <input type="date" value={dateOnly(ph.completion_date)} onChange={(e) => setPhase(i, "completion_date", e.target.value)} />
               <select value={ph.status ?? "Not started"} onChange={(e) => setPhase(i, "status", e.target.value)}>
                 {ref_.phase_statuses.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
