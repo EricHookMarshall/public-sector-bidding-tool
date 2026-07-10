@@ -402,6 +402,19 @@ def _day_rates(conn):
     return Q.resolve_day_rates(db.get_setting(conn, "day_rates"))
 
 
+def _team_capacity(conn):
+    """The team's bid-writing capacity (person-days over the horizon) from
+    app_settings, or the FOR002 default if unset/invalid."""
+    stored = db.get_setting(conn, "team_capacity_days")
+    try:
+        v = float(stored)
+        if v > 0:
+            return v
+    except (TypeError, ValueError):
+        pass
+    return P.DEFAULT_TEAM_CAPACITY_DAYS
+
+
 # AI prompt settings (app_settings) — the editable context the drafts run with.
 _AI_PROMPT_KEYS = ("ai_profile", "ai_triage_guidance", "ai_complete_guidance",
                    "ai_triage_template")
@@ -557,6 +570,36 @@ def put_day_rates(body: DayRatesUpdate, conn=Depends(get_conn)):
         clean[role] = float(rate)
     db.set_setting(conn, "day_rates", clean)
     return _day_rates_payload(conn)
+
+
+def _team_capacity_payload(conn):
+    """The Settings shape for team capacity: the current value + the FOR002 default."""
+    return {
+        "capacity_days": _team_capacity(conn),
+        "default": P.DEFAULT_TEAM_CAPACITY_DAYS,
+        "note": "Total bid-writing person-days the team can commit over the planning "
+                "horizon. The Plan board measures committed effort against this and "
+                "warns when the team is over-committed.",
+    }
+
+
+@app.get("/api/settings/team-capacity")
+def get_team_capacity(conn=Depends(get_conn)):
+    """The team's configured bid-writing capacity for the Settings screen."""
+    return _team_capacity_payload(conn)
+
+
+class TeamCapacityUpdate(BaseModel):
+    capacity_days: float
+
+
+@app.put("/api/settings/team-capacity", dependencies=[Depends(require_roles("Admin"))])
+def put_team_capacity(body: TeamCapacityUpdate, conn=Depends(get_conn)):
+    """Persist the team's capacity to app_settings (bids.db). Must be positive."""
+    if body.capacity_days <= 0:
+        raise HTTPException(400, "capacity must be a positive number of days")
+    db.set_setting(conn, "team_capacity_days", body.capacity_days)
+    return _team_capacity_payload(conn)
 
 
 def _ai_prompts_payload(conn):
@@ -732,20 +775,25 @@ def _board_item(row):
 
 
 @app.get("/api/plan/reference")
-def plan_reference():
+def plan_reference(conn=Depends(get_conn)):
     """FOR002 vocabulary (pipeline stages, phase list, owner roles, statuses,
-    default capacity) for the Plan board + timeline."""
-    return P.reference()
+    default capacity) for the Plan board + timeline. The default capacity reflects
+    the team's configured Settings value so the board seeds from it."""
+    ref = P.reference()
+    ref["default_capacity_days"] = _team_capacity(conn)
+    return ref
 
 
 @app.get("/api/plan/board")
-def plan_board(capacity_days: float = Query(P.DEFAULT_TEAM_CAPACITY_DAYS,
-                                            description="team bid-writing capacity over the horizon"),
+def plan_board(capacity_days: float | None = Query(None,
+                                            description="team bid-writing capacity over the horizon; "
+                                                        "omitted → the configured Settings value"),
                conn=Depends(get_conn)):
     """The cross-bid Plan board: every live bid with its pipeline position, owner,
     deadlines (days remaining) and 'cost to chase', grouped into pipeline columns,
     plus the team-capacity summary and the computed deadline/owner alerts. This is
     the highest-value view — it answers the missed-deadline failure directly."""
+    cap = capacity_days if capacity_days is not None else _team_capacity(conn)
     rows = db.list_bids_for_board(conn)
 
     items = [_board_item(r) for r in rows]
@@ -756,8 +804,8 @@ def plan_board(capacity_days: float = Query(P.DEFAULT_TEAM_CAPACITY_DAYS,
     return {
         "count": len(items),
         "columns": columns,
-        "capacity": P.capacity_summary(items, capacity_days),
-        "alerts": P.alerts(items, capacity_days),
+        "capacity": P.capacity_summary(items, cap),
+        "alerts": P.alerts(items, cap),
     }
 
 

@@ -248,3 +248,8 @@ export const saveDayRates = (rates) =>
 export const getAiPrompts = () => getJSON("/api/settings/ai-prompts");
 export const saveAiPrompts = (body) =>
   sendJSON("/api/settings/ai-prompts", "PUT", body);
+
+// Team bid-writing capacity (person-days) the Plan board measures commitment against.
+export const getTeamCapacity = () => getJSON("/api/settings/team-capacity");
+export const saveTeamCapacity = (capacity_days) =>
+  sendJSON("/api/settings/team-capacity", "PUT", { capacity_days });

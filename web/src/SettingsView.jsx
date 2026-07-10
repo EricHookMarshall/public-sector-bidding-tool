@@ -10,6 +10,7 @@ import {
   getConfig, saveConfig, testConfig,
   getDayRates, saveDayRates,
   getAiPrompts, saveAiPrompts,
+  getTeamCapacity, saveTeamCapacity,
 } from "./api.js";
 
 export default function SettingsView() {
@@ -29,6 +30,12 @@ export default function SettingsView() {
   const [drSaving, setDrSaving] = useState(false);
   const [drSaved, setDrSaved] = useState(false);
 
+  // --- Team capacity ---
+  const [tc, setTc] = useState(null);        // { capacity_days, default, note }
+  const [capacity, setCapacity] = useState("");
+  const [tcSaving, setTcSaving] = useState(false);
+  const [tcSaved, setTcSaved] = useState(false);
+
   // --- AI prompts ---
   const [ap, setAp] = useState(null);        // { profile_default, note, tokens... }
   const [profile, setProfile] = useState("");
@@ -46,6 +53,9 @@ export default function SettingsView() {
       .catch((e) => setError(e.message));
     getDayRates()
       .then((d) => { setDr(d); setRates(d.rates); })
+      .catch((e) => setError(e.message));
+    getTeamCapacity()
+      .then((t) => { setTc(t); setCapacity(t.capacity_days); })
       .catch((e) => setError(e.message));
     getAiPrompts()
       .then((p) => {
@@ -86,6 +96,14 @@ export default function SettingsView() {
       const d = await saveDayRates(numeric);
       setDr(d); setRates(d.rates); setDrSaved(true);
     } catch (e) { setError(e.message); } finally { setDrSaving(false); }
+  };
+
+  const onSaveCapacity = async () => {
+    setTcSaving(true); setError(null); setTcSaved(false);
+    try {
+      const t = await saveTeamCapacity(Number(capacity));
+      setTc(t); setCapacity(t.capacity_days); setTcSaved(true);
+    } catch (e) { setError(e.message); } finally { setTcSaving(false); }
   };
 
   const onSavePrompts = async () => {
@@ -217,6 +235,30 @@ export default function SettingsView() {
                 {drSaved && <span className="triage-hint ok">Saved.</span>}
               </div>
               <span className="fld-help">{dr.note}</span>
+            </div>
+          )}
+
+          {tc && (
+            <div className="settings-card">
+              <h3 className="settings-section">Team capacity</h3>
+              <label className="fld">
+                Bid-writing capacity (person-days)
+                <input
+                  type="number" min="1" step="1"
+                  value={capacity ?? ""}
+                  onChange={(e) => setCapacity(e.target.value)}
+                />
+                <span className="fld-help">
+                  Default {tc.default} days. The Plan board measures committed
+                  effort against this and warns when the team is over-committed.
+                </span>
+              </label>
+              <div className="settings-actions">
+                <button className="run-btn" onClick={onSaveCapacity} disabled={tcSaving}>
+                  {tcSaving ? "Saving…" : "Save capacity"}
+                </button>
+                {tcSaved && <span className="triage-hint ok">Saved.</span>}
+              </div>
             </div>
           )}
         </div>
