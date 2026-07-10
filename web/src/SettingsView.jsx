@@ -30,10 +30,11 @@ export default function SettingsView() {
   const [drSaved, setDrSaved] = useState(false);
 
   // --- AI prompts ---
-  const [ap, setAp] = useState(null);        // { profile_default, note, ... }
+  const [ap, setAp] = useState(null);        // { profile_default, note, tokens... }
   const [profile, setProfile] = useState("");
   const [triageGuidance, setTriageGuidance] = useState("");
   const [completeGuidance, setCompleteGuidance] = useState("");
+  const [triageTemplate, setTriageTemplate] = useState("");
   const [apSaving, setApSaving] = useState(false);
   const [apSaved, setApSaved] = useState(false);
 
@@ -52,6 +53,7 @@ export default function SettingsView() {
         setProfile(p.profile);
         setTriageGuidance(p.triage_guidance);
         setCompleteGuidance(p.complete_guidance);
+        setTriageTemplate(p.triage_template);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -93,16 +95,25 @@ export default function SettingsView() {
         profile,
         triage_guidance: triageGuidance,
         complete_guidance: completeGuidance,
+        triage_template: triageTemplate,
       });
       setAp(p);
       setProfile(p.profile);
       setTriageGuidance(p.triage_guidance);
       setCompleteGuidance(p.complete_guidance);
+      setTriageTemplate(p.triage_template);
       setApSaved(true);
     } catch (e) { setError(e.message); } finally { setApSaving(false); }
   };
 
   const ks = cfg?.key_status;
+
+  // Client-side mirror of the server guard: a non-blank template must keep the
+  // required tokens, else the draft would run with no opportunity data.
+  const requiredTokens = (ap?.triage_template_tokens || [])
+    .filter((t) => t.required).map((t) => t.token);
+  const templateMissing = triageTemplate.trim()
+    ? requiredTokens.filter((t) => !triageTemplate.includes(t)) : [];
 
   return (
     <div className="wrap settings">
@@ -256,8 +267,41 @@ export default function SettingsView() {
                 />
               </label>
 
+              <label className="fld">
+                <span className="fld-row">
+                  <span>Triage extraction prompt <span className="fld-opt">(advanced)</span></span>
+                  <button type="button" className="link sm"
+                          onClick={() => setTriageTemplate(ap.triage_template_default)}>
+                    Insert default
+                  </button>
+                </span>
+                <textarea
+                  className={templateMissing.length ? "invalid" : ""}
+                  rows={12}
+                  value={triageTemplate}
+                  onChange={(e) => setTriageTemplate(e.target.value)}
+                  placeholder="Leave blank to use the built-in extraction instructions."
+                />
+                <span className="fld-help">
+                  The full base instructions for the Triage AI draft. The app fills these
+                  tokens in — {ap.triage_template_tokens.map((t, i) => (
+                    <span key={t.token}>
+                      {i > 0 && ", "}
+                      <code>{t.token}</code>{t.required && "*"}
+                    </span>
+                  ))}. <code>{"{opportunity}"}</code>* is required.
+                </span>
+                {templateMissing.length > 0 && (
+                  <span className="fld-warn-msg">
+                    ⚠ Missing required token: {templateMissing.join(", ")} — the draft
+                    would have no opportunity data.
+                  </span>
+                )}
+              </label>
+
               <div className="settings-actions">
-                <button className="run-btn" onClick={onSavePrompts} disabled={apSaving}>
+                <button className="run-btn" onClick={onSavePrompts}
+                        disabled={apSaving || templateMissing.length > 0}>
                   {apSaving ? "Saving…" : "Save prompts"}
                 </button>
                 {apSaved && <span className="triage-hint ok">Saved.</span>}

@@ -656,6 +656,12 @@ header.top {
 .fld-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .fld-opt { color: var(--faint); font-weight: 400; }
 .link.sm { font-size: 0.72rem; padding: 0; }
+.settings-card textarea.invalid { border-color: var(--crit); }
+.fld-warn-msg { font-size: 0.75rem; color: var(--crit); margin-top: 2px; }
+.settings-card .fld-help code {
+  font-size: 0.72rem; background: var(--paper); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 3px;
+}
 .test-result {
   border-radius: 8px; padding: 10px 12px; font-size: 0.86rem; border: 1px solid var(--line);
 }

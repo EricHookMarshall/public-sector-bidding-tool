@@ -403,7 +403,8 @@ def _day_rates(conn):
 
 
 # AI prompt settings (app_settings) — the editable context the drafts run with.
-_AI_PROMPT_KEYS = ("ai_profile", "ai_triage_guidance", "ai_complete_guidance")
+_AI_PROMPT_KEYS = ("ai_profile", "ai_triage_guidance", "ai_complete_guidance",
+                   "ai_triage_template")
 
 
 def _ai_prompts(conn):
@@ -568,6 +569,10 @@ def _ai_prompts_payload(conn):
         "profile_default": triage_ai.DEFAULT_FWF_PROFILE,
         "triage_guidance": stored["ai_triage_guidance"],
         "complete_guidance": stored["ai_complete_guidance"],
+        # The full Triage extraction template (advanced) + what it renders with.
+        "triage_template": stored["ai_triage_template"],
+        "triage_template_default": triage_ai.DEFAULT_TRIAGE_TEMPLATE,
+        "triage_template_tokens": triage_ai.TRIAGE_TEMPLATE_TOKENS,
         "note": "The profile is the AI's context for Triage and Complete drafts. "
                 "Guidance is optional house-style, appended to each draft prompt. "
                 "The data (opportunity, question, library) is always supplied by the app.",
@@ -584,10 +589,12 @@ _AI_PROMPT_MAXLEN = 8000
 
 
 class AiPromptsUpdate(BaseModel):
-    # All optional — send only what changed. Blank profile falls back to the default.
+    # All optional — send only what changed. Blank profile/template fall back to
+    # their built-in defaults.
     profile: str | None = None
     triage_guidance: str | None = None
     complete_guidance: str | None = None
+    triage_template: str | None = None
 
 
 @app.put("/api/settings/ai-prompts", dependencies=[Depends(require_roles("Admin"))])
@@ -595,10 +602,19 @@ def put_ai_prompts(body: AiPromptsUpdate, conn=Depends(get_conn)):
     """Persist AI prompt overrides to app_settings (bids.db). Length-capped; the
     values are prose (no templating), so no other validation is needed — a blank
     profile simply resolves back to the built-in default at draft time."""
+    # A non-blank template must keep the load-bearing data token(s), else the draft
+    # would run with no opportunity to extract from. A blank clears it → default.
+    if body.triage_template is not None and body.triage_template.strip():
+        missing = triage_ai.missing_triage_tokens(body.triage_template)
+        if missing:
+            raise HTTPException(
+                400, f"extraction template is missing required token(s): {', '.join(missing)}")
+
     mapping = {
         "ai_profile": body.profile,
         "ai_triage_guidance": body.triage_guidance,
         "ai_complete_guidance": body.complete_guidance,
+        "ai_triage_template": body.triage_template,
     }
     for key, val in mapping.items():
         if val is None:
@@ -622,7 +638,8 @@ def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     prompts = _ai_prompts(conn)
     try:
         draft, meta = triage_ai.draft_qualification(
-            opp, profile=prompts["ai_profile"], guidance=prompts["ai_triage_guidance"])
+            opp, profile=prompts["ai_profile"], guidance=prompts["ai_triage_guidance"],
+            template=prompts["ai_triage_template"])
     except LLMUnavailable as e:
         raise HTTPException(status_code=503, detail=f"AI drafting unavailable: {e}")
     return {"draft": draft, "meta": meta}
