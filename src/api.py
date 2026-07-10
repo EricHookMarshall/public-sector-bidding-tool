@@ -396,6 +396,12 @@ def _seed_qualification(opp):
     return seed
 
 
+def _day_rates(conn):
+    """The team's configured bid day rates (from app_settings), merged over the
+    FOR001 defaults. Drives every 'cost to chase' calculation."""
+    return Q.resolve_day_rates(db.get_setting(conn, "day_rates"))
+
+
 def _qualification_payload(conn, opp_id):
     """Assemble the Triage view for one opportunity: the qualification (saved or
     seeded), whether it's been saved, the live bid economics, and any spun-off
@@ -420,16 +426,17 @@ def _qualification_payload(conn, opp_id):
         },
         "qualification": qual,
         "saved": saved,
-        "economics": Q.compute_bid_economics(qual.get("complexity")),
+        "economics": Q.compute_bid_economics(qual.get("complexity"), _day_rates(conn)),
         "bid": db.get_bid_for_opportunity(conn, opp_id),
     }
 
 
 @app.get("/api/triage/reference")
-def triage_reference():
+def triage_reference(conn=Depends(get_conn)):
     """FOR001 vocabulary (complexity levels, day-rate table, pricing models,
-    delivery roles, RAG criteria, economics-by-complexity) for the Triage form."""
-    return Q.reference()
+    delivery roles, RAG criteria, economics-by-complexity) for the Triage form.
+    Economics reflect the team's configured day rates (Settings)."""
+    return Q.reference(_day_rates(conn))
 
 
 @app.get("/api/opportunities/{opp_id}/qualification")
@@ -503,6 +510,44 @@ def test_config():
     return {"ok": True, **result}
 
 
+def _day_rates_payload(conn):
+    """The Settings shape for bid day rates: the role list, the resolved rates
+    (defaults merged with any override), and the FOR001 default for reference."""
+    return {
+        "roles": Q.DAY_RATE_ROLES,
+        "rates": _day_rates(conn),
+        "default_rate": Q.DAY_RATE,
+        "note": "Applies to each qualification's 'cost to chase' when it's next "
+                "saved; existing bids keep the cost snapshotted at their last save.",
+    }
+
+
+@app.get("/api/settings/day-rates")
+def get_day_rates(conn=Depends(get_conn)):
+    """The team's bid-writing day rates (per FOR001 role) for the Settings screen."""
+    return _day_rates_payload(conn)
+
+
+class DayRatesUpdate(BaseModel):
+    rates: dict[str, float]   # {role: £/day}; unknown roles ignored, non-positive rejected
+
+
+@app.put("/api/settings/day-rates", dependencies=[Depends(require_roles("Admin"))])
+def put_day_rates(body: DayRatesUpdate, conn=Depends(get_conn)):
+    """Persist per-role day rates to app_settings (bids.db). Validates every rate is
+    a positive number and every role is a known FOR001 role, so the store can't hold
+    a value that would poison the economics later."""
+    clean = {}
+    for role, rate in (body.rates or {}).items():
+        if role not in Q.DAY_RATE_ROLES:
+            raise HTTPException(400, f"unknown role '{role}'")
+        if not isinstance(rate, (int, float)) or rate <= 0:
+            raise HTTPException(400, f"day rate for '{role}' must be a positive number")
+        clean[role] = float(rate)
+    db.set_setting(conn, "day_rates", clean)
+    return _day_rates_payload(conn)
+
+
 @app.post("/api/opportunities/{opp_id}/qualification/ai-draft")
 def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     """AI-draft the FOR001 qualification from the opportunity notice (Stage-2
@@ -539,7 +584,8 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict), con
     # after this save (payload value if present, else the stored one).
     existing = db.get_qualification(conn, opp_id) or {}
     complexity = fields.get("complexity", existing.get("complexity"))
-    econ = Q.compute_bid_economics(complexity)
+    # Snapshot the cost against the day rates in force now (see db.py QUALIFICATION_FIELDS).
+    econ = Q.compute_bid_economics(complexity, _day_rates(conn))
     fields["estimated_bid_effort_days"] = econ["effort_days"]
     fields["estimated_bid_cost"] = econ["cost"]
 

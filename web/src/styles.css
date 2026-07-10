@@ -635,6 +635,10 @@ header.top {
 }
 .fld-help { font-size: 0.75rem; color: var(--faint); margin-top: 2px; }
 .settings-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.settings-card + .settings-card { margin-top: 20px; }
+.settings-section { margin: 0; font-size: 0.95rem; font-weight: 640; }
+.rate-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (max-width: 520px) { .rate-grid { grid-template-columns: 1fr; } }
 .test-result {
   border-radius: 8px; padding: 10px 12px; font-size: 0.86rem; border: 1px solid var(--line);
 }

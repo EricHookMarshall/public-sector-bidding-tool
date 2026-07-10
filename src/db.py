@@ -341,6 +341,17 @@ bid_manage = _bid_child("bid_manage", BID_MANAGE_FIELDS)
 bid_outcomes = _bid_child("bid_outcomes", BID_OUTCOME_FIELDS)
 bid_responses = _bid_child("bid_responses", BID_RESPONSE_FIELDS)
 
+# App-domain settings (not secrets): a tiny key→JSON store that travels with the
+# data. Distinct from src/.env config.py — that's LLM provider/key, git-ignored and
+# read-only on Azure; these are tunable business numbers (bid day rates today) that
+# must stay editable everywhere and belong with bids.db, not a dotfile.
+app_settings = Table(
+    "app_settings", metadata,
+    Column("key", Unicode(200), primary_key=True),
+    Column("value", UnicodeText),           # JSON-encoded
+    Column("updated_at", UnicodeText),
+)
+
 
 class _Row(Mapping):
     """Dict-like view over a SQLAlchemy Row that mirrors sqlite3.Row: supports
@@ -988,6 +999,40 @@ def list_bids_for_board(conn):
         """
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_setting(conn, key, default=None):
+    """Read an app_settings value (JSON-decoded), or `default` if unset/corrupt."""
+    row = conn.execute(
+        "SELECT value FROM app_settings WHERE key = ?", (key,)
+    ).fetchone()
+    if row is None or row["value"] in (None, ""):
+        return default
+    try:
+        return json.loads(row["value"])
+    except (json.JSONDecodeError, TypeError):
+        return default
+
+
+def set_setting(conn, key, value):
+    """Upsert an app_settings value (JSON-encoded). Returns the stored value."""
+    payload = json.dumps(value, ensure_ascii=False)
+    now = now_iso()
+    exists = conn.execute(
+        "SELECT 1 FROM app_settings WHERE key = ?", (key,)
+    ).fetchone() is not None
+    if exists:
+        conn.execute(
+            "UPDATE app_settings SET value = ?, updated_at = ? WHERE key = ?",
+            (payload, now, key),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, payload, now),
+        )
+    conn.commit()
+    return value
 
 
 def record_source_run(conn, source, source_endpoint, scanned, kept):

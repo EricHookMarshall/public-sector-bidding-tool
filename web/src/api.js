@@ -237,3 +237,8 @@ export const saveConfig = (body) => sendJSON("/api/config", "PUT", body);
 
 // Cheap live round-trip to verify the current key + model. Throws on failure.
 export const testConfig = () => sendJSON("/api/config/test", "POST");
+
+// Bid-writing day rates (per FOR001 role) that drive the "cost to chase".
+export const getDayRates = () => getJSON("/api/settings/day-rates");
+export const saveDayRates = (rates) =>
+  sendJSON("/api/settings/day-rates", "PUT", { rates });

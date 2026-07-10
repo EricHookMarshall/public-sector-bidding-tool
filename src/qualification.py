@@ -68,24 +68,54 @@ RAG_CRITERIA = [
 RAG_CRITERIA_KEYS = {c["key"] for c in RAG_CRITERIA}
 
 
-def compute_bid_economics(complexity):
+# The bid-writing roles that carry a day rate, in FOR001 order. £500 flat is the
+# FOR001 default; a team can override each role in Settings (persisted in bids.db,
+# see db.get_setting("day_rates")) so the "cost to chase" reflects real rates.
+DAY_RATE_ROLES = list(BID_EFFORT_DAYS)
+DEFAULT_DAY_RATES = {role: DAY_RATE for role in DAY_RATE_ROLES}
+
+
+def resolve_day_rates(stored):
+    """Merge a stored partial {role: £/day} over the FOR001 defaults, keeping only
+    known roles with a positive number. A blank/None/garbage store → all defaults,
+    so a missing or half-filled setting never breaks the economics."""
+    rates = dict(DEFAULT_DAY_RATES)
+    if isinstance(stored, dict):
+        for role in DAY_RATE_ROLES:
+            v = stored.get(role)
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                rates[role] = v
+    return rates
+
+
+def compute_bid_economics(complexity, rates=None):
     """Complexity → the FOR001 bid-writing effort/cost breakdown.
 
     Returns a dict: {complexity, day_rate, effort_days, cost, breakdown[]}, where
-    breakdown is one {role, days, cost} per FOR001 role. An unrecognised or blank
-    complexity (an as-yet-undecided qualification) yields zeros, never an error —
-    the form is filled in over time, not all at once.
+    breakdown is one {role, days, rate, cost} per FOR001 role. `rates` is an
+    optional {role: £/day} map (from Settings) — each role defaults to £500 when
+    absent, so calling with no rates reproduces the original flat-rate model.
+    `day_rate` echoes the FOR001 default for reference; the real cost sums each
+    role's own rate. An unrecognised/blank complexity yields zeros, never an error.
     """
+    rates = resolve_day_rates(rates) if rates is not None else DEFAULT_DAY_RATES
     if complexity not in COMPLEXITY_LEVELS:
         return {"complexity": complexity, "day_rate": DAY_RATE,
                 "effort_days": 0, "cost": 0, "breakdown": []}
-    breakdown, total = [], 0.0
+    breakdown, total_days, total_cost = [], 0.0, 0.0
     for role, by_complexity in BID_EFFORT_DAYS.items():
         days = by_complexity[complexity]
-        total += days
-        breakdown.append({"role": role, "days": days, "cost": days * DAY_RATE})
+        rate = rates[role]
+        cost = days * rate
+        total_days += days
+        total_cost += cost
+        breakdown.append({"role": role, "days": days, "rate": rate, "cost": cost})
     return {"complexity": complexity, "day_rate": DAY_RATE,
-            "effort_days": total, "cost": total * DAY_RATE, "breakdown": breakdown}
+            "effort_days": total_days, "cost": total_cost, "breakdown": breakdown}
 
 
 def rag_summary(scores):
@@ -104,8 +134,10 @@ def rag_summary(scores):
     return rating, {3: "Low", 2: "Med", 1: "High"}[rating]
 
 
-def reference():
-    """The full FOR001 vocabulary for the UI to render the Triage form/labels."""
+def reference(rates=None):
+    """The full FOR001 vocabulary for the UI to render the Triage form/labels.
+    `rates` (optional {role: £/day} from Settings) feeds the economics curve so the
+    Triage estimate reflects the team's configured day rates, not just the default."""
     return {
         "complexity_levels": COMPLEXITY_LEVELS,
         "day_rate": DAY_RATE,
@@ -116,7 +148,7 @@ def reference():
         "rag_criteria": RAG_CRITERIA,
         # Precomputed economics per complexity so the UI can show the whole curve
         # (and update the headline stat instantly) without a round-trip per pick.
-        "economics_by_complexity": {c: compute_bid_economics(c) for c in COMPLEXITY_LEVELS},
+        "economics_by_complexity": {c: compute_bid_economics(c, rates) for c in COMPLEXITY_LEVELS},
     }
 
 
