@@ -6,67 +6,87 @@
 
 ## Status
 
-`2026-07-09` (session 9) — **Azure migration Phase B (DB portability) is DONE and dual-mode verified.**
-`src/db.py` is ported off raw `sqlite3` to a **SQLAlchemy Core dual-mode shim**: SQLite locally by
-default, Azure SQL / SQL Server when `DB_URL` is set — the same code, same call sites. Verified against a
-**real local SQL Server 2022 container** (repurposed the already-pulled image; no download, no Azure
-spend) with `IDENTICAL BEHAVIOUR: True` across both backends. The journey remains feature-complete (all
-six stages, session 7); this session was infra + the db.py port only, no stage/UI logic changed.
+`2026-07-10` (session 11) — **Phase C committed + the code-review Wave 0 (security) and Wave 1
+(Azure-promotion) remediation confirmed complete and verified green.** Phase C is now in git as
+`0f35c70` ("Azure Phase C: Entra ID auth …"). On verifying Wave 0/1 against the actual code (not the
+stale todo checklist), **all 12 items were already implemented in the Phase C tree** — so they shipped
+inside `0f35c70` rather than as separate commits. Verified this session: backend imports clean + FastAPI
+app constructs; newline-injection **functionally rejected** by a live `upsert_env` call; SPA `npm build`
+clean (472 kB / 130 kB gz); DB intact (21 opps). The stale todo.md Wave 0/1 checkboxes are now flipped to
+match reality.
 
-**How the port works (surgical — only `src/db.py` changed, zero of the 8 caller files):** `db.connect()`
-now returns a thin adapter over a SQLAlchemy Core connection. Both `sqlite3` and `pyodbc` use `?` (qmark)
-placeholders, so every existing `conn.execute("… ?", params).fetchone()["col"]` call site works
-untouched via `exec_driver_sql`. The schema is declared once as SQLAlchemy metadata → `create_all()`
-emits the right DDL per dialect (`AUTOINCREMENT` on SQLite / `IDENTITY` on SQL Server), replacing the old
-hand-written `executescript`. Rows come back as a dict-like `_Row` that mirrors `sqlite3.Row`
-(`row["col"]`, `row[0]`, `.keys()`).
+`2026-07-09` (session 10) — **Azure migration Phase C (auth) is DONE and verified locally (no Azure spend).**
+The "no auth anywhere" gap — the #1 gap — is closed. Every `/api/*` route is now behind a
+`Depends(require_auth)` guard; the SPA has an Entra ID / MSAL sign-in gate and attaches a Bearer token on
+every call. **`LOCAL_AUTH_BYPASS=1` keeps local dev unauthenticated exactly as before** — no behaviour
+change to the feature-complete six-stage journey. **Now committed as `0f35c70` (session 11).**
 
-**Two real dialect bugs the live engine caught** (both would have passed a SQLite-only test): (1)
-`ORDER BY (deadline_date IS NULL)` — valid in SQLite, **syntax error in T-SQL** — rewritten to the
-portable `CASE WHEN … THEN 1 ELSE 0 END` in all 4 list queries; (2) `NVARCHAR(MAX)` **can't be a
-unique-key column** in SQL Server — bounded `source`/`ocid` to `Unicode(400)` (still TEXT on SQLite, no
-behaviour change).
+**Backend (`src/auth.py`, new — clones TalentGrow's `aadAuth`/`devAuth`/`groupRoleMap` in Python):**
+`require_auth` validates a real Entra **v2 token** via PyJWT + `PyJWKClient` (JWKS signature + issuer +
+audience + expiry), resolves a role from the `groups` claim, returns an `Identity`. Wired app-wide as
+`FastAPI(dependencies=[Depends(require_auth)])` in `src/api.py` (can't forget a route); the two
+config-write endpoints add `Depends(require_roles("Admin"))`. `LOCAL_AUTH_BYPASS=1` → synthetic **Admin**
+identity, no token. CORS is now env-driven (`CORS_ALLOWED_ORIGINS`, localhost fallback). `auth_status()`
+surfaced in `/api/meta`.
+
+**Frontend:** `web/src/authConfig.js` (MSAL config, null when unconfigured) + `MsalProvider` in
+`main.jsx` + sign-in gate / `UserChip` in `App.jsx`. **All 10 fetch calls route through one new `apiFetch`**
+in `web/src/api.js` that attaches the Bearer (`acquireTokenSilent` + redirect fallback) and prefixes
+`VITE_API_BASE_URL`. `@azure/msal-browser` + `msal-react` added. When the `VITE_AAD_*` vars are absent
+(local dev) it's a plain unauthenticated same-origin fetch.
+
+**Two deliberate divergences from TalentGrow** (FWF's bidding-tool Entra groups don't exist yet, so no
+invented group IDs are committed): the group→role map is **env-driven** (`AAD_GROUP_ROLE_MAP` JSON, empty
+default) and an authenticated caller with no mapped group gets a configurable `AAD_DEFAULT_ROLE`
+("User"; set `""` for strict gating). Roles kept small: **Admin > User**.
 
 ## Verified this session (all live, honest)
 
-- **`db.py` on both backends → `IDENTICAL BEHAVIOUR: True`**, 4/4 checks PASS: insert/update semantics,
-  `£`/`✓` unicode round-trip through NVARCHAR, JSON-field decode, JOIN + rewritten ORDER BY. (Test rig:
-  `scratchpad/verify_dualmode.py` — throwaway sqlite file + the live container; not committed.)
-- **Default sqlite path intact** — `python3 src/db.py` → the real 21 opportunities / 3 bids / etc.
-  (cleaned up the VerifyTest rows the test leaked into `bids.db`).
-- **App serves through the adapter** — `uvicorn` up, `/api/plan/board` (`count:3`, real bids) and
-  `/api/opportunities` (21 rows) both 200.
-- **Follow-on audit**: api.py's runtime SQL is fully portable (no LIMIT/OFFSET, no IS-NULL ordering).
-  Only remaining sqlite-ism = `LIMIT 1` in the **dev-only `seed_*_demo.py`** scripts (4 of them) — not on
-  the Azure path; would need `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` for SQL Server. Deferred.
+- **Backend unit rig** (`scratchpad/verify_auth.py`, not committed) — self-minted RSA tokens against a
+  local JWKS injected into `auth._jwks_clients`: **15/15 PASS** — bypass→Admin; `LOCAL_AUTH_ROLE=User`→User
+  and blocked from an Admin route; bogus role→Admin fallback; no-token→401; valid→default User; mapped
+  groups→most-privileged Admin; strict+unmapped→403; expired / wrong-aud / wrong-iss / tampered →401;
+  unconfigured→500 (fail-closed); `require_roles` blocks User / allows Admin.
+- **HTTP** — bypass ON: `/api/meta` (21 opps, `auth.bypass:true`), `/api/plan/board`, `PUT /api/config`
+  all 200. Bypass OFF + Entra configured + no token → **401 on every route**; garbage token → 401.
+  **`LOCAL_AUTH_BYPASS=1 LOCAL_AUTH_ROLE=User`** → journey routes 200 but `PUT /api/config` → **403**
+  (`Role 'User' is not permitted. Requires one of: Admin`) — role-gating exercised live in the local app.
+- **Frontend** — `npm run build` clean (MSAL bundled, 473 kB gz 130 kB); full local stack (bypass API +
+  Vite on :5199) serves the SPA and proxies `/api/meta` → 21 opps. Unauthenticated local path unchanged.
+- **One real fix**: the bypass shim first inherited the default User role, which would 403 the
+  now-Admin-gated Settings locally → changed bypass to always grant Admin (TalentGrow's full-access dev
+  posture).
 
 ## Active task
 
-**Phase B done — pick the next Azure-migration step (user's call), roughly in priority order:**
+**Phase C committed + Wave 0/1 remediation confirmed done — pick the next Azure-migration step (user's
+call), roughly in priority order. Remaining code-review debt is Wave 2 (correctness bugs) → Wave 6 in
+todo.md; none are Azure-promotion blockers.**
 
-1. **Phase C — auth** per `docs/design/azure-target.md`: Entra ID / MSAL sign-in on the SPA + PyJWT/JWKS
-   validation on the API (closes the "no auth anywhere" gap, the #1 gap). Buildable + verifiable locally
-   against a dev-tenant app reg + a `LOCAL_AUTH_BYPASS` shim — no Azure subscription needed.
-2. **Finish Phase B tail** — port the 4 `seed_*_demo.py` `LIMIT 1` queries to portable OFFSET/FETCH so the
-   seeders also run on SQL Server (they only run locally today, so low priority).
-3. **User browser walk of Complete + Learn** — still open from session 7; verified server-side only.
-4. **Deferred externals** — Azure OpenAI provider; live `GraphSharePoint`; HubSpot.
+1. **Phase C tail — live MSAL browser sign-in** (Tier-2, needs the user): the code path is built + unit-
+   proven, but the actual redirect round-trip is only verifiable against a **real dev-tenant app
+   registration**. Supply `VITE_AAD_CLIENT_ID/TENANT_ID/API_SCOPE` (SPA) + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`
+   (API), set `LOCAL_AUTH_BYPASS=0`, sign in, confirm the Bearer reaches the API and role-gating works.
+2. **Phase D — hosting scaffold** per `docs/design/azure-target.md`: `AsgiFunctionApp` wrapper +
+   `host.json`; clone TalentGrow's `infra/main.bicep` (SWA + Functions Flex + Azure SQL free + Storage +
+   MI) + the two CI workflows. Needs an Azure subscription + tenant admin (not purely local).
+3. **Finish Phase B tail** — port the 4 `seed_*_demo.py` `LIMIT 1` queries to OFFSET/FETCH (low priority).
+4. **User browser walk of Complete + Learn** — still open from session 7; verified server-side only.
+5. **Deferred externals** — Azure OpenAI provider; live `GraphSharePoint`; HubSpot.
 
-## Local SQL Server parity stack (new this session)
+## Auth config quick-reference (new this session)
 
-- **`docker-compose.yml`** (repo root, new) — `db` = SQL Server **2022** (`mcr.microsoft.com/mssql/server`,
-  the image already local; identical `mssql` dialect to Azure SQL, so it verifies the whole port —
-  bump to `:2025-latest` only when the native `VECTOR` type is needed for retrieval Option B) + `azurite`
-  scaffold (Blob/Queue/Table, for later Phase D/E; **not** a SQL emulator). Run `db` alone for Phase B.
-- **Memory caps matter**: without them the container `Exited (137)` (OOM/SIGKILL) under Rosetta x64
-  emulation. Set `MSSQL_MEMORY_LIMIT_MB=2048` + `mem_limit: 3g` (Docker VM is 7.8 GB). Now boots healthy.
-- **Runtime**: x64 image via Docker Desktop **Rosetta** (already enabled). Container reachable on
-  `localhost:1433`; SA password in gitignored root `.env` (`MSSQL_SA_PASSWORD`, local dev only).
-- **Deps**: `pip install pyodbc` + Homebrew `unixodbc` + `msodbcsql18` (needs `brew trust
-  microsoft/mssql-release` first — the newer untrusted-tap gate). `requirements.txt` now lists
-  `SQLAlchemy` (always) + `pyodbc` (SQL Server/Azure only). pyodbc 5.3.0, driver "ODBC Driver 18".
-- Local SQL Server URL used for verify: `mssql+pyodbc://sa:<pw>@localhost:1433/bids?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes` (password `!` → `%21`).
-- **Container may still be running** — `docker compose down` to stop (keeps the volume).
+- **Local dev (default):** `LOCAL_AUTH_BYPASS=1` in `src/.env` → API unauthenticated (synthetic Admin);
+  leave `web/.env` `VITE_AAD_*` unset → SPA has no sign-in gate. Runs exactly like sessions 1–9.
+- **Test role-gating live locally:** `LOCAL_AUTH_ROLE=User` alongside bypass → the local app runs as a
+  User; Admin-only routes (Settings writes) return 403. Default is Admin (full access).
+- **Turn auth on:** set `LOCAL_AUTH_BYPASS=0` + `AAD_TENANT_ID` + `AAD_API_CLIENT_ID` (API fails closed
+  with a 500 if bypass is off and these are missing — by design). SPA: set all three `VITE_AAD_*`.
+- **Templates:** `src/.env.example` (API: bypass, AAD_*, `AAD_GROUP_ROLE_MAP`, `AAD_DEFAULT_ROLE`,
+  `CORS_ALLOWED_ORIGINS`) and `web/.env.example` (SPA: `VITE_AAD_*`, `VITE_API_BASE_URL`). Both git-ignored
+  when copied to `.env`.
+- **Deps added:** `PyJWT[crypto]` (already installed: 2.12.1 + cryptography 46) in `requirements.txt`;
+  `@azure/msal-browser` + `@azure/msal-react` in `web/package.json` (`npm install` done).
 
 ## Surfaced / parked threads
 
@@ -79,14 +99,44 @@ behaviour change).
 - **`question_ref` repeats across lots** in the FOR006 master — matrix rows keyed by index, not qref. Don't reintroduce qref as a key.
 - **`GraphSharePoint` provider** — not built (no MS Graph here); slots into `library.get_provider()`. **Azure OpenAI provider** — skeleton in `src/llm.py`, not implemented.
 - **Team capacity default (25 days, `src/bidplan.py`)** — placeholder, not a real FWF number.
+- **CSV export under auth** — `exportUrl()` returns a plain `/api/export?…` URL used by an `<a>` link; an
+  anchor can't carry a Bearer header, so under real auth (bypass off) the download would 401. Fine locally
+  (bypass) and unauthenticated. Fix when Phase C goes live: fetch+blob download, or a short-lived signed
+  link. Low priority; parked.
+- **`api._load_dotenv` reads `src/.env`** — the new `AAD_*` / `LOCAL_AUTH_BYPASS` / `LOCAL_AUTH_ROLE` /
+  `CORS_*` vars load the same way as the LLM keys (whitelist-free `setdefault`, existing env wins). In
+  Azure these come from App Settings → `os.environ`, so no `.env` needed there.
+- **Role-aware SPA UI** ✅ **built** — new `GET /api/auth/me` returns the caller's `{role, display_name,
+  email, via}`; `App.jsx` fetches it and hides the ⚙ Settings gear for non-Admins + bounces a non-Admin
+  who deep-links `#settings` to the journey. Presentation only — the backend `require_roles("Admin")` gate
+  still enforces server-side. Verified: `/api/auth/me` → Admin under default bypass, User under
+  `LOCAL_AUTH_ROLE=User`; `npm run build` clean.
 
 ## Open decisions
 
-1. **What next** — Phase C (auth), finish the Phase B seeder tail, browser-review Complete/Learn, or polish. Not decided.
+1. **What next** — Phase C tail (live sign-in test, needs a dev-tenant app reg), Phase D (hosting scaffold,
+   needs Azure), Phase B seeder tail, browser-review Complete/Learn, or polish. Not decided.
 2. **AI-draft provenance persistence** — save the evidence/win-themes with the answer?
 3. **Azure OpenAI / GraphSharePoint timing** — build when the respective access is provisioned (Azure migration Phase E).
 
-Settled this session (session 9): **Phase B done** — `db.py` dual-mode via SQLAlchemy Core, verified on a
+Settled this session (session 10): **Phase C done** — Entra ID auth via `src/auth.py` (`require_auth`
+PyJWT/JWKS guard wired app-wide) + SPA MSAL sign-in gate, verified locally with self-minted tokens (no
+Azure spend); `LOCAL_AUTH_BYPASS=1` preserves the unauthenticated local dev path. Roles: **Admin > User**
+(the two Entra security groups); group→role map is **env-driven** (no invented group IDs committed) with a
+configurable default role. Bypass grants Admin by default; `LOCAL_AUTH_ROLE=User` switches it for live
+role-gating tests. **Auth model = shared team workspace** (user decision): any authenticated User works
+every bid through all six stages; **Admin-only = the Settings/LLM-config writes** (`PUT`/`POST /api/config`)
+— no per-user ownership, so no IDOR/row-scoping needed (unlike TalentGrow, whose data was user-owned).
+
+**From TalentGrow's git history** (`eek2020-old/main`, 47 commits, read locally — no repo exposure needed):
+real MSAL login was **never tested against localhost** — they used SWA-CLI mock auth locally, env-gated
+real Entra to deploy-only, then went Azure-only (`az login` against a deployed dev env). Confirms our
+plan: real sign-in verifies at deploy (Phase D/F); `LOCAL_AUTH_BYPASS` is the local equivalent. Two
+carry-forward lessons: (1) the SWA deploy workflow **must inject `VITE_AAD_*`** or the deployed SPA
+silently falls back to unauthenticated (their `ca2924e`); (2) real-auth 401s are opaque unless errors are
+logged (their `3fbddee`) — our `auth.py` returns the failure reason in the 401 detail already.
+
+Settled session 9, unchanged: **Phase B done** — `db.py` dual-mode via SQLAlchemy Core, verified on a
 local SQL Server 2022 container; repurpose the existing 2022 image (not 2025) until `VECTOR` is needed;
 Azurite is Blob/Queue/Table only, **not** a SQL emulator (it's scaffolded for later, not used by Phase B).
 
@@ -113,8 +163,12 @@ FastAPI + (now dual-mode) SQLAlchemy/SQLite + React/Vite; shared bid record from
    `msodbcsql18` required for that path only.
 5. Complete's library reads the real gitignored export at `knowledge/SharePoint Folder/Bids/`; absent =
    "library not connected" (honest, not a bug). `src/.env` holds the Anthropic key for AI drafting.
-6. Azure migration: `docs/design/azure-target.md` is the plan of record; Phase B (DB) is done, Phase C
-   (auth) is next.
+6. **Auth (Phase C)**: default local dev is `LOCAL_AUTH_BYPASS=1` (API unauthenticated) + no `VITE_AAD_*`
+   (SPA no sign-in gate) — runs like before. See "Auth config quick-reference" above to turn auth on.
+   Re-run the backend rig any time: `python3 scratchpad/verify_auth.py` (if the scratchpad persists) —
+   or re-derive from `src/auth.py`.
+7. Azure migration: `docs/design/azure-target.md` is the plan of record; Phases B (DB) + C (auth) are done,
+   Phase D (hosting scaffold) is next (needs Azure).
 
 ## End-of-session checklist
 

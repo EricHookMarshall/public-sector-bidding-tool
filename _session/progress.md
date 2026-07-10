@@ -3,6 +3,106 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-10 (session 11) — Commit Phase C; confirm + verify Wave 0/1 remediation already shipped
+
+**Context.** User asked for three things: commit the Phase C milestone, do the code-review Wave 0 (security)
+blockers, and do the Wave 1 (Azure-promotion) blockers. Session 10 left everything uncommitted.
+
+**Work done.**
+- **Committed Phase C** as `0f35c70` ("Azure Phase C: Entra ID auth (API guard + SPA MSAL sign-in)") —
+  the auth backend (`src/auth.py`), SPA MSAL gate, env templates, `docs/design/entra-app-registration.md`
+  (new admin hand-off doc, written this session), and the two `docs/code_reviews/` reports. Deliberately
+  **excluded `_session/`** from that commit so the "Nothing committed yet" handover line wasn't baked in as
+  a false record.
+- **Verified Wave 0 + Wave 1 against the actual code, not the plan.** Finding: **all 12 items were already
+  implemented in the Phase C working tree** — the todo.md checklist was written as a plan and never
+  reconciled after the fixes landed. So they shipped inside `0f35c70`, not as separate commits. Item-by-item
+  confirmation (with file:line) is now recorded in `_session/todo.md` Waves 0–1.
+- **Honest verification (real green, quoted):** backend `import auth, config, db, library, api` clean +
+  FastAPI app constructs; `config.upsert_env({'ANTHROPIC_MODEL': '…\nLOCAL_AUTH_BYPASS=1'})` **raised
+  `ValueError`** and wrote nothing (newline-injection blocker proven functionally, not just by inspection);
+  `npm --prefix web run build` clean (472 kB / 130 kB gz); `python3 src/db.py` → 21 opps / 3 bids intact.
+- **Corrected the stale records:** flipped the Wave 0/1 checkboxes to `[x]` with evidence; updated
+  handover Status + Active task; this entry.
+
+**Why one commit, not three.** The Wave 0/1 fixes were interleaved with the auth work in a single authored
+tree, so they couldn't be cleanly split into separate commits after the fact without hunk surgery of little
+value. The code is correct, committed, and verified; the debt that remains (Waves 2–6) is non-blocking.
+
+**Next.** Unchanged from Phase C: pick the next Azure step (Phase C tail live sign-in needs a dev-tenant
+app reg — see `docs/design/entra-app-registration.md`; or Phase D hosting scaffold, needs Azure). Remaining
+code-review debt starts at Wave 2 (correctness bugs) — none are Azure-promotion blockers.
+
+## 2026-07-09 (session 10) — Azure Phase C: Entra ID auth (backend guard + SPA MSAL), verified locally
+
+**Context.** Session 9 finished Phase B (DB dual-mode). Handover's #1 next step was Phase C — close the
+"no auth anywhere" gap. Chosen by the user. Plan of record: `docs/design/azure-target.md`. Built +
+verified entirely locally, no Azure spend (per the design's "Phases B/C are independent of Azure being
+provisioned").
+
+**Work done.**
+- **`src/auth.py`** (new) — clones TalentGrow's `aadAuth.ts` + `devAuth.ts` + `groupRoleMap.ts` in
+  Python. `require_auth` FastAPI dependency validates a real Entra **v2 access token** via PyJWT +
+  `PyJWKClient` (signature against the tenant JWKS, issuer, audience, expiry), resolves a role from the
+  `groups` claim, returns an `Identity`. `require_roles("Admin")` factory for role-gated routes.
+  `LOCAL_AUTH_BYPASS=1` → synthetic **Admin** identity, no token (offline/PoC dev, keeps Settings usable).
+  `auth_status()` non-secret posture surfaced in `/api/meta`.
+- **Wired app-wide** in `src/api.py`: `FastAPI(dependencies=[Depends(require_auth)])` guards **every**
+  `/api/*` route (can't forget one); the two config-write endpoints add `Depends(require_roles("Admin"))`.
+  CORS made env-driven (`CORS_ALLOWED_ORIGINS`, localhost fallback).
+- **SPA** — `web/src/authConfig.js` (MSAL config, null when unconfigured); `main.jsx` wraps in
+  `MsalProvider` + drains the redirect promise; `App.jsx` sign-in gate + `UserChip`/sign-out; **all 10
+  fetch calls routed through one new `apiFetch`** in `web/src/api.js` that attaches the Bearer token
+  (`acquireTokenSilent`, redirect fallback) + `VITE_API_BASE_URL`. `@azure/msal-browser`+`msal-react`
+  added. When `VITE_AAD_*` are absent (local dev) it's a plain unauthenticated same-origin fetch — no
+  behaviour change.
+- **Two deliberate divergences from TalentGrow** (FWF bidding-tool Entra groups don't exist yet, so no
+  invented IDs committed): `AAD_GROUP_ROLE_MAP` is env-driven JSON (empty default), and an authenticated
+  caller with no mapped group gets a configurable `AAD_DEFAULT_ROLE` ("User"; set "" for strict).
+  Roles kept small: Admin > User.
+
+**Verified (all live, honest).**
+- **Backend unit rig** (`scratchpad/verify_auth.py`, not committed) — self-minted RSA tokens against a
+  local JWKS injected into `auth._jwks_clients`: **12/12 PASS** — bypass→Admin; no-token→401; valid→default
+  User; mapped groups→most-privileged Admin; strict+unmapped→403; expired/wrong-aud/wrong-iss/tampered
+  →401; unconfigured→500 fail-closed; `require_roles` blocks User / allows Admin.
+- **HTTP** — bypass ON: `/api/meta` (21 opps, `auth.bypass:true`), `/api/plan/board`, `PUT /api/config`
+  all 200. Bypass OFF + Entra configured + no token → **401 on every route**; garbage token → 401.
+- **Frontend** — `npm run build` clean (MSAL bundled, 473 kB); full local stack (bypass API + Vite) serves
+  the SPA and proxies `/api/meta` → 21 opps. Unauthenticated local path unchanged.
+
+**One real fix mid-build:** the bypass shim initially inherited `AAD_DEFAULT_ROLE` (User), which would
+403 the now-Admin-gated Settings endpoints locally. Changed bypass to always grant Admin (TalentGrow's
+full-access local posture).
+
+**Not done / needs the user (Tier-2, no emulator):** the actual MSAL **browser sign-in** flow can only be
+click-tested against a real **dev-tenant app registration** — supply `VITE_AAD_CLIENT_ID/TENANT_ID/API_SCOPE`
+(SPA) + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID` (API), set `LOCAL_AUTH_BYPASS=0`, then sign in. The code path is
+built and unit-proven; only the live redirect round-trip is unverified. Nothing committed yet.
+
+**Follow-ups same session (user-directed).**
+- **Renamed the non-admin role `Bidder` → `User`** to match the two real Entra security groups the user
+  confirmed: **Admin** (god rights within the app) and **User** (employee working a bid through the
+  stages). Swept code, `.env.example`, docs, session files, verify rig.
+- **Auth model decided = shared team workspace** (user): every authenticated User works every bid; no
+  per-user ownership → **no IDOR/row-scoping work** (the TalentGrow `dc469cd` hardening doesn't apply).
+  **Admin-only powers = the Settings/LLM-config writes** only; the whole six-stage journey stays open to
+  Users.
+- **Added `LOCAL_AUTH_ROLE`** to the bypass shim (default Admin) so the running local app can be driven as
+  a User to watch role-gating live — our stand-in for TalentGrow's SWA-CLI mock-auth role switch. Verified:
+  rig now **15/15**; live HTTP `LOCAL_AUTH_ROLE=User` → journey routes 200, `PUT /api/config` → **403**.
+- **Role-aware SPA (hide the Admin gear)** — new `GET /api/auth/me` (`{role, display_name, email, via}`);
+  `App.jsx` fetches it, hides the ⚙ Settings gear for non-Admins and bounces a non-Admin off `#settings`.
+  Backend gate still enforces (presentation only). Verified per-role over HTTP; `npm run build` clean.
+- **Mined TalentGrow's real git history locally** — no repo exposure needed. The user's other-account clone
+  (`/Users/…/talent_grow`) had a squashed 4-commit `main`, but the **full 47-commit history is intact in
+  the `eek2020-old/main` remote-tracking ref** (`github.com/eek2020/talent_grow`), already fetched. Read the
+  auth evolution offline: local-auth spike via **SWA-CLI mock** (`58e98de`) → real Entra env-gated to
+  deploy-only (`737fd58`) → `VITE_AAD_*`-in-workflow gotcha (`ca2924e`) → real-auth 401 debugging only after
+  deploy (`3fbddee`) → **retired local auth, went Azure-only** via `az login` (`d603028`) → security-review
+  hardening for user-owned data (`dc469cd`). **Confirms real MSAL login was never localhost-tested there** —
+  so ours verifies at deploy (Phase D/F), and `LOCAL_AUTH_BYPASS` is the honest local equivalent.
+
 ## 2026-07-09 (session 9) — Azure Phase B: db.py dual-mode port, verified on real SQL Server
 
 **Context.** Session 8 designed the Azure migration; the handover's next action was Phase B — port
