@@ -3,6 +3,41 @@
 > Active and in-flight work only. Completed items are cold history — see [progress.md](progress.md)
 > (most-recent-first), which holds the full dated retrospective per session.
 
+## Session 12 walkthrough queue (quick-wins-first workstream)
+
+> From the user's live UI click-through (2026-07-10). Distinct from the Azure/code-review work below.
+> **Shipped this session (all committed + verified):** B1+B2 `2bfd948` · F4 day-rates `2b16cc3` ·
+> S1 AI-prompts + Settings redesign `bd09e3b` · S1+ editable extraction template `aac5ff4` ·
+> F3 Plan date-pickers `4326fd4` · S4 team-capacity setting `d74b7a6` · Settings layout `8535877`.
+> New infra: `app_settings` (key→JSON) table + `db.get_setting/set_setting`.
+
+**Quick wins (do first):**
+- [ ] **S5 — team roster / owners** — a Settings-managed list of people that feeds the owner dropdowns
+      (Plan/Manage). Natural next after S4; reuses `app_settings`.
+- [ ] **S3 — search defaults in Settings** — default CPV scope, regions, source toggles, result cap so
+      Search starts pre-tuned. Medium.
+- [ ] **U1 — Triage as cards, not a dropdown** — show in-triage opportunities as a filtered card board
+      (like Search) + a Search→Triage "send to triage" action. Medium (screen redesign).
+
+**Bigger / needs scoping:**
+- [ ] **C-series — "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff). **C3:** the
+      compliance docs already exist + are expiry-tracked in `library.py` (*Company Credentials*) —
+      **ISO already reads EXPIRED 2025-10-31 in live data**; gap = structured renewal dates for the rest +
+      an **org-level** view (today the ledger is buried per-bid in Complete). **C4:** framework/contract
+      membership-period tracker (org-level twin; RM6263-expired precedent). Scope with the user before building.
+- [ ] **C1 — clarifications: discoverability + AI dedupe** — the FOR003 register exists on Manage (click a
+      bid); make the drill-in obvious (board shows only a count). NEW: AI-ingest incoming CQs, dedupe, flag
+      "already answered by CQ #n".
+- [ ] **C2 — per-bid workspace + slim per-bid KB** — opportunity visible, edits saved, a bid-specific KB the
+      AI grounds on. Net-new; aligns with the `skills/` 3-library design. Needs a design pass.
+- [ ] **F1 — more source APIs** (Public Contracts Scotland, Sell2Wales, eTendersNI, G-Cloud) behind the
+      normalise→`bids.db` seam. **F2 — multi-criteria search.** **F5 — ITT ingestion → auto-build the
+      compliance matrix** (biggest; the matrix schema is already per-bid dynamic, just no parser).
+
+**Noted (already built — no action, keep for reference):**
+- Modern Slavery is **already** a Manage pre-flight item + a library credential ("Anti-Bribery & Modern
+  Slavery Policies") — don't re-add.
+
 ## Active queue
 
 - [x] **Restructure repo — flatten the nested sub-app** (2026-07-09, session 5) — `discovery/` removed;
@@ -188,8 +223,9 @@
       provisioned (client requirement).
 - [ ] **`web/src/StagePlaceholder.jsx` is dead code** — superseded by the per-stage screens; not
       referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose.
-- [ ] **Team capacity (Plan)** — `bidplan.DEFAULT_TEAM_CAPACITY_DAYS` (25) is a tuned placeholder, not a
-      real FWF number, and isn't persisted — only overridable per-request. Needs a real source.
+- [x] **Team capacity (Plan)** (2026-07-10, session 12) — now a persisted Setting in `app_settings`
+      (S4, `d74b7a6`); the Plan board seeds from it, an explicit `?capacity_days=` still = ad-hoc what-if.
+      The default 25 remains a placeholder number, but it's now team-editable in Settings.
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same
       notice on FTS and CF) not yet handled. Low priority given the value-band split.
 

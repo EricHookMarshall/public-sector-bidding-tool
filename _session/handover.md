@@ -6,6 +6,23 @@
 
 ## Status
 
+`2026-07-10` (session 12) — **UI walkthrough workstream: shipped 7 quick-win fixes from the user's live
+click-through, all committed + live-verified.** B1/B2 (Triage→Plan card now shows buyer; AI extracts
+response dates from the notice text), F4 (editable per-role bid **day rates**), S1 (editable **AI prompts**
++ Settings **two-column redesign**), S1+ (editable **Triage extraction template**, token-guarded so
+`{opportunity}` can't be dropped), F3 (Plan **date-pickers** — user-confirmed live), S4 (**team capacity**
+as a persisted Setting), layout rebalance (screenshot-verified, user pass). Commits `2bfd948` → `8535877`.
+**New infra:** `app_settings` (key→JSON) table + `db.get_setting/set_setting` — the home for tunable
+business settings (day rates, AI prompts, capacity) that travel with `bids.db` and stay editable on Azure,
+unlike the `.env`/`config.py` LLM secrets. **Round-2 findings captured in todo.md** (Session 12 walkthrough
+queue) + full analysis in progress.md — notably the compliance-doc register **already exists** in
+`library.py` and **ISO reads EXPIRED 2025-10-31 in live data**; biggest opportunity = an org-level
+"Compliance & Renewals" view (C3+C4).
+
+_Azure migration (parallel workstream, untouched this session):_ Phase C (auth) committed `0f35c70`; Wave
+0/1 remediation verified done; **Phase D (hosting scaffold) is the next Azure step** when the user returns
+to it. Detail below + in the session-11 progress entry.
+
 `2026-07-10` (session 11) — **Phase C committed + the code-review Wave 0 (security) and Wave 1
 (Azure-promotion) remediation confirmed complete and verified green.** Phase C is now in git as
 `0f35c70` ("Azure Phase C: Entra ID auth …"). On verifying Wave 0/1 against the actual code (not the
@@ -59,9 +76,15 @@ default) and an authenticated caller with no mapped group gets a configurable `A
 
 ## Active task
 
-**Phase C committed + Wave 0/1 remediation confirmed done — pick the next Azure-migration step (user's
-call), roughly in priority order. Remaining code-review debt is Wave 2 (correctness bugs) → Wave 6 in
-todo.md; none are Azure-promotion blockers.**
+**New session, quick wins first (user's stated preference).** Pull from the **Session 12 walkthrough queue**
+in todo.md, in priority order: **S5** (team roster → owner dropdowns; reuses the new `app_settings`, natural
+next after S4), then **S3** (search defaults), then the **C-series "Compliance & Renewals" view** (C3+C4 —
+**scope with the user before building**; highest founding-purpose payoff, and the expiry plumbing already
+exists in `library.py`). Concrete enough to start cold: **S5** = a Settings-managed people list persisted in
+`app_settings`, fed to the Plan/Manage owner `<datalist>`s.
+
+_Parallel Azure track (only if the user redirects there):_ next step is **Phase D** hosting scaffold. The
+original Azure option list follows for reference:
 
 1. **Phase C tail — live MSAL browser sign-in** (Tier-2, needs the user): the code path is built + unit-
    proven, but the actual redirect round-trip is only verifiable against a **real dev-tenant app
@@ -98,7 +121,8 @@ todo.md; none are Azure-promotion blockers.**
 - **AI-draft provenance isn't persisted** — win-themes/evidence shown in UI but not saved with the answer.
 - **`question_ref` repeats across lots** in the FOR006 master — matrix rows keyed by index, not qref. Don't reintroduce qref as a key.
 - **`GraphSharePoint` provider** — not built (no MS Graph here); slots into `library.get_provider()`. **Azure OpenAI provider** — skeleton in `src/llm.py`, not implemented.
-- **Team capacity default (25 days, `src/bidplan.py`)** — placeholder, not a real FWF number.
+- **Team capacity** — now a persisted Setting in `app_settings` (S4, session 12); the Plan board seeds from
+  it. The default 25 (`src/bidplan.py`) remains a placeholder starting number, but it's team-editable now.
 - **CSV export under auth** — `exportUrl()` returns a plain `/api/export?…` URL used by an `<a>` link; an
   anchor can't carry a Bearer header, so under real auth (bypass off) the download would 401. Fine locally
   (bypass) and unauthenticated. Fix when Phase C goes live: fetch+blob download, or a short-lived signed

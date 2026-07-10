@@ -3,6 +3,77 @@
 > Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
 > [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-10 (session 12) — UI walkthrough with the user: quick-win fixes + a findings punch-list
+
+**Context.** New workstream, separate from the Azure migration. The user did a live click-through of the
+running app to note changes/fixes, then had me ship the quick wins as we went. Preference stated:
+**quick wins first.** All work committed as we went (7 commits).
+
+**Work done (all committed, live-verified).**
+- **B1 + B2** (`2bfd948`) — Fixed two Triage→Plan walkthrough gaps. **B1:** a bid promoted from Triage
+  *looked* missing on the Plan board because the card rendered only the opportunity title, not the buyer;
+  the bid was always there (verified: bid 12/opp 15 in the "Qualifying" column). Fix = show buyer as a
+  sub-line (`PlanStage.jsx`). Ruled out a stale-board bug (stages remount → board refetches). **B2:** the
+  Triage AI draft never populated Response Dates — the schema had **no** date fields; dates come from the
+  notice. Added `response_open_date`/`clarification_deadline`/`submission_deadline` to the schema+prompt so
+  AI extracts them from the notice **text** when the structured record is blank; authoritative dates win.
+  Live-verified: extracted 10 Jul/24 Jul/7 Aug from a dateless record; structured dates override.
+- **F4** (`2b16cc3`) — Editable **bid day rates** in Settings. Was a flat £500/day for all 5 FOR001 roles.
+  New `app_settings` key→JSON table in `bids.db` (travels with data, editable on Azure — unlike the .env
+  LLM config); `compute_bid_economics(complexity, rates)` reads per-role rates; GET/PUT
+  `/api/settings/day-rates` (Admin, positive-only). Snapshot semantics kept. Verified: default Medium =
+  £8,250/16.5d (matches FOR001); raising a role re-snapshots on save and the Plan board reflected it.
+- **S1** (`bd09e3b`) — Editable **AI prompts** in Settings + **two-column Settings redesign**. The FWF
+  **profile** (shared by Triage+Complete) and optional per-stage **guidance** are editable, persisted in
+  `app_settings`; `triage_ai.resolve_profile` (blank→default) + `_guidance_block` (appended, no data-injection
+  change); mirrored into `complete_ai`. GET/PUT `/api/settings/ai-prompts` (Admin, length-capped). Verified:
+  a stored guidance marker appeared verbatim in a live draft.
+- **S1+** (`aac5ff4`) — Made the **Triage extraction prompt itself editable** (user asked specifically).
+  Base instructions → an editable template with named tokens the app fills: `{opportunity}` (required, the
+  notice data), `{rag_criteria}`, `{complexity_levels}`. Guarded: `{opportunity}` validated on save
+  client-side (Save disabled + warning) **and** server-side (400); literal token replace so stray braces
+  survive. Renders **byte-identical** to the old hardcoded prompt on default. Verified: custom template's
+  marker in a live draft; `{opportunity}`-less template → 400.
+- **F3** (`4326fd4`) — Native **date-pickers** for the Plan start/complete fields (main + per phase). `dateOnly()`
+  coerces ISO→date and rejects non-ISO so the picker never jams; widened phase-timeline date columns.
+  Verified via API round-trip; **user confirmed live in the UI.**
+- **S4** (`d74b7a6`) — **Team capacity** is now a persisted Setting (`app_settings`), replacing the
+  hardcoded `DEFAULT_TEAM_CAPACITY_DAYS`. `/api/plan/reference` returns it so the board seeds from it;
+  `/api/plan/board` uses it when no query param (explicit param still = ad-hoc what-if). Verified: 40
+  propagates to board+reference; `?capacity_days=10` still overrides; 0 rejected.
+- **Layout** (`8535877`) — Rebalanced the Settings two-column grid (moved Team capacity under AI prompts on
+  the right). **Screenshot-verified** via Playwright (chromium installed by the user); user confirmed pass.
+
+**New infra this session.** `app_settings` (key→JSON) table + `db.get_setting`/`set_setting` — the home for
+tunable business settings that must travel with the data and stay editable on Azure (day rates, AI prompts,
+team capacity all use it). Distinct from `src/.env`/`config.py` (LLM secrets, read-only on Azure).
+
+**Round-2 findings (captured, NOT yet built) — logged in todo.md "Session 12 walkthrough queue".** Checked
+against the code first; the honest split matters:
+- **C1 clarifications** — the FOR003 register already exists on Manage (Stage 5): click a bid → question/
+  channel/deadline/response/status. The user couldn't find it → **discoverability** fix (board shows only a
+  count). NEW: AI ingest/dedupe of incoming CQs + "already answered?" check.
+- **C2** — per-bid workspace + slim per-bid KB (net-new; aligns with the `skills/` 3-library design).
+- **C3 compliance docs — MOSTLY ALREADY EXISTS.** The user's whole list (ISO, Insurance, Cyber Essentials,
+  H&S, GDPR, EDI, Environmental, **and Modern Slavery** via "Anti-Bribery & Modern Slavery Policies") is
+  already tracked in the real library (`library.py`, *Company Credentials*) + surfaced in Complete's evidence
+  ledger + Manage pre-flight. **Real gaps:** (1) renewal dates — only **ISO** has an extracted expiry and it
+  reads **2025-10-31 = EXPIRED in the live data** (the exact founding failure); the rest carry no extractable
+  date. (2) surfacing — the ledger is buried per-bid, not an org-level view.
+- **C4** — framework/contract membership-period tracker (net-new; org-level twin of C3; RM6263-expired
+  precedent). **Synthesis:** C3+C4 → a cross-cutting **"Compliance & Renewals" view**; expiry plumbing
+  already in `library.py`, missing = structured dates + frameworks + a screen. Highest founding-purpose payoff.
+
+**Decisions.** Quick-wins-first, ship-as-we-go. Business settings live in a new `app_settings` DB table, not
+`.env`. AI prompt editing kept safe by templating (data injection stays in code; required-token guard).
+
+**Open questions raised.** Does the compliance-view idea (C3+C4) jump the quick-wins queue? (User leaning
+wrap-up + fresh session.) How to source real renewal dates for the credential register.
+
+**Next.** New session, quick wins first. Candidates in priority order: **S5** (team roster → owner dropdown),
+**S3** (search defaults), then the **C-series compliance-view** (scope before building). Punch-list detail in
+todo.md "Session 12 walkthrough queue".
+
 ## 2026-07-10 (session 11) — Commit Phase C; confirm + verify Wave 0/1 remediation already shipped
 
 **Context.** User asked for three things: commit the Phase C milestone, do the code-review Wave 0 (security)
