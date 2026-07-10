@@ -25,7 +25,9 @@ services:
       MSSQL_MEMORY_LIMIT_MB: "2048"
     mem_limit: 3g                     # hard ceiling for the container (SQL + emulation overhead)
     ports:
-      - "1433:1433"
+      # Loopback only — the sa-enabled dev DB holds confidential-adjacent bid data
+      # during parity testing; don't expose it to the LAN.
+      - "127.0.0.1:1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
     healthcheck:
@@ -42,10 +44,12 @@ services:
     # file handling / async connector queues land (Phase D/E).
     image: mcr.microsoft.com/azure-storage/azurite:latest
     command: ["azurite", "--blobHost", "0.0.0.0", "--queueHost", "0.0.0.0", "--tableHost", "0.0.0.0", "-l", "/data"]
+    # 0.0.0.0 above is the *in-container* bind (so Docker can reach it); the port
+    # publications below stay on loopback so the emulator isn't LAN-reachable.
     ports:
-      - "10000:10000"   # blob
-      - "10001:10001"   # queue
-      - "10002:10002"   # table
+      - "127.0.0.1:10000:10000"   # blob
+      - "127.0.0.1:10001:10001"   # queue
+      - "127.0.0.1:10002:10002"   # table
     volumes:
       - azurite_data:/data
 

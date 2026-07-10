@@ -135,10 +135,10 @@ its key is the one secret that would justify Key Vault or an App Setting.
 | Concern | Today | Azure target | Effort |
 |---|---|---|---|
 | **DB** | SQLite+WAL, `DB_PATH` hardcoded `src/db.py:31` | Azure SQL free; SQLAlchemy Core dual-mode | **High** (biggest piece) |
-| **Auth** | none anywhere (`src/api.py`, no `Depends` guard) | MSAL in SPA + PyJWT/JWKS `Depends` guard; group-claim→role like TalentGrow's `groupRoleMap` | Medium |
+| **Auth** | ✅ **done** — `src/auth.py` `Depends(require_auth)` guard app-wide in `src/api.py`; MSAL sign-in gate in the SPA | PyJWT/JWKS validation; env-driven group-claim→role; `LOCAL_AUTH_BYPASS` for dev | ~~Medium~~ done |
 | **Backend host** | uvicorn local | Functions Python Flex, FastAPI via `AsgiFunctionApp` | Medium |
 | **Frontend host** | Vite dev proxy | Static Web App (Free); add `@azure/msal-browser`+`msal-react`, `VITE_API_BASE_URL`, Bearer on `fetch` (`web/src/api.js`) | Medium |
-| **CORS** | hardcoded localhost `src/api.py:67` | env-driven allowed origins (SWA hostname) | Trivial |
+| **CORS** | ✅ **done** — env-driven `CORS_ALLOWED_ORIGINS` (falls back to localhost) `src/api.py` | set to the SWA hostname in Azure | ~~Trivial~~ done |
 | **Secrets/config** | `.env`→`os.environ` | App Settings inject as env vars — loaders already read `os.environ`, near-zero change | Low |
 | **LLM** | Anthropic live; Azure OpenAI commented `src/llm.py:100` | uncomment `AzureOpenAIProvider`, `LLM_PROVIDER=azure_openai`, MI token auth — or keep Anthropic key in App Settings | Low |
 | **SharePoint** | `LocalMirrorProvider` `src/library.py:263` | implement `GraphSharePointProvider.items()` at `src/library.py:393` via Graph + MI; `LIBRARY_PROVIDER=graph_sharepoint` | Medium |
@@ -154,8 +154,17 @@ its key is the one secret that would justify Key Vault or an App Setting.
   cross-referenced to TalentGrow's `docs/guides/azure-build-guide.md`.
 - **Phase B — DB portability.** SQLAlchemy Core dual-mode (SQLite local / Azure SQL cloud);
   `DB_PATH` → env connection string; port upserts + migrations. Verify the full journey locally.
-- **Phase C — Auth.** MSAL in the SPA; PyJWT/JWKS FastAPI dependency validating audience/issuer +
-  group-claim→role; `LOCAL_AUTH_BYPASS` for local dev (TalentGrow pattern).
+- **Phase C — Auth.** ✅ **Done (2026-07-09, session 10).** `src/auth.py`: a `Depends(require_auth)`
+  guard wired app-wide in `src/api.py` protects every `/api/*` route — PyJWT/JWKS validation of a real
+  Entra v2 token (signature + issuer + audience + expiry), `groups`-claim→role, `require_roles("Admin")`
+  on the config writes; `LOCAL_AUTH_BYPASS=1` shim for offline dev (TalentGrow pattern). SPA:
+  `web/src/authConfig.js` + MSAL sign-in gate in `App.jsx`/`main.jsx`, Bearer attached at the single
+  `apiFetch` choke point in `web/src/api.js`, `+VITE_API_BASE_URL`; graceful no-op when the `VITE_AAD_*`
+  vars are absent (local dev = unauthenticated, as before). Verified locally with self-minted RSA tokens
+  against a local JWKS (12/12 checks) + HTTP (bypass-off → 401 everywhere). Divergences from TalentGrow
+  (FWF's bidding-tool Entra groups don't exist yet): env-driven `AAD_GROUP_ROLE_MAP` (no invented group
+  IDs committed) + a configurable `AAD_DEFAULT_ROLE`. **Still needs a real dev-tenant app reg to
+  click-test the MSAL browser flow** — Tier-2, supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`.
 - **Phase D — Hosting scaffold.** `AsgiFunctionApp` wrapper + `host.json`; clone `infra/main.bicep`
   (SWA + Functions Flex + Azure SQL free + Storage + MI + role assignments) and the two CI
   workflows; env-drive CORS.

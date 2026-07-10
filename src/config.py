@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Runtime LLM config for the Settings screen — read current settings, and safely
-write provider/model/key into discovery/.env so a novice never hand-edits a
+write provider/model/key into src/.env so a novice never hand-edits a
 dotfile (the "even a novice" goal). Secrets stay local: `.env` is git-ignored and
 the API key is **write-only** — `current()` never returns it, only whether it's
 set + its last 4 chars. Writes are whitelisted to the three LLM keys, so this
@@ -36,6 +36,27 @@ AVAILABLE_PROVIDERS = {o["id"] for o in PROVIDER_OPTIONS if o["available"]}
 _ALLOWED_KEYS = {"LLM_PROVIDER", "ANTHROPIC_MODEL", "ANTHROPIC_API_KEY"}
 
 
+class ConfigReadOnly(RuntimeError):
+    """Raised when a settings write is attempted where config is platform-managed
+    (Azure) rather than a local .env — see persistence_mode()."""
+
+
+def persistence_mode():
+    """Where LLM settings persist:
+      - "env_file" (local dev)  — written to src/.env by upsert_env, as always.
+      - "platform" (Azure)      — App Service / Functions inject config from
+        platform App Settings, and the code-adjacent filesystem is read-only /
+        ephemeral, so a .env write either fails or silently evaporates on
+        restart/scale-out. In that mode the Settings *write* is disabled (the
+        value is platform-managed); the read path still works.
+    `CONFIG_STORE` overrides the auto-detection; otherwise WEBSITE_INSTANCE_ID
+    (set by both Azure App Service and Functions) is the signal."""
+    forced = os.environ.get("CONFIG_STORE", "").strip().lower()
+    if forced in ("env_file", "platform"):
+        return forced
+    return "platform" if os.environ.get("WEBSITE_INSTANCE_ID") else "env_file"
+
+
 def key_status():
     """Non-secret view of the API key: is it set, and its last 4 chars."""
     k = os.environ.get("ANTHROPIC_API_KEY") or ""
@@ -51,6 +72,9 @@ def current():
         "model_default": DEFAULT_MODEL,
         "models": MODEL_OPTIONS,
         "key_status": key_status(),
+        # Lets the Settings screen show/disable the Save control honestly: on
+        # Azure the config is platform-managed and this write path is off.
+        "persistence": persistence_mode(),
     }
 
 
@@ -64,8 +88,25 @@ def _read_lines():
 def upsert_env(updates):
     """Write whitelisted key=value pairs into .env (preserving other lines and
     comments) and update os.environ so the change takes effect without a restart.
-    Silently ignores non-whitelisted keys and None values."""
+    Silently ignores non-whitelisted keys and None values.
+
+    Values are single-line only: a newline/carriage-return in a value would let a
+    whitelisted write ("Admin can change the LLM key") smuggle a *second* line —
+    e.g. `LOCAL_AUTH_BYPASS=1` — past `_ALLOWED_KEYS`, which `_load_dotenv` would
+    then trust on the next boot. Reject control characters rather than escape
+    them; none of the three LLM values legitimately contains one."""
+    if persistence_mode() != "env_file":
+        # On Azure these come from platform App Settings, not a code-adjacent
+        # dotfile — writing one would silently evaporate. Fail clearly instead.
+        raise ConfigReadOnly(
+            "LLM settings are platform-managed here (Azure App Settings) — set "
+            "LLM_PROVIDER / ANTHROPIC_MODEL / ANTHROPIC_API_KEY there, not via the API.")
     updates = {k: v for k, v in updates.items() if k in _ALLOWED_KEYS and v is not None}
+    for key, val in updates.items():
+        val = str(val).strip()
+        if any(ord(c) < 0x20 for c in val):  # any C0 control char, incl. \r \n \t
+            raise ValueError(f"{key} contains a control character; refusing to write .env")
+        updates[key] = val
     if not updates:
         return
     out, seen = [], set()

@@ -426,7 +426,10 @@ def _engine(db_path=DB_PATH):
     container / Azure SQL backend is selected."""
     url = os.environ.get("DB_URL") or f"sqlite:///{db_path}"
     if url not in _ENGINES:
-        _ENGINES[url] = create_engine(url, future=True)
+        # pool_pre_ping: Azure SQL drops idle pooled connections at the gateway;
+        # without a liveness check a stale one surfaces as a mid-request 500 that
+        # never reproduces locally. Harmless (a cheap SELECT 1) for sqlite.
+        _ENGINES[url] = create_engine(url, future=True, pool_pre_ping=True)
     return _ENGINES[url]
 
 
@@ -458,9 +461,13 @@ def init_db(conn):
     # dialect-neutral inspector in place of the old PRAGMA table_info.
     existing = {c["name"] for c in inspect(conn._c).get_columns("opportunities")}
     coltype = _text_ddl(conn.dialect)
+    # T-SQL is `ALTER TABLE t ADD col type` (no COLUMN keyword); SQLite wants
+    # `ADD COLUMN`. Fresh DBs never hit this (create_all emits full tables), so a
+    # dialect slip here would only surface late, migrating a pre-existing DB.
+    add_kw = "ADD COLUMN" if conn.dialect == "sqlite" else "ADD"
     for col in ["lifecycle", *ENRICHMENT_FIELDS]:
         if col not in existing:
-            conn.execute(f"ALTER TABLE opportunities ADD COLUMN {col} {coltype}")
+            conn.execute(f"ALTER TABLE opportunities {add_kw} {col} {coltype}")
     conn.commit()
 
 

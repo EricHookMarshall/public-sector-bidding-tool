@@ -3,7 +3,7 @@
 // alongside the other five stages. Logic is unchanged; only the outer page
 // chrome (moved to App.jsx as the shared top bar) was removed.
 import { useEffect, useState } from "react";
-import { getMeta, getOpportunities, getOpportunity, runSearch, exportUrl } from "../api.js";
+import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport } from "../api.js";
 
 const EMPTY_FILTERS = {
   q: "",
@@ -191,13 +191,14 @@ export default function SearchStage() {
             </span>
             <span className="results-actions">
               {error && <span className="error">⚠ {error}</span>}
-              <a
+              <button
+                type="button"
                 className="export-btn"
-                href={exportUrl(filters)}
+                onClick={() => downloadExport(filters).catch((e) => setError(String(e.message || e)))}
                 title="Download the current results as CSV"
               >
                 ⤓ Export CSV
-              </a>
+              </button>
             </span>
           </div>
 

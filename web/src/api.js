@@ -1,12 +1,88 @@
 // Thin wrapper over the FastAPI JSON endpoints. In dev, Vite proxies /api -> :8000.
+//
+// Every call goes through apiFetch, the single place that (a) prefixes the API
+// base URL when the SPA and API are separate origins (Azure SWA → Function App,
+// VITE_API_BASE_URL) and (b) attaches the Entra ID Bearer token when MSAL is
+// configured (Phase C). With neither env var set — local dev — it's a plain
+// same-origin fetch, so the app behaves exactly as before against the
+// LOCAL_AUTH_BYPASS backend.
+import { msalInstance, apiScopes, isAadConfigured } from "./authConfig.js";
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
+
+function resolveUrl(path) {
+  return apiBaseUrl && path.startsWith("/api/") ? `${apiBaseUrl}${path}` : path;
+}
+
+// Bearer header for an /api/* call, or {} when auth isn't configured / no token
+// is obtainable (the request then gets a clean 401 from the API). A silent
+// token renewal failure falls back to a full-page interactive redirect — a
+// first-party navigation that works whenever the user has a live Entra session.
+async function authHeader(path) {
+  if (!isAadConfigured || !msalInstance || !path.startsWith("/api/")) return {};
+  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+  if (!account) return {};
+  try {
+    const { accessToken } = await msalInstance.acquireTokenSilent({ scopes: apiScopes, account });
+    return { Authorization: `Bearer ${accessToken}` };
+  } catch (err) {
+    console.error("[api] silent token acquisition failed; redirecting to sign in", err);
+    try {
+      await msalInstance.acquireTokenRedirect({ scopes: apiScopes, account });
+    } catch (redirectErr) {
+      console.error("[api] interactive redirect failed", redirectErr);
+    }
+    return {};
+  }
+}
+
+// The one fetch every helper below routes through. Merges the auth header and
+// resolves the base URL; callers still pass their own method/body/headers.
+async function apiFetch(path, init = {}) {
+  const auth = await authHeader(path);
+  return fetch(resolveUrl(path), {
+    ...init,
+    headers: { ...(init.headers || {}), ...auth },
+  });
+}
+
+// Build an Error from a non-OK response, preferring the API's JSON `detail`
+// (e.g. the pre-flight 409 reason, or a 403 from the Entra role gate) over the
+// bare status text. One place so every helper surfaces failures the same way.
+async function errorFrom(res) {
+  let detail = `${res.status} ${res.statusText}`;
+  try {
+    const j = await res.json();
+    if (j.detail) detail = j.detail;
+  } catch { /* non-JSON body — keep status text */ }
+  return new Error(detail);
+}
 
 async function getJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const res = await apiFetch(url);
+  if (!res.ok) throw await errorFrom(res);
+  return res.json();
+}
+
+// POST/PUT a JSON body (or no body) and parse the JSON result. `sendJSON` is the
+// single mutating-request helper every save/draft endpoint routes through, so the
+// error shape and auth/base-URL handling stay identical across all of them.
+async function sendJSON(url, method, body) {
+  const res = await apiFetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw await errorFrom(res);
   return res.json();
 }
 
 export const getMeta = () => getJSON("/api/meta");
+
+// The signed-in caller's identity ({role, display_name, email, via}) — drives
+// role-aware UI (e.g. hiding the Admin-only Settings gear). The API still
+// enforces every gate server-side regardless of what the UI shows.
+export const getAuthMe = () => getJSON("/api/auth/me");
 
 function filterParams(filters) {
   const params = new URLSearchParams();
@@ -22,27 +98,28 @@ export function getOpportunities(filters) {
 
 export const getOpportunity = (id) => getJSON(`/api/opportunities/${id}`);
 
-// CSV download URL for the current filter set (used by an <a download> / button).
-export const exportUrl = (filters) => `/api/export?${filterParams(filters).toString()}`;
+// Download the current filter set as CSV. Goes through apiFetch (so it carries
+// the Entra Bearer + the VITE_API_BASE_URL prefix on Azure) and streams the body
+// into a Blob download — an <a href> can't attach an Authorization header, so a
+// plain link would 404/401 once the SPA and API are on separate authenticated
+// origins. Local dev is unchanged (same-origin, no token).
+export async function downloadExport(filters) {
+  const res = await apiFetch(`/api/export?${filterParams(filters).toString()}`);
+  if (!res.ok) throw await errorFrom(res);
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = "opportunities.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(href);
+}
 
 // Live search: POST the chosen CPV/stage/date/source params; connectors run
 // upstream and upsert into bids.db. Returns a per-source summary.
-export async function runSearch(body) {
-  const res = await fetch("/api/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const runSearch = (body) => sendJSON("/api/search", "POST", body);
 
 // ---- Stage 2: Triage / FOR001 qualification ----
 
@@ -56,40 +133,14 @@ export const getQualification = (oppId) =>
 
 // Save the FOR001 qualification; server recomputes economics + RAG and, on a Go
 // decision, promotes the opportunity into a Bid. Returns the same shape as GET.
-export async function saveQualification(oppId, fields) {
-  const res = await fetch(`/api/opportunities/${oppId}/qualification`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const saveQualification = (oppId, fields) =>
+  sendJSON(`/api/opportunities/${oppId}/qualification`, "PUT", fields);
 
 // AI-draft the qualification from the notice. Returns {draft, meta}; the draft is
 // for review only (not saved). Throws with the server detail on 503 (no LLM
 // configured) or other errors, so the UI can show why AI drafting is unavailable.
-export async function aiDraftQualification(oppId) {
-  const res = await fetch(`/api/opportunities/${oppId}/qualification/ai-draft`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const aiDraftQualification = (oppId) =>
+  sendJSON(`/api/opportunities/${oppId}/qualification/ai-draft`, "POST");
 
 // ---- Stage 3: Plan / FOR002 bid plan ----
 
@@ -106,22 +157,8 @@ export const getPlanBoard = (capacityDays) =>
 export const getBidPlan = (bidId) => getJSON(`/api/bids/${bidId}/plan`);
 
 // Save a bid's plan (pipeline position, owner, dates, phases). Returns GET shape.
-export async function saveBidPlan(bidId, fields) {
-  const res = await fetch(`/api/bids/${bidId}/plan`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const saveBidPlan = (bidId, fields) =>
+  sendJSON(`/api/bids/${bidId}/plan`, "PUT", fields);
 
 // ---- Stage 5: Manage / FOR003 CQLOG + pre-flight gate ----
 
@@ -139,22 +176,8 @@ export const getBidManage = (bidId) => getJSON(`/api/bids/${bidId}/manage`);
 // Save a bid's manage record (register, pre-flight, notes, submitted flag).
 // Marking submitted only sticks if the pre-flight gate is clear (else a 409 with
 // the reason). Returns GET shape.
-export async function saveBidManage(bidId, fields) {
-  const res = await fetch(`/api/bids/${bidId}/manage`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const saveBidManage = (bidId, fields) =>
+  sendJSON(`/api/bids/${bidId}/manage`, "PUT", fields);
 
 // ---- Stage 4: Complete / FOR006 matrix + library pre-fill ----
 
@@ -175,41 +198,15 @@ export const getBidResponses = (bidId) => getJSON(`/api/bids/${bidId}/responses`
 
 // Save a bid's response matrix. Server recomputes word counts + validates status.
 // Returns GET shape.
-export async function saveBidResponses(bidId, fields) {
-  const res = await fetch(`/api/bids/${bidId}/responses`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const saveBidResponses = (bidId, fields) =>
+  sendJSON(`/api/bids/${bidId}/responses`, "PUT", fields);
 
 // AI-draft one answer, retrieval-grounded in the real library. Identified by the
 // question's row index (question_ref repeats across lots). Returns {item_index,
 // question_ref, draft, matches, meta}; the draft is for review only (not saved).
 // Throws with the server detail on 503 (no LLM) or other errors.
-export async function aiDraftResponse(bidId, itemIndex) {
-  const res = await fetch(`/api/bids/${bidId}/responses/${itemIndex}/ai-draft`, {
-    method: "POST",
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const aiDraftResponse = (bidId, itemIndex) =>
+  sendJSON(`/api/bids/${bidId}/responses/${itemIndex}/ai-draft`, "POST");
 
 // ---- Stage 6: Learn / B07 Outcome + Lessons Learned ----
 
@@ -226,41 +223,10 @@ export const getBidOutcome = (bidId) => getJSON(`/api/bids/${bidId}/outcome`);
 
 // Save a bid's outcome (result, score, feedback, lessons, library sign-off).
 // Returns GET shape so the UI can re-render in place.
-export async function saveBidOutcome(bidId, fields) {
-  const res = await fetch(`/api/bids/${bidId}/outcome`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(fields),
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+export const saveBidOutcome = (bidId, fields) =>
+  sendJSON(`/api/bids/${bidId}/outcome`, "PUT", fields);
 
 // ---- Settings: LLM config ----
-
-async function sendJSON(url, method, body) {
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      if (j.detail) detail = j.detail;
-    } catch { /* keep status text */ }
-    throw new Error(detail);
-  }
-  return res.json();
-}
 
 // Never returns the API key — only provider/model/options + key status.
 export const getConfig = () => getJSON("/api/config");

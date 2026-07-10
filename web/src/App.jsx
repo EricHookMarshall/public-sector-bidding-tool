@@ -3,6 +3,9 @@
 // in the URL hash (e.g. #plan) so stages are deep-linkable and the browser
 // back button works — no router dependency needed.
 import { useEffect, useState } from "react";
+import { useIsAuthenticated, useMsal } from "@azure/msal-react";
+import { isAadConfigured, apiScopes } from "./authConfig.js";
+import { getAuthMe } from "./api.js";
 import { STAGES, STATE_MAP } from "./journey.js";
 import SearchStage from "./stages/SearchStage.jsx";
 import TriageStage from "./stages/TriageStage.jsx";
@@ -68,13 +71,45 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cur]);
 
+  // Entra sign-in gate (Phase C). The msal-react hooks are safe to call even
+  // when the app isn't wrapped in an MsalProvider (default context → false), so
+  // when Entra isn't configured (local dev) isAuthenticated stays false and the
+  // gate below is skipped via isAadConfigured. When it IS configured, an
+  // unauthenticated visitor sees the sign-in screen before any stage renders.
+  const isAuthenticated = useIsAuthenticated();
+  const { instance } = useMsal();
+
+  // The signed-in caller's role, so the UI can hide the Admin-only Settings gear.
+  // The API enforces the gate regardless (defence in depth) — this is presentation
+  // only. null while loading; fetched once auth is settled (or immediately in
+  // local/bypass dev, where auth isn't configured).
+  const [role, setRole] = useState(null);
+  const authReady = !isAadConfigured || isAuthenticated;
+  useEffect(() => {
+    if (!authReady) return;
+    let live = true;
+    getAuthMe()
+      .then((me) => live && setRole(me.role))
+      .catch(() => live && setRole(null));
+    return () => { live = false; };
+  }, [authReady]);
+  const isAdmin = role === "Admin";
+
   const stage = STAGES[cur];
   const StageView = VIEWS[stage.component] || (() => <StagePlaceholder stage={stage} />);
 
-  if (route === "settings") {
+  if (isAadConfigured && !isAuthenticated) {
+    return <SignInScreen onSignIn={() => instance.loginRedirect({ scopes: apiScopes })} />;
+  }
+
+  // Settings is Admin-only. A non-Admin who deep-links #settings falls through to
+  // the journey (gear hidden anyway). Only enter Settings once we know the caller
+  // is an Admin — so an Admin reload on #settings still lands there after the role
+  // resolves.
+  if (route === "settings" && isAdmin) {
     return (
       <>
-        <TopBar />
+        <TopBar isAdmin={isAdmin} />
         <SettingsView />
       </>
     );
@@ -82,7 +117,7 @@ export default function App() {
 
   return (
     <>
-      <TopBar />
+      <TopBar isAdmin={isAdmin} />
       <nav className="stepper wrap" aria-label="Journey stages">
         {STAGES.map((s, i) => (
           <button
@@ -138,7 +173,50 @@ export default function App() {
   );
 }
 
-function TopBar() {
+// Shown when Entra is configured but the visitor isn't signed in yet. A single
+// full-page redirect to Microsoft; on return, MSAL has an account and the gate
+// opens. Deliberately minimal — the journey shell renders only post-auth.
+function SignInScreen({ onSignIn }) {
+  return (
+    <>
+      <TopBar />
+      <div className="wrap" style={{ maxWidth: 480, marginTop: "4rem", textAlign: "center" }}>
+        <h2>Sign in to continue</h2>
+        <p style={{ color: "var(--muted, #666)", margin: "0.75rem 0 1.5rem" }}>
+          This tool is protected by your organisation's Microsoft account.
+        </p>
+        <button className="next" onClick={onSignIn}>
+          Sign in with Microsoft
+        </button>
+      </div>
+    </>
+  );
+}
+
+// The signed-in user's name + a sign-out button, shown only when Entra is
+// configured. Reads MSAL directly (hooks are provider-safe); renders nothing
+// in local/unauthenticated dev.
+function UserChip() {
+  const isAuthenticated = useIsAuthenticated();
+  const { instance } = useMsal();
+  if (!isAadConfigured || !isAuthenticated) return null;
+  const account = instance.getActiveAccount() ?? instance.getAllAccounts()[0];
+  const name = account?.name || account?.username || "Signed in";
+  return (
+    <>
+      <span className="user-chip" title={account?.username || ""}>{name}</span>
+      <button
+        className="ghost-btn"
+        onClick={() => instance.logoutRedirect()}
+        aria-label="Sign out"
+      >
+        Sign out
+      </button>
+    </>
+  );
+}
+
+function TopBar({ isAdmin = false }) {
   const toggleTheme = () => {
     const root = document.documentElement;
     const isDark =
@@ -159,16 +237,19 @@ function TopBar() {
           </div>
         </div>
         <div className="top-spacer" />
-        <button
-          className="ghost-btn"
-          onClick={() => { window.location.hash = "settings"; }}
-          aria-label="Settings"
-        >
-          ⚙ Settings
-        </button>
+        {isAdmin && (
+          <button
+            className="ghost-btn"
+            onClick={() => { window.location.hash = "settings"; }}
+            aria-label="Settings"
+          >
+            ⚙ Settings
+          </button>
+        )}
         <button className="ghost-btn" onClick={toggleTheme} aria-label="Toggle colour theme">
           ◐ Theme
         </button>
+        <UserChip />
       </div>
     </header>
   );

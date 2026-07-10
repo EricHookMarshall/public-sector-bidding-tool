@@ -7,7 +7,19 @@ uvicorn[standard]>=0.29
 # for the SQL Server / Azure SQL backend (also needs the system ODBC Driver 18),
 # so it's optional for pure-local sqlite dev.
 SQLAlchemy>=2.0
-pyodbc>=5.1  # only when DB_URL points at SQL Server / Azure SQL
+# pyodbc is ONLY needed when DB_URL points at SQL Server / Azure SQL, and it
+# compiles against the system ODBC headers (unixODBC + Driver 18), so leaving it
+# unconditional breaks `pip install` on a clean SQLite-only machine. Install it
+# for the Azure/SQL-Server path with:  pip install "pyodbc>=5.1"
+# pyodbc>=5.1  # SQL Server / Azure SQL backend only — see note above
+# Reads FWF's real bid library + the FOR006 question master (src/library.py). The
+# code degrades to fallback questions / "library unavailable" without it, but the
+# real library needs it — so it's a hard dependency of Complete (Stage 4).
+openpyxl>=3.1
+# Entra ID (Azure AD) auth (src/auth.py, Azure-migration Phase C). Validates the
+# API's Bearer tokens against the tenant JWKS; [crypto] pulls `cryptography` for
+# RS256. Not exercised when LOCAL_AUTH_BYPASS=1 (offline/local single-user dev).
+PyJWT[crypto]>=2.8
 # AI pre-fill for Triage (llm.py / triage_ai.py). Lazily imported, so the API
 # still boots without it — the AI-draft endpoint just returns 503. ADD the Azure
 # OpenAI SDK (`openai`) here when the azure_openai provider is built.

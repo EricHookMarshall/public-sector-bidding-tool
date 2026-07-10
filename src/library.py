@@ -29,6 +29,18 @@ import datetime
 import os
 import re
 
+
+def _openpyxl():
+    """The openpyxl module, or None if it isn't installed. Declared in
+    requirements.txt as a hard dependency of Complete (Stage 4); this indirection
+    exists only so a missing install degrades to an *honest* 'unavailable' state
+    (see `status()`) instead of a crash or a contradictory 'connected, 0 items'."""
+    try:
+        import openpyxl
+        return openpyxl
+    except ImportError:
+        return None
+
 # The category sheets in the tracker (data-model.md §4b). Text-tolerant: an
 # unknown sheet is still read, this is just the canonical order for the UI.
 LIBRARY_CATEGORIES = [
@@ -113,11 +125,8 @@ def master_template():
     the seed for a bid's compliance matrix before any answers are written. Reading
     the real file keeps the matrix grounded in FWF's actual question structure."""
     path = master_path()
-    if not os.path.exists(path):
-        return [dict(q) for q in _FALLBACK_QUESTIONS]
-    try:
-        import openpyxl
-    except ImportError:
+    openpyxl = _openpyxl()
+    if not os.path.exists(path) or openpyxl is None:
         return [dict(q) for q in _FALLBACK_QUESTIONS]
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = wb.worksheets[0]
@@ -247,14 +256,23 @@ class LibraryProvider:
     def available(self):
         return True
 
+    def unavailable_reason(self):
+        """Human-readable reason `available()` is False, or None. Surfaced in
+        `status()` so a misconfigured deployment shows *why* the library is dark
+        instead of a silent, contradictory 'connected, 0 items'."""
+        return None
+
     def status(self):
         avail = self.available()
-        return {
+        st = {
             "provider": self.name,
             "available": avail,
             "source": self.source_label(),
             "count": len(self.items()) if avail else 0,
         }
+        if not avail:
+            st["reason"] = self.unavailable_reason()
+        return st
 
     def source_label(self):
         return self.name
@@ -266,19 +284,34 @@ class LocalMirrorProvider(LibraryProvider):
     app shows an honest 'library not connected' state."""
     name = "local_mirror"
 
+    def __init__(self):
+        # The API constructs a fresh provider per request, so an instance-level memo
+        # is safe and stops status()+items() from parsing the workbook twice a call.
+        self._items_cache = None
+
     def available(self):
-        return os.path.exists(tracker_path())
+        # Both must hold: the export must exist AND openpyxl must be installed to
+        # read it. Without the latter, items() would return [] while the file is
+        # present — an honest 'unavailable' beats a contradictory 'connected, 0'.
+        return os.path.exists(tracker_path()) and _openpyxl() is not None
+
+    def unavailable_reason(self):
+        if not os.path.exists(tracker_path()):
+            return "Bid Library Tracker.xlsx not found at the configured path"
+        if _openpyxl() is None:
+            return "openpyxl is not installed (pip install openpyxl) — the tracker can't be read"
+        return None
 
     def source_label(self):
         return "LocalMirror · Bid Library Tracker.xlsx"
 
     def items(self):
-        if not self.available():
-            return []
-        try:
-            import openpyxl
-        except ImportError:
-            return []
+        if self._items_cache is not None:
+            return self._items_cache
+        openpyxl = _openpyxl()
+        if not os.path.exists(tracker_path()) or openpyxl is None:
+            self._items_cache = []
+            return self._items_cache
         wb = openpyxl.load_workbook(tracker_path(), read_only=True, data_only=True)
         out = []
         for ws in wb.worksheets:
@@ -301,6 +334,7 @@ class LocalMirrorProvider(LibraryProvider):
                     continue  # a row with no Item is a spacer, skip it
                 out.append(_expiry_fields(item))
         wb.close()
+        self._items_cache = out
         return out
 
 
@@ -392,8 +426,16 @@ def get_provider():
     if key == "local_mirror":
         return LocalMirrorProvider()
     # GraphSharePoint slots in here behind the same interface — not built (no MS
-    # Graph in this environment; CLAUDE.md hard rule). Fall back to LocalMirror.
-    return LocalMirrorProvider()
+    # Graph in this environment; CLAUDE.md hard rule).
+    if key == "graph_sharepoint":
+        raise RuntimeError(
+            "LIBRARY_PROVIDER=graph_sharepoint is not built yet (no MS Graph access). "
+            "Use local_mirror until GraphSharePointProvider lands.")
+    # Any other value is a config typo — fail loudly rather than silently reading
+    # the local mirror and reporting 'not connected' with no hint why (mirrors
+    # llm.get_provider()).
+    raise RuntimeError(
+        f"Unknown LIBRARY_PROVIDER '{key}'. Valid: local_mirror (graph_sharepoint planned).")
 
 
 def reference():

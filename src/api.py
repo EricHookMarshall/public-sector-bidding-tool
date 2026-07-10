@@ -20,6 +20,7 @@ import io
 import json
 import math
 import os
+from contextlib import asynccontextmanager
 
 
 def _load_dotenv():
@@ -58,15 +59,56 @@ import response as R
 import regions
 import sources
 import triage_ai
+from auth import auth_status, require_auth, require_roles
 from llm import LLMUnavailable, get_provider
 
-app = FastAPI(title="Public Sector Bidding API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app):
+    """Create/back-fill the schema ONCE at startup rather than per request. On
+    sqlite the old per-request init_db was cheap; against Azure SQL it was a set
+    of extra network round-trips (create_all + an inspector query) on every call."""
+    conn = db.connect()
+    try:
+        db.init_db(conn)
+    finally:
+        conn.close()
+    yield
 
-# Local PoC: the Vite dev server (5173) calls this API (8000). Allow it.
-# POST triggers live searches; PUT saves a Triage qualification.
+
+def get_conn():
+    """Per-request DB connection as a FastAPI dependency. The try/finally is the
+    point: handlers that raise (404/409/…) mid-request no longer leak the
+    connection — which is invisible locally (sqlite + GC forgive it) but exhausts
+    the pool against Azure SQL. The schema is created at startup (lifespan), so
+    this no longer runs init_db on the hot path."""
+    conn = db.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+# Azure-migration Phase C: every /api/* route is guarded by the Entra ID auth
+# dependency (auth.py). Declared app-wide here so no route can forget it; routes
+# that want the caller's identity re-declare `Depends(require_auth)` (cached
+# per-request). LOCAL_AUTH_BYPASS=1 makes this a no-op for offline/PoC dev.
+app = FastAPI(
+    title="Public Sector Bidding API",
+    version="0.1.0",
+    dependencies=[Depends(require_auth)],
+    lifespan=lifespan,
+)
+
+# CORS. Local PoC: the Vite dev server (5173) calls this API (8000). In Azure the
+# SWA is a separate origin, so the allowed list is env-driven (CORS_ALLOWED_ORIGINS,
+# comma-separated) and falls back to localhost for dev. Authorization header must
+# pass through for the Bearer token — covered by allow_headers=["*"].
+_DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] or _DEFAULT_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_allowed_origins,
     allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
@@ -123,10 +165,8 @@ def _row_to_dict(row, include_raw=False):
 
 
 @app.get("/api/meta")
-def meta():
+def meta(conn=Depends(get_conn)):
     """Distinct filter values + value bounds + per-source freshness."""
-    conn = db.connect()
-    db.init_db(conn)
 
     def distinct(col):
         rows = conn.execute(
@@ -147,8 +187,9 @@ def meta():
 
     total, by_source = db.counts(conn)
 
-    # Materialise everything that touches sqlite3.Row BEFORE closing the conn —
-    # Row access after close raises "Cannot operate on a closed database".
+    # Materialise everything that touches a _Row into plain dicts/values here —
+    # the get_conn dependency closes the connection after we return, and Row
+    # access after close raises "Cannot operate on a closed database".
     payload = {
         "fields": LIST_FIELDS,
         "total": total,
@@ -167,8 +208,10 @@ def meta():
         "search_options": sources.options(),
         "cpv_catalog": cpv_catalog.catalog(),
         "region_labels": regions.labels_for(distinct("region")),
+        # Non-secret auth posture (Phase C) — lets ops/the SPA confirm whether
+        # Entra sign-in is expected or the bypass shim is active.
+        "auth": auth_status(),
     }
-    conn.close()
     return payload
 
 
@@ -237,11 +280,8 @@ def _list_params(
 
 
 @app.get("/api/opportunities")
-def list_opportunities(params: dict = Depends(_list_params)):
-    conn = db.connect()
-    db.init_db(conn)
+def list_opportunities(params: dict = Depends(_list_params), conn=Depends(get_conn)):
     results = _query_opportunities(conn, **params)
-    conn.close()
     return {"count": len(results), "results": results}
 
 
@@ -255,13 +295,10 @@ EXPORT_FIELDS = [
 
 
 @app.get("/api/export")
-def export_csv(params: dict = Depends(_list_params)):
+def export_csv(params: dict = Depends(_list_params), conn=Depends(get_conn)):
     """Download the current (filtered) result set as CSV — same query as the
     list view, so the export mirrors exactly what's on screen."""
-    conn = db.connect()
-    db.init_db(conn)
     results = _query_opportunities(conn, **params)
-    conn.close()
 
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=EXPORT_FIELDS, extrasaction="ignore")
@@ -396,15 +433,25 @@ def triage_reference():
 
 
 @app.get("/api/opportunities/{opp_id}/qualification")
-def get_qualification(opp_id: int):
-    conn = db.connect()
-    db.init_db(conn)
-    payload = _qualification_payload(conn, opp_id)
-    conn.close()
-    return payload
+def get_qualification(opp_id: int, conn=Depends(get_conn)):
+    return _qualification_payload(conn, opp_id)
 
 
 # ---- Settings: LLM config ---------------------------------------------------
+
+@app.get("/api/auth/me")
+def auth_me(identity=Depends(require_auth)):
+    """The signed-in caller's identity, for the SPA to render role-aware UI (e.g.
+    hide the Admin-only Settings gear). Non-secret — role + display name + email,
+    all already inside the validated token (or the bypass shim). The API still
+    enforces every gate server-side; this only drives presentation."""
+    return {
+        "role": identity.role,
+        "display_name": identity.display_name,
+        "email": identity.email,
+        "via": identity.via,
+    }
+
 
 @app.get("/api/config")
 def get_config():
@@ -419,9 +466,9 @@ class ConfigUpdate(BaseModel):
     api_key: str | None = None   # write-only; blank/omitted leaves the stored key untouched
 
 
-@app.put("/api/config")
+@app.put("/api/config", dependencies=[Depends(require_roles("Admin"))])
 def put_config(body: ConfigUpdate):
-    """Persist LLM settings to git-ignored discovery/.env (and live env). Validates
+    """Persist LLM settings to the git-ignored src/.env (and live env). Validates
     provider/model against the known options so the screen can't set unbuilt ones."""
     updates = {}
     if body.provider:
@@ -434,11 +481,18 @@ def put_config(body: ConfigUpdate):
         updates["ANTHROPIC_MODEL"] = body.model
     if body.api_key and body.api_key.strip():
         updates["ANTHROPIC_API_KEY"] = body.api_key.strip()
-    app_config.upsert_env(updates)
+    try:
+        app_config.upsert_env(updates)
+    except app_config.ConfigReadOnly as e:
+        # Azure: config is platform-managed, not writable here — 409, not a 500.
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        # e.g. a control character in a value — reject as bad input, not a 500.
+        raise HTTPException(400, str(e))
     return app_config.current()
 
 
-@app.post("/api/config/test")
+@app.post("/api/config/test", dependencies=[Depends(require_roles("Admin"))])
 def test_config():
     """Do a cheap live round-trip with the current settings to verify the key +
     model actually work. 503 with the reason if not."""
@@ -450,19 +504,15 @@ def test_config():
 
 
 @app.post("/api/opportunities/{opp_id}/qualification/ai-draft")
-def ai_draft_qualification(opp_id: int):
+def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     """AI-draft the FOR001 qualification from the opportunity notice (Stage-2
     pre-fill). Returns a *draft* + the AI's rationale — never saved; the UI puts
     it in the form for human review. 503 (not a crash) if no LLM is configured,
     so the manual Triage flow keeps working."""
-    conn = db.connect()
-    db.init_db(conn)
     row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
     if row is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="opportunity not found")
-    opp = _row_to_dict(row)  # read Row (with region_label etc.) before closing
-    conn.close()
+    opp = _row_to_dict(row)  # materialise the Row (region_label etc.) before the LLM call
     try:
         draft, meta = triage_ai.draft_qualification(opp)
     except LLMUnavailable as e:
@@ -471,7 +521,7 @@ def ai_draft_qualification(opp_id: int):
 
 
 @app.put("/api/opportunities/{opp_id}/qualification")
-def save_qualification(opp_id: int, body: dict = Body(default_factory=dict)):
+def save_qualification(opp_id: int, body: dict = Body(default_factory=dict), conn=Depends(get_conn)):
     """Save (create or update) the FOR001 qualification for an opportunity.
 
     Derived fields are recomputed server-side from the authoritative rig, never
@@ -480,10 +530,7 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict)):
     `win_qualification_rag`. A `decision == "Go"` promotes the opportunity into a
     Bid (the spine); the response mirrors GET so the UI can re-render in place.
     """
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM opportunities WHERE id = ?", (opp_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="opportunity not found")
 
     fields = {k: v for k, v in body.items() if k in db.QUALIFICATION_FIELDS}
@@ -511,9 +558,7 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict)):
                 "SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()).get("title")
         db.create_bid_from_qualification(conn, opp_id, qid, bid_name)
 
-    payload = _qualification_payload(conn, opp_id)
-    conn.close()
-    return payload
+    return _qualification_payload(conn, opp_id)
 
 
 # ---- Stage 3: Plan / FOR002 bid plan --------------------------------------
@@ -569,15 +614,13 @@ def plan_reference():
 
 @app.get("/api/plan/board")
 def plan_board(capacity_days: float = Query(P.DEFAULT_TEAM_CAPACITY_DAYS,
-                                            description="team bid-writing capacity over the horizon")):
+                                            description="team bid-writing capacity over the horizon"),
+               conn=Depends(get_conn)):
     """The cross-bid Plan board: every live bid with its pipeline position, owner,
     deadlines (days remaining) and 'cost to chase', grouped into pipeline columns,
     plus the team-capacity summary and the computed deadline/owner alerts. This is
     the highest-value view — it answers the missed-deadline failure directly."""
-    conn = db.connect()
-    db.init_db(conn)
     rows = db.list_bids_for_board(conn)
-    conn.close()
 
     items = [_board_item(r) for r in rows]
     columns = [
@@ -635,30 +678,21 @@ def _plan_payload(conn, bid_id):
 
 
 @app.get("/api/bids/{bid_id}/plan")
-def get_bid_plan(bid_id: int):
-    conn = db.connect()
-    db.init_db(conn)
-    payload = _plan_payload(conn, bid_id)
-    conn.close()
-    return payload
+def get_bid_plan(bid_id: int, conn=Depends(get_conn)):
+    return _plan_payload(conn, bid_id)
 
 
 @app.put("/api/bids/{bid_id}/plan")
-def save_bid_plan(bid_id: int, body: dict = Body(default_factory=dict)):
+def save_bid_plan(bid_id: int, body: dict = Body(default_factory=dict), conn=Depends(get_conn)):
     """Save (create or update) the FOR002 bid plan for a bid: pipeline position,
     owner, dates, and the phase timeline. Only BID_PLAN_FIELDS are written; the
     response mirrors GET so the UI can re-render in place."""
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="bid not found")
 
     fields = {k: v for k, v in body.items() if k in db.BID_PLAN_FIELDS}
     db.upsert_bid_plan(conn, bid_id, fields)
-    payload = _plan_payload(conn, bid_id)
-    conn.close()
-    return payload
+    return _plan_payload(conn, bid_id)
 
 
 # ---- Stage 5: Manage / FOR003 CQLOG + pre-flight gate ---------------------
@@ -704,15 +738,12 @@ def manage_reference():
 
 
 @app.get("/api/manage/board")
-def manage_board():
+def manage_board(conn=Depends(get_conn)):
     """The cross-bid Manage board: every live bid with its clarification register
     summary and pre-flight readiness, plus the computed clarification-deadline /
     owner / gate alerts (most-urgent first). This answers the missed-clarification
     failure directly — the register whose loss killed the G-Cloud 15 bid."""
-    conn = db.connect()
-    db.init_db(conn)
     rows = db.list_bids_for_manage(conn)
-    conn.close()
 
     items = [_manage_summary(r) for r in rows]
     alerts = M.alerts(items)
@@ -770,26 +801,19 @@ def _manage_payload(conn, bid_id):
 
 
 @app.get("/api/bids/{bid_id}/manage")
-def get_bid_manage(bid_id: int):
-    conn = db.connect()
-    db.init_db(conn)
-    payload = _manage_payload(conn, bid_id)
-    conn.close()
-    return payload
+def get_bid_manage(bid_id: int, conn=Depends(get_conn)):
+    return _manage_payload(conn, bid_id)
 
 
 @app.put("/api/bids/{bid_id}/manage")
-def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict)):
+def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict), conn=Depends(get_conn)):
     """Save (create or update) the FOR003 manage record for a bid: the
     clarification register, the pre-flight checklist, notes, and the submitted
     flag. Only BID_MANAGE_FIELDS are written. A `submitted == "yes"` is only
     honoured when the pre-flight gate is actually clear — the tool won't let a
     blocked bid be marked submitted (the whole point of the gate). The response
     mirrors GET so the UI can re-render in place."""
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="bid not found")
 
     fields = {k: v for k, v in body.items() if k in db.BID_MANAGE_FIELDS}
@@ -823,7 +847,6 @@ def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict)):
                 pf = existing.get("preflight") or M.default_preflight()
         summary = M.preflight_summary(M.resolve_preflight(pf, clars))
         if not summary["ready"]:
-            conn.close()
             raise HTTPException(
                 status_code=409,
                 detail=f"pre-flight gate blocked: {summary['blocking_count']} item(s) "
@@ -831,9 +854,7 @@ def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict)):
         fields["submitted_at"] = db.now_iso()
 
     db.upsert_bid_manage(conn, bid_id, fields)
-    payload = _manage_payload(conn, bid_id)
-    conn.close()
-    return payload
+    return _manage_payload(conn, bid_id)
 
 
 # ---- Stage 4: Complete / FOR006 response matrix + library pre-fill --------
@@ -865,14 +886,11 @@ def complete_reference():
 
 
 @app.get("/api/complete/board")
-def complete_board():
+def complete_board(conn=Depends(get_conn)):
     """The cross-bid Complete board: every live bid with its FOR006 matrix
     completion (answered / approved / over-word-limit), plus the shared library
     provider status. Answers 'which bids still have drafting to do' at a glance."""
-    conn = db.connect()
-    db.init_db(conn)
     rows = db.list_bids_for_complete(conn)
-    conn.close()
 
     provider = LIB.get_provider()
     return {
@@ -951,25 +969,18 @@ def _responses_payload(conn, bid_id):
 
 
 @app.get("/api/bids/{bid_id}/responses")
-def get_bid_responses(bid_id: int):
-    conn = db.connect()
-    db.init_db(conn)
-    payload = _responses_payload(conn, bid_id)
-    conn.close()
-    return payload
+def get_bid_responses(bid_id: int, conn=Depends(get_conn)):
+    return _responses_payload(conn, bid_id)
 
 
 @app.put("/api/bids/{bid_id}/responses")
-def save_bid_responses(bid_id: int, body: dict = Body(default_factory=dict)):
+def save_bid_responses(bid_id: int, body: dict = Body(default_factory=dict), conn=Depends(get_conn)):
     """Save (create or update) the FOR006 response matrix for a bid. Only known
     ResponseItem fields per row are kept (the client can't smuggle extra columns),
     `actual_words` is recomputed server-side from the answer text (the compliance
     number can't drift from the text), and the status is validated. The response
     mirrors GET so the UI can re-render in place."""
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="bid not found")
 
     fields = {}
@@ -989,13 +1000,11 @@ def save_bid_responses(bid_id: int, body: dict = Body(default_factory=dict)):
         fields["notes"] = body["notes"]
 
     db.upsert_bid_responses(conn, bid_id, fields)
-    payload = _responses_payload(conn, bid_id)
-    conn.close()
-    return payload
+    return _responses_payload(conn, bid_id)
 
 
 @app.post("/api/bids/{bid_id}/responses/{item_index}/ai-draft")
-def ai_draft_response(bid_id: int, item_index: int):
+def ai_draft_response(bid_id: int, item_index: int, conn=Depends(get_conn)):
     """AI-draft one FOR006 answer, retrieval-grounded in the real library. The
     question is identified by its row index in the matrix (question_ref repeats
     across lots, so it isn't unique) — the client's matrix order matches the
@@ -1003,15 +1012,11 @@ def ai_draft_response(bid_id: int, item_index: int):
     *draft* + the library matches it drew on — never saved; the UI puts it in the
     matrix for human review. 503 (not a crash) if no LLM is configured, so the
     manual matrix keeps working."""
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="bid not found")
 
     stored = db.get_bid_responses(conn, bid_id)
     items = stored["items"] if (stored and stored.get("items")) else LIB.master_template()
-    conn.close()
 
     if not 0 <= item_index < len(items):
         raise HTTPException(status_code=404, detail=f"question index {item_index} out of range")
@@ -1068,15 +1073,12 @@ def learn_reference():
 
 
 @app.get("/api/learn/board")
-def learn_board():
+def learn_board(conn=Depends(get_conn)):
     """The cross-bid Learn board: every bid with its recorded outcome (result,
     score, library-suggestion count), the win-rate summary tracked bid-by-bid, and
     the loop-closing alerts (submitted-but-unrecorded / unapproved suggestions).
     This closes the journey loop — outcomes here feed the Stage-4 library."""
-    conn = db.connect()
-    db.init_db(conn)
     rows = db.list_bids_for_learn(conn)
-    conn.close()
 
     items = [_learn_item(r) for r in rows]
     return {
@@ -1123,32 +1125,24 @@ def _outcome_payload(conn, bid_id):
 
 
 @app.get("/api/bids/{bid_id}/outcome")
-def get_bid_outcome(bid_id: int):
-    conn = db.connect()
-    db.init_db(conn)
-    payload = _outcome_payload(conn, bid_id)
-    conn.close()
-    return payload
+def get_bid_outcome(bid_id: int, conn=Depends(get_conn)):
+    return _outcome_payload(conn, bid_id)
 
 
 @app.put("/api/bids/{bid_id}/outcome")
-def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict)):
+def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict), conn=Depends(get_conn)):
     """Save (create or update) the B07 outcome for a bid: result, score, feedback,
     the Lessons Learned rows, and the library-approval sign-off. Only
     BID_OUTCOME_FIELDS are written; the `result` is validated against the known
     vocabulary and the lessons are normalised to the known shape (so the client
     can't smuggle extra columns into the JSON blob). The response mirrors GET so
     the UI can re-render in place."""
-    conn = db.connect()
-    db.init_db(conn)
     if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="bid not found")
 
     fields = {k: v for k, v in body.items() if k in db.BID_OUTCOME_FIELDS}
 
     if "result" in fields and fields["result"] and fields["result"] not in L.RESULTS:
-        conn.close()
         raise HTTPException(400, f"unknown result '{fields['result']}'")
 
     # Normalise the lessons: keep only known fields per row, and only a valid
@@ -1161,22 +1155,15 @@ def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict)):
         ]
 
     db.upsert_bid_outcome(conn, bid_id, fields)
-    payload = _outcome_payload(conn, bid_id)
-    conn.close()
-    return payload
+    return _outcome_payload(conn, bid_id)
 
 
 @app.get("/api/opportunities/{opp_id}")
-def get_opportunity(opp_id: int):
-    conn = db.connect()
-    db.init_db(conn)
+def get_opportunity(opp_id: int, conn=Depends(get_conn)):
     row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
     if row is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="opportunity not found")
-    payload = _row_to_dict(row, include_raw=True)  # read Row before closing
-    conn.close()
-    return payload
+    return _row_to_dict(row, include_raw=True)
 
 
 if __name__ == "__main__":
