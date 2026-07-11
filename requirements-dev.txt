@@ -1,0 +1,4 @@
+# Test / dev-only dependencies (not needed to run the app). Install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+# Used by `make check` → the tests under tests/.
+pytest>=8.0
