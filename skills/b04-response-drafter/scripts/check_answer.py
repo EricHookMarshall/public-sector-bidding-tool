@@ -82,8 +82,10 @@ def main():
         ok = False
         print(f"BLOCK: {len(ph)} unfilled evidence placeholder(s): {ph}")
 
-    # flags
-    stale = find_terms(text, STALE, whole_word=False)
+    # flags — whole-word so short terms (CCS, MEAT, DOS6) don't match inside
+    # unrelated words. If a future stale term genuinely needs substring matching,
+    # check that subset separately with find_terms(..., whole_word=False).
+    stale = find_terms(text, STALE)
     if stale:
         ok = False
         print(f"FLAG stale terms: {', '.join(sorted(set(stale)))} "

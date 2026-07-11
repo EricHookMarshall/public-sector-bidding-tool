@@ -48,68 +48,81 @@ def efs_cleared(efs):
                    "failure mode)")
 
 
-def run(cfg, stage):
-    b = []  # blocking items
+def run(cfg, stage="final"):
+    """Evaluate the pre-flight gate.
 
-    # Matrix / mandatory rows
+    `stage` sets severity, so the two documented runs differ in behaviour rather
+    than being identical: at 'readiness' (early, ~T-5) completeness gaps there's
+    still time to close are WARNINGS; at 'final' (~T-1) everything BLOCKS. The
+    structural / gate failures — EFS, deadline shape, clarification handling, no
+    matrix at all — block at BOTH stages: they're never "fix it later".
+
+    Returns (verdict, blocking, warnings).
+    """
+    blocking, warnings = [], []
+    # Completeness items route here: advisory at readiness, blocking at final.
+    soft = warnings if stage == "readiness" else blocking
+
+    # Matrix / mandatory rows — a total absence is structural (blocks always);
+    # individual rows still in progress are soft.
     rows = cfg.get("mandatory_rows")
     if not rows:
-        b.append("No matrix / no mandatory rows supplied (cannot confirm completeness)")
+        blocking.append("No matrix / no mandatory rows supplied (cannot confirm completeness)")
     else:
         for r in rows:
             rags = r.get("rags", {})
             if not rags:
-                b.append(f"Row {r.get('ref')}: no RAG statuses supplied")
+                soft.append(f"Row {r.get('ref')}: no RAG statuses supplied")
             else:
                 not_green = [k for k, v in rags.items()
                              if str(v).capitalize() != "Green"]
                 if not_green:
-                    b.append(f"Row {r.get('ref')}: not Green on {', '.join(not_green)}")
+                    soft.append(f"Row {r.get('ref')}: not Green on {', '.join(not_green)}")
 
     # Answers where required
     answers = cfg.get("answers")
     if cfg.get("answers_required", True) and not answers:
-        b.append("Answers required but no answer list supplied")
+        soft.append("Answers required but no answer list supplied")
     for a in answers or []:
         if a.get("within_limit") is False:
-            b.append(f"Answer {a.get('ref')}: over limit")
+            soft.append(f"Answer {a.get('ref')}: over limit")
         if a.get("placeholders", 0) > 0:
-            b.append(f"Answer {a.get('ref')}: {a['placeholders']} unfilled placeholder(s)")
+            soft.append(f"Answer {a.get('ref')}: {a['placeholders']} unfilled placeholder(s)")
         if a.get("open_flags", 0) > 0:
-            b.append(f"Answer {a.get('ref')}: {a['open_flags']} unresolved checker flag(s)")
+            soft.append(f"Answer {a.get('ref')}: {a['open_flags']} unresolved checker flag(s)")
 
     # Documents (conditional)
     for name, d in (cfg.get("documents") or {}).items():
         if not d.get("required", False):
             continue
         if d.get("present") is None:
-            b.append(f"Document '{name}': status UNKNOWN")
+            soft.append(f"Document '{name}': status UNKNOWN")
             continue
         if not d.get("present"):
-            b.append(f"Document '{name}': required but not present")
+            soft.append(f"Document '{name}': required but not present")
         if d.get("expiry_expected", True) and not d.get("expiry_date"):
-            b.append(f"Document '{name}': expiry_date missing")
+            soft.append(f"Document '{name}': expiry_date missing")
         if d.get("acceptable_for_this_bid") is False:
-            b.append(f"Document '{name}': not acceptable for this bid")
+            soft.append(f"Document '{name}': not acceptable for this bid")
 
-    # EFS gate
+    # EFS gate — blocks at both stages (the G-Cloud 15 failure mode).
     ok, msg = efs_cleared(cfg.get("efs"))
     if not ok:
-        b.append(f"EFS/FVRA: {msg}")
+        blocking.append(f"EFS/FVRA: {msg}")
 
-    # Deadline
+    # Deadline — a malformed/missing deadline blocks at both stages.
     ok, msg = deadline_ok(cfg.get("deadline"))
     if not ok:
-        b.append(f"Deadline: {msg}")
+        blocking.append(f"Deadline: {msg}")
 
-    # Clarification handling
+    # Clarification handling — blocks at both stages.
     if not cfg.get("clarification_owner"):
-        b.append("No clarification owner assigned")
+        blocking.append("No clarification owner assigned")
     if not cfg.get("clarification_mailbox_monitored"):
-        b.append("Clarification mailbox not confirmed monitored")
+        blocking.append("Clarification mailbox not confirmed monitored")
 
-    verdict = "READY" if not b else "NOT READY"
-    return verdict, b
+    verdict = "READY" if not blocking else "NOT READY"
+    return verdict, blocking, warnings
 
 
 def main():
@@ -117,12 +130,17 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--stage", choices=["readiness", "final"], default="final")
     args = ap.parse_args()
-    cfg = json.load(open(args.config))
-    verdict, blocking = run(cfg, args.stage)
+    with open(args.config, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    verdict, blocking, warnings = run(cfg, args.stage)
     print(f"Bid: {cfg.get('bid','(unnamed)')}   Stage: {args.stage}")
     print(f"VERDICT: {verdict}\n")
     for item in blocking:
-        print(f"  - {item}")
+        print(f"  - [BLOCK] {item}")
+    for item in warnings:
+        print(f"  - [warn]  {item}")
+    if warnings and not blocking:
+        print("\n(readiness warnings above are advisory — close them before the final run.)")
     sys.exit(0 if verdict == "READY" else 1)
 
 

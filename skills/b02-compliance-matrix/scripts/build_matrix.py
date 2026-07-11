@@ -59,7 +59,9 @@ def build(reqs, out_path, title):
     except ImportError:
         sys.exit("openpyxl not installed. pip install openpyxl --break-system-packages")
 
-    wb = Workbook(); ws = wb.active; ws.title = "Compliance Matrix"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Compliance Matrix"
     ws.cell(row=1, column=1, value=title).font = Font(bold=True, size=14)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(COLUMNS))
 
@@ -68,10 +70,11 @@ def build(reqs, out_path, title):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     for c, (_, label) in enumerate(COLUMNS, start=1):
         cell = ws.cell(row=2, column=c, value=label)
-        cell.font = Font(bold=True, color="FFFFFF"); cell.fill = header_fill
-        cell.alignment = Alignment(vertical="center", wrap_text=True); cell.border = border
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        cell.border = border
 
-    keys = [k for k, _ in COLUMNS]
     for r, req in enumerate(reqs, start=3):
         for c, (key, _) in enumerate(COLUMNS, start=1):
             if key in RAG_COLS:
@@ -79,7 +82,8 @@ def build(reqs, out_path, title):
             else:
                 val = req.get(key, "")
             cell = ws.cell(row=r, column=c, value=val)
-            cell.alignment = Alignment(vertical="top", wrap_text=True); cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = border
             if key in RAG_COLS and val in RAG_FILL:
                 cell.fill = PatternFill("solid", fgColor=RAG_FILL[val])
 
@@ -91,7 +95,6 @@ def build(reqs, out_path, title):
 
     ws.freeze_panes = "D3"
     wb.save(out_path)
-    return keys
 
 
 def main():
@@ -100,7 +103,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--title", default="Compliance Matrix")
     args = ap.parse_args()
-    reqs = json.load(open(args.infile))
+    with open(args.infile, encoding="utf-8") as fh:
+        reqs = json.load(fh)
     build(reqs, args.out, args.title)
 
     mand = [r for r in reqs if (r.get("type") or "").upper() == "M"]

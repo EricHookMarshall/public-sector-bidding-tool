@@ -140,7 +140,7 @@ its key is the one secret that would justify Key Vault or an App Setting.
 | **Frontend host** | Vite dev proxy | Static Web App (Free); add `@azure/msal-browser`+`msal-react`, `VITE_API_BASE_URL`, Bearer on `fetch` (`web/src/api.js`) | Medium |
 | **CORS** | ✅ **done** — env-driven `CORS_ALLOWED_ORIGINS` (falls back to localhost) `src/api.py` | set to the SWA hostname in Azure | ~~Trivial~~ done |
 | **Secrets/config** | `.env`→`os.environ` | App Settings inject as env vars — loaders already read `os.environ`, near-zero change | Low |
-| **LLM** | Anthropic live; Azure OpenAI commented `src/llm.py:100` | uncomment `AzureOpenAIProvider`, `LLM_PROVIDER=azure_openai`, MI token auth — or keep Anthropic key in App Settings | Low |
+| **LLM** | Anthropic live; Azure OpenAI planned (seam only, `_PROVIDERS` in `src/llm.py`) | add `AzureOpenAIProvider` behind the `complete_json` seam, register in `_PROVIDERS`, `LLM_PROVIDER=azure_openai`, MI token auth — or keep Anthropic key in App Settings | Low |
 | **SharePoint** | `LocalMirrorProvider` `src/library.py:263` | implement `GraphSharePointProvider.items()` at `src/library.py:393` via Graph + MI; `LIBRARY_PROVIDER=graph_sharepoint` | Medium |
 | **Connectors/refresh** | synchronous in-request `src/api.py:289`; manual `refresh_clean.py` | Timer-triggered Function for daily refresh; keep on-demand search inline (or Queue+Azurite later) | Medium |
 | **IaC + CI/CD** | none | clone TalentGrow `infra/main.bicep` + 2 GitHub Actions workflows | Medium |
@@ -212,7 +212,7 @@ Target local stack: `docker compose` of **SQL Server 2025 + Azurite + `func star
 - **New:** `infra/main.bicep` (+ `.bicepparam`, README, `grant-managed-identity.sql`),
   `.github/workflows/*` (2), backend `function_app.py` / `host.json`, SPA `authConfig.js` + MSAL wiring.
 - **Modified:** `src/db.py` (dialect abstraction), `src/api.py` (auth dependency, env CORS),
-  `src/library.py:393` (`GraphSharePointProvider`), `src/llm.py:100` (uncomment Azure OpenAI),
+  `src/library.py:393` (`GraphSharePointProvider`), `src/llm.py` (add `AzureOpenAIProvider` to `_PROVIDERS`),
   `web/src/api.js` (base URL + Bearer), `web/package.json` (MSAL deps).
 - **Copy-from references (TalentGrow):** `infra/main.bicep`, `infra/grant-function-managed-identity.sql`,
   `.github/workflows/*`, `src/authConfig.ts`, `src/services/apiClient.ts`,

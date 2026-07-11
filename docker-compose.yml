@@ -4,8 +4,8 @@
 # Copilot have no emulator — those stay behind the provider seams (see
 # docs/design/azure-target.md, Tier 2).
 #
-#   docker compose up -d db        # Phase B needs only this
-#   docker compose up -d           # add azurite when Blob/queue work lands
+#   docker compose up -d db                       # Phase B needs only this
+#   docker compose --profile storage up -d        # add Azurite once Blob/queue work lands
 #
 # Password comes from .env (MSSQL_SA_PASSWORD) — never commit a real one.
 services:
@@ -39,9 +39,12 @@ services:
       start_period: 30s
 
   azurite:
-    # Blob/Queue/Table emulator — NOT a SQL emulator. Not needed for Phase B;
-    # it's here so `docker compose up -d` gives the full local stack once Blob
-    # file handling / async connector queues land (Phase D/E).
+    # Blob/Queue/Table emulator — NOT a SQL emulator. No runtime code consumes
+    # Azure Storage yet, so it sits behind the opt-in `storage` profile and does
+    # NOT start on a plain `docker compose up -d`. Enable it with
+    # `docker compose --profile storage up -d` once Blob file handling / async
+    # connector queues land (Phase D/E).
+    profiles: ["storage"]
     image: mcr.microsoft.com/azure-storage/azurite:latest
     command: ["azurite", "--blobHost", "0.0.0.0", "--queueHost", "0.0.0.0", "--tableHost", "0.0.0.0", "-l", "/data"]
     # 0.0.0.0 above is the *in-container* bind (so Docker can reach it); the port

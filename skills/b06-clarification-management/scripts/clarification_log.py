@@ -20,17 +20,32 @@ Commands:
 import argparse
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
+# Standalone skill vocabulary — deliberately NOT the app's canonical clarification
+# model. The authoritative status set lives in src/clarification.py
+# (CLARIFICATION_STATUSES = Open/Drafting/Submitted/Answered), which wins per
+# CLAUDE.md's source-of-truth order. This helper targets the (not-yet-stood-up)
+# SharePoint bid store and keeps its own lifecycle; if the skill chain is ever
+# folded into the app, conform this to src/clarification.py rather than the reverse.
 STATUSES = ["open", "drafting", "with_reviewer", "sent", "closed"]
 
 
 def _load(p):
-    return json.load(open(p)) if os.path.exists(p) else {"items": []}
+    if not os.path.exists(p):
+        return {"items": []}
+    with open(p, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def _save(p, d):
-    json.dump(d, open(p, "w"), indent=2)
+    # Write to a sibling temp file then os.replace for an atomic swap — a crash
+    # mid-write must never truncate the live register (this tool exists to stop
+    # exactly that kind of admin data loss).
+    tmp = f"{p}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=2)
+    os.replace(tmp, p)
 
 
 def _d(s):
