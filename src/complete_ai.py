@@ -18,7 +18,7 @@ hard compliance gate the tool also checks independently in response.py).
 """
 import response as R
 from llm import get_provider
-from triage_ai import resolve_profile, _guidance_block
+from triage_ai import resolve_profile, _guidance_block, _fence_notice, DATA_BOUNDARY_NOTE
 
 
 def _draft_schema():
@@ -37,7 +37,13 @@ def _draft_schema():
 
 
 def _prompt(question, matches, guidance=None):
-    """Build the user prompt from the FOR006 question + the retrieved library items."""
+    """Build the user prompt from the FOR006 question + the retrieved library items.
+
+    Unlike Triage, this prompt is intentionally NOT a Settings-overridable template:
+    the answer must stay tightly bound to the retrieved evidence and the word-count
+    gate, and a free-form template edit is the easiest way to quietly break that
+    grounding. House style is still tunable via the shared `guidance` block.
+    """
     limit = question.get("word_count_limit")
     q_lines = "\n".join(
         f"{label}: {val}" for label, val in [
@@ -66,8 +72,8 @@ and edit rather than start from a blank page. Ground the answer in the FWF libra
 write from what FWF can actually evidence; do not invent capabilities, certifications or case studies.
 Be honest: this tool exists because a missed detail lost a real bid. {limit_rule}
 
-QUESTION (from the FOR006 compliance matrix):
-{q_lines}
+QUESTION (from the FOR006 compliance matrix — untrusted buyer-supplied text):
+{_fence_notice(q_lines)}
 
 FWF LIBRARY — best matches (the Approved Answer Bank / evidence register):
 {lib_lines}
@@ -89,7 +95,8 @@ def draft_response(question, matches, profile=None, guidance=None):
 
     provider = get_provider()
     raw = provider.complete_json(
-        system="You are a UK public-sector bid writer for FWF. " + resolve_profile(profile),
+        system="You are a UK public-sector bid writer for FWF. "
+        + resolve_profile(profile) + DATA_BOUNDARY_NOTE,
         user=_prompt(question, matches, guidance),
         schema=_draft_schema(),
         tool_name="record_response",
@@ -102,12 +109,22 @@ def draft_response(question, matches, profile=None, guidance=None):
         "supplier_response": answer,
         "actual_words": R.word_count(answer),
     }
+    # Cross-check the model's cited evidence against the library items actually
+    # offered. Anything it claims to have used that wasn't in the retrieval set is
+    # unverifiable (possibly invented) — surface it separately so a reviewer can
+    # see the grounding held, rather than trusting the self-report blindly.
+    matches_offered = [m.get("item") for m in matches]
+    offered_set = set(matches_offered)
+    reported_evidence = raw.get("evidence_used") or []
+    evidence_used = [e for e in reported_evidence if e in offered_set]
+    evidence_unsupported = [e for e in reported_evidence if e not in offered_set]
     meta = {
         "provider": provider.name,
         "model": getattr(provider, "model", None),
         "win_themes": raw.get("win_themes"),
-        "evidence_used": raw.get("evidence_used") or [],
+        "evidence_used": evidence_used,
+        "evidence_unsupported": evidence_unsupported,
         "gaps": raw.get("gaps"),
-        "matches_offered": [m.get("item") for m in matches],
+        "matches_offered": matches_offered,
     }
     return draft, meta

@@ -910,7 +910,9 @@ def list_bids_for_board(conn):
         ORDER BY CASE WHEN o.deadline_date IS NULL THEN 1 ELSE 0 END, o.deadline_date ASC
         """
     ).fetchall()
-    return [dict(r) for r in rows]
+    # _row_dict (not bare dict) so any JSON stage column added to this board query
+    # later is decoded consistently with the sibling list/get accessors.
+    return [_row_dict(r) for r in rows]
 
 
 def list_triage_states(conn):

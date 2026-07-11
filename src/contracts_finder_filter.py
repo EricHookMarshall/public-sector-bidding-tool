@@ -20,11 +20,18 @@ Run:  python3 contracts_finder_filter.py [days_back] [--no-db]
       Default 120 days. Persists open matching notices into bids.db; pass --no-db
       to print only.
 """
-import re, sys, time, datetime
+import datetime
+import logging
+import re
+import sys
+import time
 import urllib.error
+import urllib.parse
 
 import db
 import find_tender_filter as ft  # reuse cpvs_in, matches, PREFIXES, region_country, fetch
+
+log = logging.getLogger(__name__)
 
 SOURCE_NAME = "Contracts Finder"
 API = "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
@@ -35,15 +42,22 @@ MAX_RETRIES = 5
 
 
 def fetch_polite(url):
-    """ft.fetch with exponential backoff on HTTP 429 (Too Many Requests)."""
+    """ft.fetch with exponential backoff on HTTP 429 (Too Many Requests).
+
+    Invariant: the loop always terminates by returning or raising. The final attempt
+    (attempt == MAX_RETRIES - 1) fails the `attempt < MAX_RETRIES - 1` guard, so a
+    persistent 429 (or any other HTTPError) re-raises rather than looping forever.
+    """
     for attempt in range(MAX_RETRIES):
         try:
             return ft.fetch(url)
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < MAX_RETRIES - 1:
                 wait = 5 * (attempt + 1)
-                print(f"  429 rate-limited; backing off {wait}s "
-                      f"(attempt {attempt + 1}/{MAX_RETRIES})...")
+                # Library diagnostic → logger (this runs under /api/search too, where
+                # stdout isn't the user's console). CLI user output stays on print.
+                log.warning("429 rate-limited; backing off %ss (attempt %s/%s)",
+                            wait, attempt + 1, MAX_RETRIES)
                 time.sleep(wait)
                 continue
             raise
@@ -103,14 +117,19 @@ def run(days=120, cpv_codes=None, stage=STAGE, open_only=OPEN_ONLY,
     """CF counterpart of find_tender_filter.run(). Same parameters and summary
     shape so the source registry can call either connector uniformly. CF filters
     on `published` rather than `updated`, and paces page fetches (rate limits)."""
+    if stage not in ft.STAGES:
+        raise ValueError(f"unknown stage: {stage!r} (expected one of {ft.STAGES})")
     cpv_codes = cpv_codes or ft.TARGET_CPV
     prefixes = ft.build_prefixes(cpv_codes)
     now = datetime.datetime.now(datetime.timezone.utc)
     frm = (ft.to_api_datetime(published_from) if published_from
            else (now - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S"))
-    url = f"{API}?stages={stage}&limit=100&publishedFrom={frm}"
+    # urlencode the query so free-form stage/date values can't inject or break
+    # query parameters (stage is also validated against ft.STAGES above).
+    query = {"stages": stage, "limit": 100, "publishedFrom": frm}
     if published_to:
-        url += f"&publishedTo={ft.to_api_datetime(published_to)}"
+        query["publishedTo"] = ft.to_api_datetime(published_to)
+    url = f"{API}?{urllib.parse.urlencode(query)}"
 
     seen, records, pages = set(), [], 0
     while url and pages < 200:
@@ -124,8 +143,10 @@ def run(days=120, cpv_codes=None, stage=STAGE, open_only=OPEN_ONLY,
             matched = sorted({cid for cid, _ in ft.cpvs_in(rel) if ft.matches(cid, prefixes)})
             if not matched:
                 continue
-            end = (rel.get("tender", {}) or {}).get("tenderPeriod", {}) or {}
-            if open_only and not is_open(end.get("endDate"), now):
+            # Match find_tender's shape: resolve to the end-date string before the
+            # open/closed check, so `end` means the same thing in both connectors.
+            end = ((rel.get("tender") or {}).get("tenderPeriod") or {}).get("endDate")
+            if open_only and not is_open(end, now):
                 continue
             records.append(to_record(rel, matched))
         nxt = (pkg.get("links") or {}).get("next")

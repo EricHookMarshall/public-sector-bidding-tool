@@ -82,7 +82,8 @@ DEMO = [
 
 def _find_bid(conn, fragment):
     # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
-    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
+    # query portable across sqlite and the SQL Server path — supported via DB_URL
+    # but not yet provisioned or tested (see CLAUDE.md). Dev-local seeder.
     row = conn.execute(
         "SELECT b.id AS bid_id FROM bids b JOIN opportunities o ON o.id = b.opportunity_id "
         "WHERE o.title LIKE ? ORDER BY b.id",

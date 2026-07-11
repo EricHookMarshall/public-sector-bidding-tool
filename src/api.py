@@ -21,10 +21,13 @@ import csv
 import datetime
 import io
 import json
+import logging
 import math
 import os
 import re
 from contextlib import asynccontextmanager
+
+log = logging.getLogger("api")
 
 
 def _load_dotenv():
@@ -48,7 +51,7 @@ _load_dotenv()
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 import bidplan as P
 import clarification as M
@@ -141,7 +144,7 @@ def _derive_open(deadline_date):
 
 
 def _row_to_dict(row, include_raw=False):
-    rec = {k: row[k] for k in row.keys()}
+    rec = dict(row)
     # Numeric coercion for value fields so the UI can sort/range-filter.
     for f in ("value_min", "value_max"):
         if rec.get(f) not in (None, ""):
@@ -161,11 +164,31 @@ def _row_to_dict(row, include_raw=False):
     return rec
 
 
+def _require_opp(conn, opp_id):
+    """Fetch an opportunity row or raise 404 — the existence guard the stage
+    endpoints repeat. Callers that only need the guard can ignore the return."""
+    row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    return row
+
+
+def _require_bid(conn, bid_id):
+    """Fetch a bid row or raise 404 — the bid-existence counterpart of _require_opp."""
+    row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="bid not found")
+    return row
+
+
 @app.get("/api/meta")
 def meta(conn=Depends(get_conn)):
     """Distinct filter values + value bounds + per-source freshness."""
 
     def distinct(col):
+        # SAFETY: `col` is interpolated into the SQL, so it MUST be an internal
+        # literal (see the call sites below) — never a request-derived value.
+        # Every caller passes a hard-coded column name; do not relax that.
         rows = conn.execute(
             f"SELECT DISTINCT {col} AS v FROM opportunities "
             f"WHERE {col} IS NOT NULL AND {col} != '' ORDER BY {col}"
@@ -283,6 +306,21 @@ def list_opportunities(params: dict = Depends(_list_params), conn=Depends(get_co
     return {"count": len(results), "results": results}
 
 
+# Cell prefixes a spreadsheet may interpret as a formula. Upstream notice text is
+# attacker-influenceable, so a value like `=HYPERLINK(...)` must not be exported
+# raw — Excel/Sheets would execute it on open. We neutralise by prefixing a `'`.
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Neutralise spreadsheet formula injection in a CSV cell. Non-strings pass
+    through; a string starting with a formula-trigger character is prefixed with a
+    single quote so the spreadsheet treats it as literal text."""
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 # Fields written to the CSV export, in a readable order (raw_json excluded).
 EXPORT_FIELDS = [
     "id", "source", "title", "buyer_name", "status", "bid_status", "lifecycle",
@@ -302,7 +340,7 @@ def export_csv(params: dict = Depends(_list_params), conn=Depends(get_conn)):
     writer = csv.DictWriter(buf, fieldnames=EXPORT_FIELDS, extrasaction="ignore")
     writer.writeheader()
     for r in results:
-        writer.writerow({k: r.get(k, "") for k in EXPORT_FIELDS})
+        writer.writerow({k: _csv_safe(r.get(k, "")) for k in EXPORT_FIELDS})
     buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
@@ -311,14 +349,53 @@ def export_csv(params: dict = Depends(_list_params), conn=Depends(get_conn)):
     )
 
 
+# Guard rails on the live-search request: each source runs a synchronous external
+# fetch, so unbounded days / CPV lists / free-form dates are both a workload and an
+# injection risk. Cap the window, the list size, and validate the shape here (→ 422)
+# rather than letting a huge or malformed request reach the connectors.
+_MAX_SEARCH_DAYS = 365
+_MAX_CPV_CODES = 50
+
+
 class SearchRequest(BaseModel):
     sources: list[str]                       # registry keys to run (sources.SOURCES)
     cpv_codes: list[str] | None = None       # None → connector default scope
     stage: str = "tender"
     open_only: bool = True
-    days: int = 120                          # rolling window if no explicit dates
+    # rolling window if no explicit dates — bounded to a sane range
+    days: int = Field(120, ge=1, le=_MAX_SEARCH_DAYS)
     published_from: str | None = None        # ISO date/datetime; overrides `days`
     published_to: str | None = None
+
+    @field_validator("stage")
+    @classmethod
+    def _known_stage(cls, v):
+        if v not in sources.STAGES:
+            raise ValueError(f"unknown stage: {v!r} (expected one of {sources.STAGES})")
+        return v
+
+    @field_validator("cpv_codes")
+    @classmethod
+    def _bounded_cpv(cls, v):
+        if v is None:
+            return v
+        if len(v) > _MAX_CPV_CODES:
+            raise ValueError(f"too many cpv_codes (max {_MAX_CPV_CODES})")
+        for c in v:
+            if not c.isdigit() or len(c) > 10:
+                raise ValueError(f"invalid cpv code: {c!r} (expected up to 10 digits)")
+        return v
+
+    @field_validator("published_from", "published_to")
+    @classmethod
+    def _iso_date(cls, v):
+        if v in (None, ""):
+            return v
+        try:
+            datetime.datetime.fromisoformat(v)
+        except ValueError as e:
+            raise ValueError(f"invalid ISO date/datetime: {v!r}") from e
+        return v
 
 
 @app.post("/api/search")
@@ -333,9 +410,9 @@ def search(req: SearchRequest):
     """
     unknown = [k for k in req.sources if k not in sources.SOURCES]
     if unknown:
-        raise HTTPException(400, f"unknown source(s): {', '.join(unknown)}")
+        raise HTTPException(status_code=400, detail=f"unknown source(s): {', '.join(unknown)}")
     if not req.sources:
-        raise HTTPException(400, "select at least one source")
+        raise HTTPException(status_code=400, detail="select at least one source")
 
     runs = []
     for key in req.sources:
@@ -355,10 +432,14 @@ def search(req: SearchRequest):
                 "scanned": res["scanned"], "kept": res["kept"],
                 "inserted": res["inserted"], "updated": res["updated"],
             })
-        except Exception as e:  # noqa: BLE001 — surface any source failure, keep going
+        except Exception:  # noqa: BLE001 — surface any source failure, keep going
+            # Log the full exception context server-side (type, message, traceback,
+            # which could carry upstream URLs/paths/request data) but return only a
+            # stable, generic message to the client so nothing internal leaks.
+            log.exception("live search failed for source %s", key)
             runs.append({
                 "key": key, "source": entry["name"], "ok": False,
-                "error": f"{type(e).__name__}: {e}",
+                "error": "source fetch failed",
             })
 
     total_kept = sum(r.get("kept", 0) for r in runs if r["ok"])
@@ -496,10 +577,7 @@ def _qualification_payload(conn, opp_id):
     """Assemble the Triage view for one opportunity: the qualification (saved or
     seeded), whether it's been saved, the live bid economics, and any spun-off
     bid. Shared by the GET and the post-save response so both return one shape."""
-    opp_row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
-    if opp_row is None:
-        raise HTTPException(status_code=404, detail="opportunity not found")
-    opp = _row_to_dict(opp_row)
+    opp = _row_to_dict(_require_opp(conn, opp_id))
 
     qual = db.get_qualification(conn, opp_id)
     saved = qual is not None
@@ -588,10 +666,7 @@ def set_triage_dismiss(opp_id: int, body: TriageDismissUpdate, conn=Depends(get_
     """Reversibly dismiss an opportunity from the Triage board, or restore it.
     Dismissal only hides it from Triage — it stays in Search and the DB. 404 if
     the opportunity doesn't exist."""
-    exists = conn.execute(
-        "SELECT 1 FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
-    if exists is None:
-        raise HTTPException(404, "opportunity not found")
+    _require_opp(conn, opp_id)
     state = db.set_triage_dismissed(conn, opp_id, body.dismissed)
     return {"opportunity_id": opp_id, "dismissed": state}
 
@@ -645,11 +720,11 @@ def put_config(body: ConfigUpdate):
     updates = {}
     if body.provider:
         if body.provider not in app_config.AVAILABLE_PROVIDERS:
-            raise HTTPException(400, f"provider '{body.provider}' is not available yet")
+            raise HTTPException(status_code=400, detail=f"provider '{body.provider}' is not available yet")
         updates["LLM_PROVIDER"] = body.provider
     if body.model:
         if body.model not in app_config.MODEL_IDS:
-            raise HTTPException(400, f"unknown model '{body.model}'")
+            raise HTTPException(status_code=400, detail=f"unknown model '{body.model}'")
         updates["ANTHROPIC_MODEL"] = body.model
     if body.api_key and body.api_key.strip():
         updates["ANTHROPIC_API_KEY"] = body.api_key.strip()
@@ -657,10 +732,10 @@ def put_config(body: ConfigUpdate):
         app_config.upsert_env(updates)
     except app_config.ConfigReadOnly as e:
         # Azure: config is platform-managed, not writable here — 409, not a 500.
-        raise HTTPException(409, str(e))
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         # e.g. a control character in a value — reject as bad input, not a 500.
-        raise HTTPException(400, str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     return app_config.current()
 
 
@@ -705,9 +780,9 @@ def put_day_rates(body: DayRatesUpdate, conn=Depends(get_conn)):
     clean = {}
     for role, rate in (body.rates or {}).items():
         if role not in Q.DAY_RATE_ROLES:
-            raise HTTPException(400, f"unknown role '{role}'")
+            raise HTTPException(status_code=400, detail=f"unknown role '{role}'")
         if not isinstance(rate, (int, float)) or rate <= 0:
-            raise HTTPException(400, f"day rate for '{role}' must be a positive number")
+            raise HTTPException(status_code=400, detail=f"day rate for '{role}' must be a positive number")
         clean[role] = float(rate)
     db.set_setting(conn, "day_rates", clean)
     return _day_rates_payload(conn)
@@ -738,7 +813,7 @@ class TeamCapacityUpdate(BaseModel):
 def put_team_capacity(body: TeamCapacityUpdate, conn=Depends(get_conn)):
     """Persist the team's capacity to app_settings (bids.db). Must be positive."""
     if body.capacity_days <= 0:
-        raise HTTPException(400, "capacity must be a positive number of days")
+        raise HTTPException(status_code=400, detail="capacity must be a positive number of days")
     db.set_setting(conn, "team_capacity_days", body.capacity_days)
     return _team_capacity_payload(conn)
 
@@ -777,13 +852,13 @@ def put_team_roster(body: TeamRosterUpdate, conn=Depends(get_conn)):
     for raw in body.people:
         clean = raw.strip()
         if len(clean) > _ROSTER_MAX_NAME_LEN:
-            raise HTTPException(400, f"a name exceeds {_ROSTER_MAX_NAME_LEN} characters")
+            raise HTTPException(status_code=400, detail=f"a name exceeds {_ROSTER_MAX_NAME_LEN} characters")
         key = clean.lower()
         if clean and key not in seen:
             seen.add(key)
             people.append(clean)
     if len(people) > _ROSTER_MAX_PEOPLE:
-        raise HTTPException(400, f"the roster is capped at {_ROSTER_MAX_PEOPLE} people")
+        raise HTTPException(status_code=400, detail=f"the roster is capped at {_ROSTER_MAX_PEOPLE} people")
     db.set_setting(conn, "team_roster", people)
     return _team_roster_payload(conn)
 
@@ -831,23 +906,23 @@ def put_search_defaults(body: SearchDefaultsUpdate, conn=Depends(get_conn)):
     if body.sources is not None:
         unknown = [k for k in body.sources if k not in sources.SOURCES]
         if unknown:
-            raise HTTPException(400, f"unknown source(s): {', '.join(unknown)}")
+            raise HTTPException(status_code=400, detail=f"unknown source(s): {', '.join(unknown)}")
         if not body.sources:
-            raise HTTPException(400, "select at least one source")
+            raise HTTPException(status_code=400, detail="select at least one source")
         # de-dupe, keep order
         resolved["sources"] = list(dict.fromkeys(body.sources))
 
     if body.cpv_codes is not None:
         bad = [c for c in body.cpv_codes if not _CPV_RE.fullmatch(str(c))]
         if bad:
-            raise HTTPException(400, f"CPV codes must be 2–8 digits: {', '.join(map(str, bad))}")
+            raise HTTPException(status_code=400, detail=f"CPV codes must be 2–8 digits: {', '.join(map(str, bad))}")
         if not body.cpv_codes:
-            raise HTTPException(400, "keep at least one CPV code in scope")
+            raise HTTPException(status_code=400, detail="keep at least one CPV code in scope")
         resolved["cpv_codes"] = list(dict.fromkeys(str(c) for c in body.cpv_codes))
 
     if body.stage is not None:
         if body.stage not in sources.STAGES:
-            raise HTTPException(400, f"unknown stage: {body.stage}")
+            raise HTTPException(status_code=400, detail=f"unknown stage: {body.stage}")
         resolved["stage"] = body.stage
 
     if body.open_only is not None:
@@ -924,7 +999,7 @@ def put_ai_prompts(body: AiPromptsUpdate, conn=Depends(get_conn)):
         if val is None:
             continue  # omitted → leave the stored value untouched
         if len(val) > _AI_PROMPT_MAXLEN:
-            raise HTTPException(400, f"{key} exceeds {_AI_PROMPT_MAXLEN} characters")
+            raise HTTPException(status_code=400, detail=f"{key} exceeds {_AI_PROMPT_MAXLEN} characters")
         db.set_setting(conn, key, val.strip())
     return _ai_prompts_payload(conn)
 
@@ -935,10 +1010,8 @@ def ai_draft_qualification(opp_id: int, conn=Depends(get_conn)):
     pre-fill). Returns a *draft* + the AI's rationale — never saved; the UI puts
     it in the form for human review. 503 (not a crash) if no LLM is configured,
     so the manual Triage flow keeps working."""
-    row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="opportunity not found")
-    opp = _row_to_dict(row)  # materialise the Row (region_label etc.) before the LLM call
+    # materialise the Row (region_label etc.) before the LLM call
+    opp = _row_to_dict(_require_opp(conn, opp_id))
     prompts = _ai_prompts(conn)
     try:
         draft, meta = triage_ai.draft_qualification(
@@ -959,8 +1032,7 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict), con
     `win_qualification_rag`. A `decision == "Go"` promotes the opportunity into a
     Bid (the spine); the response mirrors GET so the UI can re-render in place.
     """
-    if conn.execute("SELECT 1 FROM opportunities WHERE id = ?", (opp_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="opportunity not found")
+    _require_opp(conn, opp_id)
 
     fields = {k: v for k, v in body.items() if k in db.QUALIFICATION_FIELDS}
 
@@ -983,9 +1055,11 @@ def save_qualification(opp_id: int, body: dict = Body(default_factory=dict), con
     # A Go decision spins up the bid spine that later stages attach to.
     decision = fields.get("decision", existing.get("decision"))
     if decision == "Go":
-        bid_name = fields.get("client_name") or existing.get("client_name") \
-            or _row_to_dict(conn.execute(
-                "SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()).get("title")
+        # Only the title is needed here, and the opportunity's existence was already
+        # verified above — so fetch just that one column rather than the whole row.
+        opp_title = conn.execute(
+            "SELECT title FROM opportunities WHERE id = ?", (opp_id,)).fetchone()[0]
+        bid_name = fields.get("client_name") or existing.get("client_name") or opp_title
         db.create_bid_from_qualification(conn, opp_id, qid, bid_name)
 
     return _qualification_payload(conn, opp_id)
@@ -1074,10 +1148,7 @@ def plan_board(capacity_days: float | None = Query(None,
 def _plan_payload(conn, bid_id):
     """Assemble the Plan detail for one bid: the plan (saved or seeded blank),
     whether it's saved, and the bid/opportunity context the timeline shows."""
-    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
-    if bid_row is None:
-        raise HTTPException(status_code=404, detail="bid not found")
-    bid = {k: bid_row[k] for k in bid_row.keys()}
+    bid = dict(_require_bid(conn, bid_id))
     opp = _row_to_dict(conn.execute(
         "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
     qual = db.get_qualification(conn, bid["opportunity_id"]) or {}
@@ -1123,8 +1194,7 @@ def save_bid_plan(bid_id: int, body: dict = Body(default_factory=dict), conn=Dep
     """Save (create or update) the FOR002 bid plan for a bid: pipeline position,
     owner, dates, and the phase timeline. Only BID_PLAN_FIELDS are written; the
     response mirrors GET so the UI can re-render in place."""
-    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="bid not found")
+    _require_bid(conn, bid_id)
 
     fields = {k: v for k, v in body.items() if k in db.BID_PLAN_FIELDS}
     db.upsert_bid_plan(conn, bid_id, fields)
@@ -1194,10 +1264,7 @@ def _manage_payload(conn, bid_id):
     """Assemble the Manage detail for one bid: the FOR003 register (seeded empty),
     the resolved pre-flight checklist + gate summary, and the bid/opportunity
     context the register shows."""
-    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
-    if bid_row is None:
-        raise HTTPException(status_code=404, detail="bid not found")
-    bid = {k: bid_row[k] for k in bid_row.keys()}
+    bid = dict(_require_bid(conn, bid_id))
     opp = _row_to_dict(conn.execute(
         "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
     qual = db.get_qualification(conn, bid["opportunity_id"]) or {}
@@ -1249,8 +1316,7 @@ def save_bid_manage(bid_id: int, body: dict = Body(default_factory=dict), conn=D
     honoured when the pre-flight gate is actually clear — the tool won't let a
     blocked bid be marked submitted (the whole point of the gate). The response
     mirrors GET so the UI can re-render in place."""
-    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="bid not found")
+    _require_bid(conn, bid_id)
 
     fields = {k: v for k, v in body.items() if k in db.BID_MANAGE_FIELDS}
 
@@ -1373,10 +1439,7 @@ def _responses_payload(conn, bid_id):
     """Assemble the Complete detail for one bid: the FOR006 matrix (seeded from the
     master template if unsaved), the completion summary, the evidence ledger, and
     the bid/opportunity context the workspace shows."""
-    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
-    if bid_row is None:
-        raise HTTPException(status_code=404, detail="bid not found")
-    bid = {k: bid_row[k] for k in bid_row.keys()}
+    bid = dict(_require_bid(conn, bid_id))
     opp = _row_to_dict(conn.execute(
         "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
 
@@ -1418,8 +1481,7 @@ def save_bid_responses(bid_id: int, body: dict = Body(default_factory=dict), con
     `actual_words` is recomputed server-side from the answer text (the compliance
     number can't drift from the text), and the status is validated. The response
     mirrors GET so the UI can re-render in place."""
-    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="bid not found")
+    _require_bid(conn, bid_id)
 
     fields = {}
     if isinstance(body.get("items"), list):
@@ -1450,8 +1512,7 @@ def ai_draft_response(bid_id: int, item_index: int, conn=Depends(get_conn)):
     *draft* + the library matches it drew on — never saved; the UI puts it in the
     matrix for human review. 503 (not a crash) if no LLM is configured, so the
     manual matrix keeps working."""
-    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="bid not found")
+    _require_bid(conn, bid_id)
 
     stored = db.get_bid_responses(conn, bid_id)
     items = stored["items"] if (stored and stored.get("items")) else LIB.master_template()
@@ -1534,10 +1595,7 @@ def _outcome_payload(conn, bid_id):
     """Assemble the Learn detail for one bid: the outcome (seeded blank if never
     recorded), its derived view (score %, suggestions), and the bid/opportunity
     context the form shows."""
-    bid_row = conn.execute("SELECT * FROM bids WHERE id = ?", (bid_id,)).fetchone()
-    if bid_row is None:
-        raise HTTPException(status_code=404, detail="bid not found")
-    bid = {k: bid_row[k] for k in bid_row.keys()}
+    bid = dict(_require_bid(conn, bid_id))
     opp = _row_to_dict(conn.execute(
         "SELECT * FROM opportunities WHERE id = ?", (bid["opportunity_id"],)).fetchone())
     manage = db.get_bid_manage(conn, bid_id) or {}
@@ -1578,13 +1636,12 @@ def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict), conn=
     vocabulary and the lessons are normalised to the known shape (so the client
     can't smuggle extra columns into the JSON blob). The response mirrors GET so
     the UI can re-render in place."""
-    if conn.execute("SELECT 1 FROM bids WHERE id = ?", (bid_id,)).fetchone() is None:
-        raise HTTPException(status_code=404, detail="bid not found")
+    _require_bid(conn, bid_id)
 
     fields = {k: v for k, v in body.items() if k in db.BID_OUTCOME_FIELDS}
 
     if "result" in fields and fields["result"] and fields["result"] not in L.RESULTS:
-        raise HTTPException(400, f"unknown result '{fields['result']}'")
+        raise HTTPException(status_code=400, detail=f"unknown result '{fields['result']}'")
 
     # Normalise the lessons: keep only known fields per row, and only a valid
     # library action, so the JSON blob can't carry arbitrary keys.
@@ -1601,10 +1658,7 @@ def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict), conn=
 
 @app.get("/api/opportunities/{opp_id}")
 def get_opportunity(opp_id: int, conn=Depends(get_conn)):
-    row = conn.execute("SELECT * FROM opportunities WHERE id = ?", (opp_id,)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="opportunity not found")
-    return _row_to_dict(row, include_raw=True)
+    return _row_to_dict(_require_opp(conn, opp_id), include_raw=True)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ Scope is IT / software / digital procurement (CPV 2008), which is what this PoC
 targets. The 7 codes in cpv_codes.md (the default search scope) are a subset of
 this list. Add a code + description here and it shows up in the dropdown.
 
-label() also lets the API attach a description to the codes a notice carries.
 This is a curated subset, not the full CPV vocabulary — unknown codes are still
 accepted (typed into the free-text box) and simply show without a description.
 """
@@ -83,11 +82,6 @@ CPV_CATALOG = {
     "50320000": "Repair and maintenance services of personal computers",
     "51600000": "Installation services of computers and information-processing equipment",
 }
-
-
-def label(code):
-    """Description for a CPV code, or None if it's not in the catalogue."""
-    return CPV_CATALOG.get(code)
 
 
 def catalog():

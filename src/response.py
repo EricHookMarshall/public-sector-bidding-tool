@@ -23,15 +23,8 @@ persistence; the domain vocabulary lives beside it.
 """
 import re
 
-# One ResponseItem's fields, mapped 1:1 from the FOR006 Response Master columns
-# (data-model.md §4). `supplier_response` is the answer text; `actual_words` is
-# derived live, not stored authoritatively.
-RESPONSE_FIELDS = [
-    "customer_document", "section", "sub_section", "question_ref", "question_text",
-    "question_type", "weighting_pct", "word_count_limit", "actual_words",
-    "images_permitted", "attachments_permitted", "tags", "supplier_response",
-    "owner", "supporting_person", "reviewer", "target_date", "status",
-]
+# The per-question field set is owned authoritatively by db.py (BID_RESPONSE_FIELDS);
+# default_response_item() below is the single in-module source for a blank row.
 
 # Completion lifecycle for one answer (drives the matrix board + its status dot).
 # FWF's master leaves new rows blank; a blank normalises to "To do".

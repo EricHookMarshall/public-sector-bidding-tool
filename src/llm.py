@@ -99,40 +99,13 @@ class AnthropicProvider(LLMProvider):
         return {"provider": self.name, "model": self.model, "reply": reply.strip()[:40]}
 
 
-# --- Azure OpenAI: planned, not built (client requirement, later) ------------
-# Deferred deliberately (CLAUDE.md: "Out of scope is explicit"; mirrors the
-# SharePoint/MS-Graph blocker — don't fake infra that isn't wired up yet). The
-# seam is one method, so this is a small, well-scoped add once Azure access is
-# provisioned outside the session. Sketch of the future implementation:
-#
-#   class AzureOpenAIProvider(LLMProvider):
-#       name = "azure_openai"
-#       def __init__(self):
-#           from openai import AzureOpenAI          # `pip install openai`
-#           self.client = AzureOpenAI(
-#               azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-#               api_key=os.environ["AZURE_OPENAI_API_KEY"],
-#               api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
-#           )
-#           self.model = os.environ["AZURE_OPENAI_DEPLOYMENT"]   # deployment name, e.g. "gpt-4o"
-#       def complete_json(self, *, system, user, schema, tool_name, tool_description, max_tokens=4096):
-#           resp = self.client.chat.completions.create(
-#               model=self.model, max_tokens=max_tokens,
-#               messages=[{"role": "system", "content": system},
-#                         {"role": "user", "content": user}],
-#               tools=[{"type": "function",
-#                       "function": {"name": tool_name, "description": tool_description,
-#                                    "parameters": schema}}],
-#               tool_choice={"type": "function", "function": {"name": tool_name}},
-#           )
-#           import json
-#           return json.loads(resp.choices[0].message.tool_calls[0].function.arguments)
-#
-# Then register it in _PROVIDERS below and set LLM_PROVIDER=azure_openai.
+# Azure OpenAI is a planned second provider (deferred deliberately — CLAUDE.md:
+# "Out of scope is explicit"). The seam is one method (complete_json), so it drops
+# in behind this registry once Azure access is provisioned; the design + concrete
+# sketch live in docs/design/azure-target.md rather than as commented-out code here.
 
 _PROVIDERS = {
     "anthropic": AnthropicProvider,
-    # "azure_openai": AzureOpenAIProvider,  # planned — see above
 }
 
 

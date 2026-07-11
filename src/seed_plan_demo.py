@@ -62,8 +62,9 @@ DEMO = [
 
 
 def _find_opp(conn, fragment):
-    # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
-    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
+    # ORDER BY + fetchone() returns the first match; avoiding LIMIT/TOP/FETCH keeps
+    # the query portable across sqlite and the SQL Server path — which is supported
+    # via DB_URL but not yet provisioned or tested (see CLAUDE.md). Dev-local seeder.
     row = conn.execute(
         "SELECT * FROM opportunities WHERE title LIKE ? ORDER BY id",
         (f"%{fragment}%",),

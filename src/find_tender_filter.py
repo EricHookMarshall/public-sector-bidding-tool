@@ -10,7 +10,11 @@ Run:  python3 find_tender_filter.py [days_back] [--no-db]
       Persists matching open notices into bids.db via db.upsert_opportunity()
       and also prints them. Pass --no-db to print only (no DB write).
 """
-import json, sys, urllib.request, datetime
+import datetime
+import json
+import sys
+import urllib.parse
+import urllib.request
 
 import db
 
@@ -43,7 +47,9 @@ def build_prefixes(cpv_codes):
     return sorted({c.rstrip("0") for c in cpv_codes}, key=len, reverse=True)
 
 
-# Default prefixes for the module-level TARGET_CPV (CLI / back-compat default).
+# Default prefixes for the module-level TARGET_CPV. run() always passes an explicit
+# `prefixes`, so this default only serves ad-hoc/interactive `matches(code)` calls
+# and the CLI — it's a convenience, not a code path the app relies on.
 PREFIXES = build_prefixes(TARGET_CPV)
 
 def matches(cpv_id, prefixes=PREFIXES):
@@ -92,7 +98,14 @@ def cpvs_in(release):
 def fetch(url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
+        try:
+            return json.load(r)
+        except json.JSONDecodeError as e:
+            # A 200 with an HTML/error body (maintenance page, WAF challenge) would
+            # otherwise surface as a raw decode traceback. Re-raise as a clean,
+            # source-scoped error so the per-source handler reports it uniformly.
+            # Source-neutral message: this fetch is shared by both connectors.
+            raise RuntimeError("upstream returned a non-JSON body") from e
 
 
 def region_country(t):
@@ -142,14 +155,19 @@ def run(days=120, cpv_codes=None, stage=STAGE, open_only=OPEN_ONLY,
     `published_from`/`published_to` (ISO date or datetime) override the rolling
     `days` window when supplied — the API filters on its `updated` timestamp.
     """
+    if stage not in STAGES:
+        raise ValueError(f"unknown stage: {stage!r} (expected one of {STAGES})")
     cpv_codes = cpv_codes or TARGET_CPV
     prefixes = build_prefixes(cpv_codes)
     now = datetime.datetime.now(datetime.timezone.utc)
     frm = (to_api_datetime(published_from) if published_from
            else (now - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S"))
-    url = f"{API}?stages={stage}&limit=100&updatedFrom={frm}"
+    # Build the query with urlencode so free-form stage/date values can't inject or
+    # break query parameters (stage is also validated against STAGES above).
+    query = {"stages": stage, "limit": 100, "updatedFrom": frm}
     if published_to:
-        url += f"&updatedTo={to_api_datetime(published_to)}"
+        query["updatedTo"] = to_api_datetime(published_to)
+    url = f"{API}?{urllib.parse.urlencode(query)}"
 
     seen, records, pages = set(), [], 0
     while url and pages < 200:

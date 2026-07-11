@@ -188,7 +188,11 @@ def winrate_summary(items):
         if it.get("saved"):
             recorded += 1
         result = it.get("result") or "Awaiting"
-        counts[result] = counts.get(result, 0) + 1
+        # An unknown/legacy result must not add a phantom bucket that leaks into
+        # by_result — fold it into "Awaiting" (undecided) so the totals stay clean.
+        if result not in counts:
+            result = "Awaiting"
+        counts[result] += 1
         pct = it.get("score_pct")
         if pct is not None:
             scores.append(pct)

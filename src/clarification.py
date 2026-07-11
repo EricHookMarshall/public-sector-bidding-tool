@@ -24,9 +24,10 @@ Kept here (not in db.py) for the same reason as qualification.py / bidplan.py:
 db.py is persistence; the domain vocabulary lives beside it.
 """
 
-# bidplan owns the lenient date maths (days-to-deadline); Manage races the same
-# kind of deadline, so it reuses that one utility rather than re-deriving it.
-from bidplan import days_until
+# bidplan owns the lenient date maths (days-to-deadline) and the shared urgency
+# threshold; Manage races the same kind of deadline, so it reuses both rather than
+# re-deriving them.
+from bidplan import days_until, IMMINENT_DAYS
 
 # FOR003 clarification lifecycle. A clarification is raised (Open), written up
 # (Drafting), sent to the buyer (Submitted), then the buyer replies (Answered).
@@ -39,9 +40,9 @@ PENDING_SUBMISSION = {"Open", "Drafting"}
 # Fully resolved for the pre-flight gate (buyer has replied).
 RESOLVED_STATUSES = {"Answered"}
 
-# A deadline this many days out (or nearer) is "imminent" and raises an alert.
-# Matches bidplan.IMMINENT_DAYS so Plan and Manage speak the same urgency.
-IMMINENT_DAYS = 7
+# IMMINENT_DAYS (imported from bidplan above) — a deadline this many days out or
+# nearer is "imminent" and raises an alert. Shared so Plan and Manage speak the
+# same urgency rather than drifting apart.
 
 # Pre-flight gate template (docs/design/data-model.md §5b). One row per required
 # check. `auto` items are derived by the tool (not ticked by hand); `expiry`
