@@ -42,7 +42,7 @@ src/         The app backend. FastAPI + SQLite. Connectors (Find a Tender +
              (FOR002) domain logic + AI pre-fill seam. bids.db + .env live here
              (both resolved relative to the code, so they travel with it).
 web/         The app frontend. React/Vite — the 6-stage journey shell + per-stage
-             screens (Search/Triage/Plan real; Complete/Manage/Learn preview).
+             screens (all six stages real; no preview screens remain).
 support/     The PoC brief + the API catalogue the record shape was drawn from.
 skills/      B00–B07 bid-lifecycle skill chain (Claude skills + helper scripts).
              Designed; targets a 3-library SharePoint bid store (not yet stood up).
@@ -78,10 +78,34 @@ python3 src/db.py                                 # create/inspect src/bids.db
 python3 src/find_tender_filter.py 120             # fetch → normalise → upsert
 uvicorn api:app --app-dir src --reload --port 8000  # JSON API (src/ on the path)
 cd web && npm install && npm run dev              # UI at http://localhost:5173
+make check                                        # canonical health baseline (see below)
 ```
+
+`make check` (`scripts/check.sh`) is the one repeatable green baseline — backend pytest
+(deadline / CPV / qualification / preflight / auth-roles + app-construct), a doc-state
+consistency guard, and the Vite build. `make check-fast` skips the build; `make test` is
+just the unit suite. Install test deps with `make install` (or `pip install -r
+requirements-dev.txt`). Run it before committing nontrivial changes.
 
 `src/bids.db`, `src/.env` and `node_modules/` are gitignored (rebuildable /
 secret). Kill services when done: `pkill -f "uvicorn api:app"; pkill -f vite`.
+
+## Source of truth (authority order)
+
+When documents disagree about the *current* state, resolve in this order — higher wins,
+and fix the loser rather than carrying the contradiction forward:
+
+1. **Executable code + tests** under `src/` / `web/` — what actually runs.
+2. **`_session/state.yaml`** — the compact machine-readable current state (phase, active
+   workstream, next action, blockers, last verification dates).
+3. **`CLAUDE.md`** (this file) — stable invariants, architecture seams, safety rules, commands.
+4. **`_session/handover.md`** — the human-readable hot state + the single next action.
+5. **`_session/todo.md`** — the unfinished queue.
+6. **`README.md`** + `docs/` — outward-facing overview and design docs.
+7. **`_session/progress.md`** + `docs/code_reviews/` — cold history; read on demand only.
+
+`src/` domain modules (enums, statuses, blocking rules, thresholds) are **canonical** — the
+`skills/` chain conforms to them, never the reverse (see `skills/` note in the roadmap).
 
 ## Ways of working (delivery discipline)
 

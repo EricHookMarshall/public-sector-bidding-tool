@@ -8,10 +8,11 @@ work), and **manage** them through to award and learning.
 Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group. See
 [`knowledge/`](knowledge/) for the business context and why this exists.
 
-> **Status:** the app is a working 6-stage journey shell. Search, Triage (with
-> AI pre-fill) and Plan are built and wired to live data; Complete, Manage and
-> Learn are labelled preview screens. The bid-lifecycle skills (`skills/`) are
-> designed but not yet grounded to live data.
+> **Status:** the app is **feature-complete — all six stages are real, wired to
+> `bids.db`, and live-verified.** Complete reads FWF's real bid library through the
+> `LocalMirror` provider seam over a gitignored local export; live `GraphSharePoint`
+> drops in behind the same seam once MS Graph is provisioned. The bid-lifecycle
+> skills (`skills/`) are designed but not yet folded into the app.
 
 ---
 
@@ -26,13 +27,14 @@ Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group. See
 | **1. Search** | Find relevant opportunities across sources | [`src/`](src/) + [`web/`](web/) | ✅ Live — Find a Tender + Contracts Finder |
 | **2. Triage** | Bid / no-bid with clear reasons | [`src/`](src/) + [`web/`](web/) | ✅ Live — real FOR001 form + AI pre-fill |
 | **3. Plan** | Which bids, when, with what capacity | [`src/`](src/) + [`web/`](web/) | ✅ Live — pipeline board + capacity + FOR002 timeline |
-| **4. Complete** | Matrix → retrieve → draft → review → preflight | [`skills/`](skills/) B02–B05 | 🟡 Preview screen; needs live doc I/O + SharePoint |
-| **5. Manage** | Clarifications, deadlines, sign-off | [`skills/`](skills/) B06 | 🟡 Preview screen; needs portal/mailbox link |
-| **6. Learn** | Feed outcomes back into the library | [`skills/`](skills/) B07 | 🟡 Preview screen; depends on stage 4 |
+| **4. Complete** | Matrix → retrieve → draft → review → preflight | [`src/`](src/) + [`web/`](web/) | ✅ Live — FOR006 matrix + AI pre-fill over the real bid library (`LocalMirror`) |
+| **5. Manage** | Clarifications, deadlines, sign-off | [`src/`](src/) + [`web/`](web/) | ✅ Live — FOR003 clarification register + pre-flight gate |
+| **6. Learn** | Feed outcomes back into the library | [`src/`](src/) + [`web/`](web/) | ✅ Live — B07 outcome capture + win-rate + library-feedback loop |
 
-The **gap** this project still closes: the AI pre-fill for Complete has no live
-**SharePoint** library behind it yet, and the `skills/` B00–B07 chain isn't yet
-grounded to the app's live data.
+**What remains external:** Complete runs today over a gitignored **local export** of
+the bid library through the `LocalMirror` seam; the live `GraphSharePoint` provider
+drops in behind the same seam once MS Graph is provisioned. The `skills/` B00–B07
+chain is designed but not yet folded into the app.
 
 ---
 
@@ -93,17 +95,21 @@ Full detail and verified facts in [`knowledge/`](knowledge/).
   pre-fill; a Go promotes an opportunity into a bid.
 - **Phase 2 — Planning layer** ✅ pipeline board + capacity + FOR002 timeline +
   reactive deadline/owner/capacity alerts.
-- **Phase 3 — SharePoint + AI pre-fill** *(next external dependency)*: stand up the
-  3-library bid store (MS Graph) and run B00/B03/B04. What Complete (Stage 4) needs.
-- **Phase 4 — Manage & learn**: clarification register (Stage 5, no external
-  blocker), preflight gate, outcome loop.
+- **Phase 3 — Complete (Stage 4) + bid library** ✅ FOR006 compliance matrix + AI
+  pre-fill over FWF's real bid library through the `LocalMirror` seam (word-count gate,
+  evidence/expiry ledger, retrieval-grounded drafting).
+- **Phase 4 — Manage & learn** ✅ Manage (Stage 5): FOR003 clarification register +
+  pre-flight gate. Learn (Stage 6): outcome capture + win-rate + library-feedback loop.
+- **Beyond the journey** *(optional / deferred)*: live `GraphSharePoint` provider (when
+  MS Graph lands), Azure OpenAI provider, and the Azure hosting migration.
 
 ## Open decisions
 
-1. **SharePoint timing** — Phase 3 / Complete needs real MS Graph credentials
-   (this environment currently has Google Drive, not SharePoint).
-2. **Next stage** — Manage (Stage 5, no external blocker, encodes the
-   clarification-deadline failure) vs. Complete (Stage 4, blocked on SharePoint).
+1. **Live `GraphSharePoint` timing** — build the MS Graph provider behind the existing
+   `LocalMirror` seam once real credentials are provisioned (this environment has Google
+   Drive, not SharePoint). Complete already runs on the sanctioned local export.
+2. **Azure migration** — Phases B (DB portability) + C (Entra ID auth) are done and
+   locally verified; Phase D (hosting scaffold) needs an Azure subscription.
 
 *Resolved:* product form — the discovery UI **was** grown into the whole 6-stage
-journey app (settled by the build through Stage 3). Sequencing — **breadth first**.
+journey app. Sequencing — **breadth first**; the journey is now feature-complete.

@@ -1,0 +1,36 @@
+# Compact machine-readable current state. Authority rank 2 (below code, above CLAUDE.md).
+# Update this every session BEFORE the prose in handover.md — it is the cheap, unambiguous
+# answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
+schema_version: 1
+updated: 2026-07-10
+session: 13
+
+phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
+active_workstream: post-walkthrough  # quick-wins queue cleared; next is user-scoped
+next_action: scope_c_series_compliance_renewals_with_user
+
+git:
+  branch: main
+  clean: true                        # session-13 work committed at 9c31fa8
+  last_commit: 9c31fa8
+
+db:                                  # expected on resume (session-13 demo cleanse)
+  opportunities: 24
+  pipeline: empty                    # 0 quals/bids/plans/manage/responses/outcomes — intentional
+  app_settings: 2
+
+verified:
+  make_check: 2026-07-11             # 29 backend tests + doc-consistency + vite build, all green
+  backend_import: 2026-07-11
+  frontend_build: 2026-07-11
+  live_browser: 2026-07-10           # S5/S3/U1 user-confirmed in the browser
+
+external_blockers:
+  graph_sharepoint: credentials_and_provisioning   # LocalMirror seam covers Complete meanwhile
+  azure_openai: provisioning
+  azure_phase_d_hosting: needs_subscription
+
+deferred:
+  - wave2_correctness_bugs           # FTS lexicographic deadline compare; 3.12-only f-string
+  - skills_chain_fold_in             # src/ is canonical; align skill enums before folding in
+  - make_check_live_source_tests     # rung 4: integration tests behind an explicit flag

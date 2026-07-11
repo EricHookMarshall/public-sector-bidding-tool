@@ -1,7 +1,7 @@
 # Progress — cold history
 
-> Append-only, **most-recent-first**. One dated entry per session. The current hot state lives in
-> [handover.md](handover.md); this is the retrospective trail behind it.
+> **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
+> The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
 ## 2026-07-10 (session 13) — Cleared the walkthrough quick-wins queue + a user-requested Triage "dismiss" & demo cleanse
 

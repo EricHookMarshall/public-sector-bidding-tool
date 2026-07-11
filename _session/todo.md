@@ -1,258 +1,110 @@
-# TODO
+# TODO — active queue
 
-> Active and in-flight work only. Completed items are cold history — see [progress.md](progress.md)
-> (most-recent-first), which holds the full dated retrospective per session.
+> **Unfinished work only.** Completed items are cold history — see [`progress.md`](progress.md)
+> (most-recent-first, full dated retrospective per session). Everything through **session 13 is
+> committed** (`9c31fa8`). When an item ships, note it in `progress.md` and delete it here.
 
-## Session 12 walkthrough queue (quick-wins-first workstream)
+## Feature backlog (needs scoping with the user)
 
-> From the user's live UI click-through (2026-07-10). Distinct from the Azure/code-review work below.
-> **Shipped this session (all committed + verified):** B1+B2 `2bfd948` · F4 day-rates `2b16cc3` ·
-> S1 AI-prompts + Settings redesign `bd09e3b` · S1+ editable extraction template `aac5ff4` ·
-> F3 Plan date-pickers `4326fd4` · S4 team-capacity setting `d74b7a6` · Settings layout `8535877`.
-> New infra: `app_settings` (key→JSON) table + `db.get_setting/set_setting`.
-
-**Quick wins (do first):**
-- [x] **S5 — team roster / owners** (2026-07-10, session 13) — `team_roster` in `app_settings` +
-      `GET`/`PUT /api/settings/team-roster` (Admin PUT); roster injected into the Plan + Manage reference
-      payloads; Settings "Team roster" card; owner `<datalist>`s on Plan (people + FOR002 roles) and Manage
-      (Owner/Backup). Verified live (clean/dedupe/400 on over-long) + `npm build` clean. Uncommitted.
-- [x] **S3 — search defaults in Settings** (2026-07-10, session 13) — `search_defaults` in `app_settings`
-      (read-time resolver re-validates vs the source/stage registry) + `GET`/`PUT /api/settings/search-defaults`
-      (Admin PUT, strict 400s); folded into `/api/meta` `search_options.defaults`; Settings "Search defaults"
-      card; the "Run a live search" panel seeds its whole form from it. Verified live (partial PUT + 6 bad-input
-      400s) + `npm build` clean. Uncommitted.
-- [x] **U1 — Triage as cards, not a dropdown** (2026-07-10, session 13) — Triage now a filtered card
-      board (funnel chips + counts + keyword) via `GET /api/triage/board` (+ `db.list_triage_states`);
-      picking a card opens the form with a "← Board" back header; board refreshes after a save. The
-      Search→Triage "Triage this" handoff already existed. Verified live + `npm build` clean.
-- [x] **U2 — Dismiss from Triage (reversible) + demo-data cleanse** (2026-07-10, session 13) — new
-      `triage_dismissals` side table (kept out of `opportunities` so Search + record shape unchanged) +
-      `PUT /api/opportunities/{id}/triage-dismiss` `{dismissed}`; card ✕ Dismiss / ↩ Restore + a
-      "Dismissed (n)" funnel chip. **Dismissal hides from Triage only — stays in Search** (user choice).
-      Also cleansed the 4 seeded demo bids (all downstream tables) → 24 real opps, empty pipeline, so the
-      user can push a real test bid. bids.db backup in the session scratchpad. Verified live end-to-end.
-
-**Bigger / needs scoping:**
-- [ ] **C-series — "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff). **C3:** the
-      compliance docs already exist + are expiry-tracked in `library.py` (*Company Credentials*) —
-      **ISO already reads EXPIRED 2025-10-31 in live data**; gap = structured renewal dates for the rest +
-      an **org-level** view (today the ledger is buried per-bid in Complete). **C4:** framework/contract
-      membership-period tracker (org-level twin; RM6263-expired precedent). Scope with the user before building.
+- [ ] **C-series — "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff — the missed-renewal
+      failure the tool exists to prevent). **C3:** compliance docs already exist + are expiry-tracked in
+      `library.py` (*Company Credentials*; ISO reads **EXPIRED 2025-10-31** in live data) — gap = structured
+      renewal dates for the rest + an **org-level** view (today buried per-bid in Complete). **C4:**
+      framework/contract membership-period tracker (RM6263-expired precedent). **Scope with the user first.**
 - [ ] **C1 — clarifications: discoverability + AI dedupe** — the FOR003 register exists on Manage (click a
       bid); make the drill-in obvious (board shows only a count). NEW: AI-ingest incoming CQs, dedupe, flag
       "already answered by CQ #n".
 - [ ] **C2 — per-bid workspace + slim per-bid KB** — opportunity visible, edits saved, a bid-specific KB the
       AI grounds on. Net-new; aligns with the `skills/` 3-library design. Needs a design pass.
-- [ ] **F1 — more source APIs** (Public Contracts Scotland, Sell2Wales, eTendersNI, G-Cloud) behind the
-      normalise→`bids.db` seam. **F2 — multi-criteria search.** **F5 — ITT ingestion → auto-build the
-      compliance matrix** (biggest; the matrix schema is already per-bid dynamic, just no parser).
+- [ ] **F-series — more sources / search** — F1: Public Contracts Scotland, Sell2Wales, eTendersNI, G-Cloud
+      behind the normalise→`bids.db` seam. F2: multi-criteria search. **F5: ITT ingestion → auto-build the
+      compliance matrix** (biggest; matrix schema is already per-bid dynamic, just no parser).
 
-**Noted (already built — no action, keep for reference):**
-- Modern Slavery is **already** a Manage pre-flight item + a library credential ("Anti-Bribery & Modern
-  Slavery Policies") — don't re-add.
+> **Noted (already built — no action):** Modern Slavery is already a Manage pre-flight item + a library
+> credential ("Anti-Bribery & Modern Slavery Policies") — don't re-add.
 
-## Active queue
+## Harness follow-ups (from the 2026-07-10 harness-design review — `docs/harness_design/`)
 
-- [x] **Restructure repo — flatten the nested sub-app** (2026-07-09, session 5) — `discovery/` removed;
-      backend → `src/`, frontend → `web/`, brief → `support/`, `requirements.txt` → root; `bids.db` +
-      `.env` moved into `src/`. Duplicated `_session/`/`.claude/`/`CLAUDE.md` consolidated to one set at
-      root. App live-verified running from the new layout.
-- [x] **Plan (Stage 3)** (2026-07-09, session 4) — `src/bidplan.py` (FOR002 rig), `src/db.py`
-      (`bid_plans` table), `src/api.py` (reference/board/GET/PUT), `PlanStage.jsx` (real pipeline board +
-      capacity + FOR002 timeline). `src/seed_plan_demo.py` for reviewable demo data. Live-verified.
-- [x] **Triage (B01) + AI pre-fill + Settings** (2026-07-09, session 3) — FOR001 form wired to `bids.db`;
-      provider-agnostic AI seam (`src/llm.py`, Anthropic live, Azure OpenAI skeleton); `#settings` screen.
-- [x] **Manage (Stage 5) — FOR003 clarification register + pre-flight gate** (2026-07-09, session 6) —
-      `src/clarification.py` (FOR003 rig: statuses, 9-item preflight, `resolve_preflight` enforcing
-      auto+expiry items, `alerts`), `bid_manage` table, `/api/manage/*` + `GET`/`PUT /api/bids/{id}/manage`
-      (gate enforced server-side → 409 if blocked), real board→detail UI, `seed_manage_demo.py`.
-      Live-verified over HTTP.
-- [x] **User review of the journey shell** (2026-07-09, session 7) — user confirmed the browser
-      click-through was done and the stages look fine. Clears the 5-session "0 human-reviewed" thread.
-- [x] **Learn (Stage 6) — B07 outcome + win-rate + library-feedback loop** (2026-07-09, session 7) —
-      `src/outcome.py` (B07 rig: results, Lessons Learned, `library_suggestions`, `winrate_summary`,
-      `alerts`), `bid_outcomes` table, `/api/learn/*` + `GET`/`PUT /api/bids/{id}/outcome` (result
-      validated → 400), real win-rate board→outcome-detail UI replacing the mock, `seed_learn_demo.py`.
-      Live-verified over HTTP; `npm run build` clean. Suggestions proposed + signed off, never written
-      to a real library (honest boundary).
-- [x] **Complete (Stage 4) — FOR006 matrix + LocalMirror library + AI pre-fill** (2026-07-09, session
-      7b) — `src/library.py` (LocalMirror provider over the real gitignored export; expiry extracted
-      from Notes; retrieval + evidence ledger; `master_template`), `src/response.py` (FOR006 rig + live
-      word-count gate), `src/complete_ai.py` (retrieval-grounded drafting), `bid_responses` table,
-      `/api/complete/*` + `/api/library` + matrix GET/PUT + index-based AI-draft, real matrix→workspace
-      UI replacing the mock, `seed_complete_demo.py`. Live-verified over HTTP; `npm run build` clean.
-      **The journey is now feature-complete — all 6 stages real.**
-- [ ] **User browser walk of Complete + Learn** — the two stages built this session, verified
-      server-side only. Open `#complete` / `#learn` at <http://localhost:5173> and flag anything wrong.
-- [ ] **Commit the milestone** — Learn + Complete are uncommitted. Commit on the user's request.
+- [x] **Canonical verification command** (2026-07-11) — `make check` (`scripts/check.sh`): backend
+      pytest (deadline / CPV / qualification / preflight / auth-roles + app-construct = **29 tests**) →
+      doc-state consistency guard → Vite build. `make check-fast` skips the build. `tests/` + `pytest.ini`
+      + `requirements-dev.txt`. **Next extension:** add live-source tests behind an explicit flag (rung 4).
+- [ ] **Fold the `skills/` B00–B07 chain into the app** — declare `src/` domain vocab canonical (done in
+      CLAUDE.md), align skill enums/handoff schemas to it, route skill calculations through shared code.
+      Resolve the duplicate `fwf-tender-sweep` skill-name collision (two `tender_sweep/` variants). Parked
+      until the chain is actually folded in.
 
-## Code-review remediation (2026-07-09)
+## Code-review remediation — Waves 2–6 (open)
 
-> Two reviews in [`docs/code_reviews/`](../docs/code_reviews/): **Codex quick** (2 High / 3 Med / 8 Low)
-> and **Fable comprehensive** (6 High / 17 Med / 39 Low). Deduped into waves below — **ordered by
-> dependency, each item decoupled** (independently pickable) unless a `↳` notes a coupling. Spot-verified
-> real before filing: newline injection (`config.py:77`), compose 0.0.0.0 bind (`docker-compose.yml:28`),
-> FTS lexicographic deadline compare (`find_tender_filter.py:155`). Nothing fixed yet — this is the plan.
+> Two reviews in [`docs/code_reviews/`](../docs/code_reviews/). **Waves 0 (security) + 1 (Azure-promotion)
+> are DONE** — all 12 items verified in commit `0f35c70`; detail in `progress.md`. Waves 2–6 below are open,
+> each item independently pickable unless a `↳` notes a coupling.
 
-### Wave 0 — Security blockers ✅ DONE (verified in commit `0f35c70`, session 11)
-
-- [x] **Newline injection in `config.upsert_env`** (`src/config.py:104-109`) — control-char guard rejects
-      any C0 char (incl. `\r`/`\n`) before writing `.env`; `PUT /api/config` maps the `ValueError` to a 400.
-      **Functionally verified**: a live `upsert_env({'ANTHROPIC_MODEL': '…\nLOCAL_AUTH_BYPASS=1'})` call
-      raised and wrote nothing.
-- [x] **docker-compose binds 0.0.0.0** (`docker-compose.yml:30`, `49-52`) — SQL Server + the three Azurite
-      ports are now published on `127.0.0.1` only (Azurite's in-container `0.0.0.0` bind is intentional +
-      commented). Not LAN-reachable.
-
-### Wave 1 — Azure-promotion blockers ✅ DONE (verified in commit `0f35c70`, session 11)
-
-> All ten confirmed implemented against the actual code (not just the plan) and verified green: backend
-> imports clean + FastAPI app constructs; `npm build` clean. These landed in the Phase C tree.
-
-- [x] **`openpyxl` used-but-undeclared** — declared `openpyxl>=3.1` (`requirements.txt:18`); `library.py`
-      `_openpyxl()` + `LocalMirror.available()` require BOTH the file AND the import, and `status()` returns
-      `available:false` + a `reason` otherwise (no contradictory "connected, 0 items").
-- [x] **`db.py` ALTER TABLE dialect bug** — `init_db` branches `add_kw = "ADD COLUMN" if sqlite else "ADD"`
-      (`src/db.py:467`); T-SQL back-fill no longer emits the illegal `COLUMN` keyword.
-- [x] **Connection lifecycle** — `get_conn` is a yielding FastAPI dependency with try/finally
-      (`src/api.py:78`); `init_db` runs once at startup via a `lifespan` context manager (`api.py:65`).
-      Every handler takes `conn=Depends(get_conn)`; error paths no longer leak connections.
-- [x] **Settings persistence seam** — `config.persistence_mode()` ("env_file" local / "platform" on Azure
-      via `WEBSITE_INSTANCE_ID`, `CONFIG_STORE` override) + `ConfigReadOnly`; `PUT /api/config` maps it to a
-      409. The dotfile write is scoped to local mode.
-- [x] **CSV export via the auth/base-URL seam** — `downloadExport()` (`web/src/api.js:106`) routes through
-      `apiFetch` (Bearer + `VITE_API_BASE_URL`) and streams a Blob download; `SearchStage.jsx:197` calls it.
-      No bare `<a href>`.
-- [x] **`.catch` on the MSAL boot chain** — `web/src/main.jsx:41-49` catches any init/redirect rejection,
-      logs it, and calls `render()` anyway so the deployed SPA can't go permanently blank.
-- [x] **`AAD_DEFAULT_ROLE` default too broad** — `auth._auth_policy_error()` fails closed (500) under real
-      auth when neither a group→role map nor an explicit `AAD_DEFAULT_ROLE` is set; no broad role is ever
-      silently in force on Azure.
-- [x] **Entra groups-overage handled** — `auth._has_group_overage()` detects the `hasgroups`/`_claim_names`
-      marker and returns a loud 403 rather than silently downgrading (`src/auth.py:142,281`).
-- [x] **`pyodbc` conditional** — commented out with install instructions (`requirements.txt:14`); clean
-      SQLite-only `pip install` no longer breaks on missing unixODBC.
-- [x] **`pool_pre_ping`** — `create_engine(..., pool_pre_ping=True)` (`src/db.py:432`); guards Azure SQL
-      idle-connection drops, harmless for SQLite.
-
-### Wave 2 — Correctness bugs (independent; real defects, not just Azure)
+### Wave 2 — Correctness bugs (real defects, not just Azure)
 
 - [ ] **FTS deadline kept by string compare** (`src/find_tender_filter.py:155`) — `end >= now.isoformat()`
-      lexicographic; an offset-stamped deadline already past UTC can be stored as **open** — in a deadline
-      tool. CF already solves this with a parsed offset-aware `is_open`. Move `is_open` into
-      find_tender and use it in both connectors. **Med** (Fable §2). `↳` also removes duplication (Wave 5).
-- [ ] **`seed_learn_demo.py:115` is Python-3.12-only** — nested same-type quotes in an f-string field
-      (PEP 701); `SyntaxError` at import on ≤3.11 while the rest of `src/` loads. Extract the fragment, or
-      declare `requires-python>=3.12`. **Med** (Fable §2).
-- [ ] **Seeders use `LIMIT 1`** (`seed_plan_demo.py:58`, `seed_complete_demo.py:48`, `seed_manage_demo.py:102`,
-      `seed_learn_demo.py:79`) — SQLite-only; needs `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` for SQL Server.
-      **Low** — *(was already the "Phase B tail" item below; folded here.)*
-- [ ] **Seeder demo dates hard-coded to ~July 2026** (`seed_manage_demo.py:54,67,77`, `seed_plan_demo.py:44`,
-      `seed_learn_demo.py:38,57`) — the advertised passed/imminent/done alert spread decays to all-OVERDUE
-      within weeks. Compute from `date.today()` offsets. **Low** (Fable §1).
+      is lexicographic; an offset-stamped deadline already past UTC can be stored as **open** — in a deadline
+      tool. CF already solves this with a parsed offset-aware `is_open`; move `is_open` into find_tender and
+      use it in both connectors. **Med.** `↳` also removes duplication (Wave 5).
+- [ ] **`seed_learn_demo.py:115` is Python-3.12-only** — nested same-type quotes in an f-string (PEP 701);
+      `SyntaxError` at import on ≤3.11. Extract the fragment, or declare `requires-python>=3.12`. **Med.**
+- [ ] **Seeders use `LIMIT 1`** (`seed_plan/complete/manage/learn_demo.py`) — sqlite-only; needs
+      `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` for SQL Server. **Low** (dev-local seeders).
+- [ ] **Seeder demo dates hard-coded to ~July 2026** — the passed/imminent/done alert spread decays to
+      all-OVERDUE within weeks. Compute from `date.today()` offsets. **Low.**
 
-### Wave 3 — Doc/comment truth sweep (independent, cheap; batch in one pass)
+### Wave 3 — Doc/comment truth sweep (cheap; batch in one pass)
 
-- [ ] **Stale `discovery/.env` refs** (7×: `src/.env.example:1`, `src/config.py:4`, `src/api.py:26,455`,
-      `web/src/SettingsView.jsx:111`, `web/src/journey.js:72,132`) — dir doesn't exist; `.env` lives in
-      `src/`. Two are user-facing UI copy → make host-neutral ("stored server-side, never returned").
-      **Med** (both).
-- [ ] **"only Search is live" stale comments** (`web/src/App.jsx:19`, `web/src/journey.js:8-12`,
-      `SearchStage.jsx:1`, `styles.css:207-209` banner) — all six stages are live; these contradict the code
-      and point at dead MockStage. **Med/Low** (both).
-- [ ] **Post-port / model stale comments** — `src/llm.py:5` docstring says Opus default (actually
-      `claude-haiku-4-5`); `db.py:12-13,536` + `api.py:164` still say "sqlite3.Row"/"12-field sketch";
-      `complete_ai.py:88` claims a non-existent import cycle; `api.py:2-16` docstring lists 3 of ~30
-      endpoints + "SQLite" not dual-mode. **Low** (Fable §1).
+- [ ] **Stale `discovery/.env` refs** (7×: `src/.env.example:1`, `config.py:4`, `api.py:26,455`,
+      `SettingsView.jsx:111`, `journey.js:72,132`) — dir doesn't exist; `.env` lives in `src/`. Two are
+      user-facing UI copy → make host-neutral. **Med.**
+- [ ] **"only Search is live" stale comments** (`App.jsx:19`, `journey.js:8-12`, `SearchStage.jsx:1`,
+      `styles.css:207-209` banner) — all six stages are live; these contradict the code. **Med/Low.**
+- [ ] **Post-port / model stale comments** — `llm.py:5` says Opus default (actually `claude-haiku-4-5`);
+      `db.py:12-13,536` + `api.py:164` still say "sqlite3.Row"/"12-field sketch"; `complete_ai.py:88` claims
+      a non-existent import cycle; `api.py:2-16` docstring lists 3 of ~30 endpoints + "SQLite" not dual-mode. **Low.**
 
-### Wave 4 — Dead / orphaned code removal (independent, cheap; batch)
+### Wave 4 — Dead / orphaned code removal (cheap; batch)
 
-- [ ] **Delete MockStage + ScopeCard + their CSS** (`web/src/stages/MockStage.jsx`, `ScopeCard.jsx`;
-      `styles.css:211-230,298-314`; strand the `scope`/`asset` data in `journey.js:24-193`) — preview-era
-      orphans imported by nothing. Decide StagePlaceholder's fate (keep as defensive seam w/ a comment, or
-      remove `STATE_MAP` design/gap + `.s-design/.s-gap` CSS too). **Med** (both). *(Supersedes the old
-      StagePlaceholder/MockStage dead-code item below.)*
-- [ ] **Unused imports / dead branches** — `src/clarification.py:26` unused `datetime`; `PlanStage.jsx:8`
-      unused `useMemo`; `TriageStage.jsx:103-104` dead raw-value branch in `setField`;
-      `db.py:1015` `bids` local shadows the Table; `SearchStage.jsx:88` no-op spread + `:259` inert
-      eslint-disable (no ESLint in repo). **Low** (both).
+- [ ] **Delete MockStage + ScopeCard + StagePlaceholder + their CSS** (`web/src/stages/MockStage.jsx`,
+      `ScopeCard.jsx`, `StagePlaceholder.jsx`; `styles.css:211-230,298-314`; strand the `scope`/`asset` data
+      in `journey.js:24-193`) — preview-era orphans imported by nothing. **Med.**
+- [ ] **Unused imports / dead branches** — `clarification.py:26` unused `datetime`; `PlanStage.jsx:8` unused
+      `useMemo`; `TriageStage.jsx:103-104` dead branch; `db.py:1015` `bids` local shadows the Table;
+      `SearchStage.jsx:88` no-op spread + `:259` inert eslint-disable. **Low.**
 
-### Wave 5 — Right-sizing / consistency refactors (quality; lower priority, some coupling)
+### Wave 5 — Right-sizing / consistency refactors (quality; some coupling)
 
-- [ ] **Consolidate `web/src/api.js` error handling** (`:87-94` ×8 vs existing `sendJSON:299-314`) — route
-      the stage helpers through one JSON helper; also make `getJSON:49-53` surface server `detail`. **Med**.
-- [ ] **Collapse the 5 near-identical `db.py` upserts** (`:559-907`) into one `_upsert_one` + thin
-      wrappers. **Med.** `↳` do alongside Wave 1 connection lifecycle; also the place to add the
-      unique-violation retry (§7 upsert race, Low).
+- [ ] **Consolidate `web/src/api.js` error handling** (`:87-94` ×8 vs `sendJSON:299-314`) — route stage
+      helpers through one JSON helper; make `getJSON:49-53` surface server `detail`. **Med.**
+- [ ] **Collapse the 5 near-identical `db.py` upserts** (`:559-907`) into one `_upsert_one` + thin wrappers;
+      the place to add the unique-violation retry. **Med.**
 - [ ] **Extract shared web formatters** — `deadlineBadge`/`daysUntil`/`fmtMoney` duplicated 2-3× across
-      Search/Triage/Plan/Manage/Complete; Complete hard-codes 7/14 thresholds while siblings read
-      `imminent_days` from the server → silent disagreement on "urgent". `web/src/format.js`. **Med** (Fable §2).
-- [ ] **De-dupe backend twins** — `api._derive_open` == `refresh_clean._open_closed` (move to `db.py`);
-      connector `to_record`/`run`/`main` near-verbatim (extract a shared skeleton when a 3rd source lands);
-      cache `LocalMirrorProvider.items()` (xlsx parsed twice per `/api/library` request). **Low/Med** (Fable §6).
-- [ ] **Minor parity polish** — `refresh_clean.py:135` prints sqlite path even under `DB_URL`;
-      `SettingsView.jsx:102` hard-codes "Anthropic API key" label; add a root `.env.example` documenting
-      `MSSQL_SA_PASSWORD` (distinct from `src/.env`); split grouped imports in the two connectors. **Low**.
+      stages; Complete hard-codes 7/14 thresholds while siblings read `imminent_days` from the server →
+      silent disagreement on "urgent". `web/src/format.js`. **Med.**
+- [ ] **De-dupe backend twins** — `api._derive_open` == `refresh_clean._open_closed` (→ `db.py`); connector
+      `to_record`/`run`/`main` near-verbatim (extract when a 3rd source lands); cache
+      `LocalMirrorProvider.items()` (xlsx parsed twice per `/api/library` request). **Low/Med.**
 
-### Wave 6 — Deferred-behind-seam hardening + advisory security (lower priority)
+### Wave 6 — Deferred-behind-seam hardening + advisory security
 
 - [ ] **Raise on unknown `LIBRARY_PROVIDER`** (`src/library.py:388`) — currently silently falls back to
-      LocalMirror, so a typo'd `graph_sharepoint` in Azure config reads the absent local mirror and reports
-      "not connected" with no hint. Mirror `llm.get_provider()`'s raise-with-valid-options. **High** per
-      Codex / Low per Fable — cheap, do it now even before `GraphSharePointProvider` exists.
-- [ ] **Advisory auth hardening** — `auth.py:216-219` return a generic 401 (log the real reason
-      server-side); catch `jwt.PyJWTError` not bare `Exception` (JWKS outage ≠ 401 → 503);
-      `authConfig.js:31` use `sessionStorage` not `localStorage` for MSAL; add `.env`/`.env.*`/`!.env.example`
-      to `web/.gitignore`; the 4 dormant `dangerouslySetInnerHTML` sinks vanish with Wave 4's MockStage/ScopeCard
-      deletion. **Low** (both / Fable §8).
-- [ ] **Skills-chain vocabulary drift** (`skills/b01,b05,b06,b07/scripts/*`) — duplicate logic since built
-      for real in `src/` with divergent enums (e.g. clarification statuses, outcome library actions). Declare
-      `src/` canonical in each SKILL.md + align vocab now so folding them in is wiring, not reconciliation.
-      Also: atomic writes (`os.replace`) in skills `_save`; drop `--break-system-packages` guidance
-      (`build_matrix.py:60`). **Med/Low** (Fable §5) — parked until the chain is actually folded in.
+      LocalMirror, so a typo'd `graph_sharepoint` reads the absent mirror and reports "not connected" with no
+      hint. Mirror `llm.get_provider()`'s raise-with-valid-options. Cheap; do it now. **High/Low.**
+- [ ] **Advisory auth hardening** — `auth.py:216-219` generic 401 (log the real reason); catch
+      `jwt.PyJWTError` not bare `Exception` (JWKS outage ≠ 401 → 503); `authConfig.js:31` use `sessionStorage`
+      not `localStorage`; add `.env`/`.env.*`/`!.env.example` to `web/.gitignore`. **Low.**
 
-## Surfaced / open
+## Surfaced / open (parallel tracks + polish)
 
-- [x] **Azure migration — Phase B (DB portability)** (2026-07-09, session 9) — `src/db.py` ported off raw
-      `sqlite3` to a SQLAlchemy Core dual-mode shim (SQLite local / Azure SQL cloud via `DB_URL`); only
-      db.py changed (qmark-compatible `_Conn`/`_Row` adapter, zero caller edits). `docker-compose.yml`
-      (SQL Server 2022 + Azurite scaffold) added; two dialect bugs fixed (ORDER BY IS NULL; NVARCHAR(MAX)
-      key columns). **Verified `IDENTICAL BEHAVIOUR: True` on both backends** vs a live SQL Server 2022
-      container; app serves through the adapter. `requirements.txt` updated (SQLAlchemy + pyodbc).
-- [x] **Azure migration — Phase C (auth)** (2026-07-09, session 10) — `src/auth.py` (`require_auth`
-      PyJWT/JWKS guard + `groups`→role + `LOCAL_AUTH_BYPASS`), wired app-wide in `src/api.py`
-      (`FastAPI(dependencies=[…])`; config writes `require_roles("Admin")`); env-driven CORS. SPA:
-      `authConfig.js` + MSAL gate in `main.jsx`/`App.jsx` + Bearer at one `apiFetch` choke point in
-      `api.js` + `VITE_API_BASE_URL`; `msal-browser`/`msal-react` added. Verified locally: 12/12 self-minted
-      token checks + HTTP (bypass-off → 401 everywhere) + `npm run build` clean. `.env.example`s +
-      `requirements.txt` (PyJWT) + `azure-target.md` updated. **Uncommitted.**
-- [ ] **Phase C tail — live MSAL browser sign-in** — the redirect round-trip needs a real dev-tenant app
-      reg (Tier-2, no emulator). Supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`, set
-      `LOCAL_AUTH_BYPASS=0`, sign in, confirm the Bearer reaches the API and role-gating works.
-- [ ] **Phase B tail — seeder `LIMIT 1`** — the 4 `seed_*_demo.py` still use sqlite-only `LIMIT 1`; port to
-      `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` so the seeders also run on SQL Server. Low priority (dev-local).
-- [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton (`AzureOpenAIProvider`), not
-      implemented. Now sequenced into the Azure migration's Phase E; build when Azure access is
-      provisioned (client requirement).
-- [ ] **`web/src/StagePlaceholder.jsx` is dead code** — superseded by the per-stage screens; not
-      referenced in `App.jsx`'s `VIEWS` map. Delete or repurpose.
-- [x] **Team capacity (Plan)** (2026-07-10, session 12) — now a persisted Setting in `app_settings`
-      (S4, `d74b7a6`); the Plan board seeds from it, an explicit `?capacity_days=` still = ad-hoc what-if.
-      The default 25 remains a placeholder number, but it's now team-editable in Settings.
-- [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same
-      notice on FTS and CF) not yet handled. Low priority given the value-band split.
-
-## Parked / optional polish
-
-- [ ] **CPV label badge on cards** — `src/cpv_catalog.py` has descriptions; could show a labelled chip.
-- [ ] **Third API source** — `src/sources.py` registry makes it a one-connector-plus-one-line add
-      (TED, Scotland eTender, Crown Commercial Service).
-- [ ] **Lifecycle badge on cards** — `stale`/`closed` flag is in the filter + detail view, not the card.
-- [ ] **CPV scope widen** — currently IT/software only. Widen `TARGET_CPV` + `src/cpv_catalog.py`.
-
-## Done
-
-Completed items are cold history — see [progress.md](progress.md).
-
-- [x] **Phase 0 — consolidate, verify, connect** (2026-07-08): clean repo structure, `.gitignore`, git
-      init + remote + push, facts verified, README + CLAUDE + `_session/` + skills scaffolded.
+- [ ] **Azure Phase C tail — live MSAL browser sign-in** — redirect round-trip needs a real dev-tenant app
+      reg (no emulator). Supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`, set `LOCAL_AUTH_BYPASS=0`,
+      sign in, confirm the Bearer reaches the API and role-gating works.
+- [ ] **Azure Phase D — hosting scaffold** per `docs/design/azure-target.md` (needs an Azure subscription).
+- [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton, not implemented; build when Azure
+      access is provisioned (sequenced into Phase E).
+- [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same notice
+      on FTS + CF) not yet handled. Low priority given the value-band split.
+- [ ] **AI-draft provenance persistence** — win-themes/evidence shown in the UI but not saved with the answer.
+- [ ] **Parked polish** — CPV label badge on cards · lifecycle (`stale`/`closed`) badge on cards · widen CPV
+      scope beyond IT/software (`TARGET_CPV` + `src/cpv_catalog.py`) · a 3rd source via `src/sources.py`.

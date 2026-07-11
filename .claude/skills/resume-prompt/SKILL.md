@@ -14,16 +14,19 @@ where things stand.
 
 ## Step 1 — Read the canonical docs, in order
 
-Read these now (project source of truth, most-load-bearing first):
+Read these now (project source of truth, most-load-bearing first — this is the authority order stated
+in `CLAUDE.md`, where higher wins when two docs disagree about current state):
 
-1. `CLAUDE.md` — project spine: what we're building, the journey, repo map, ways of working, hard rules.
-2. `_session/handover.md` — hot state: current Status, **Active task**, surfaced threads, open decisions.
-3. `_session/todo.md` — the active queue.
+1. `_session/state.yaml` — compact machine-readable current state: phase, active workstream, next
+   action, git/db expectations, blockers, last verification dates. The fastest orientation.
+2. `CLAUDE.md` — project spine: what we're building, the journey, repo map, authority order, hard rules.
+3. `_session/handover.md` — hot state: current Status, **Active task**, blockers, open decisions.
+4. `_session/todo.md` — the active queue (unfinished work only).
 
 If any of these is missing, say so and stop — the session state is the thing being resumed; don't
 guess it. Pull deeper context only as the task demands: `README.md` (the journey overview),
 `knowledge/` (FWF context + `VERIFIED_FACTS.md`), the app code under `src/` (backend) and `web/`
-(frontend), `skills/` (the B00–B07 bid chain), `_session/progress.md` (cold dated history).
+(frontend), `skills/` (the B00–B07 bid chain), `_session/progress.md` (cold dated history, read on demand).
 
 The app runs from the repo root: `uvicorn api:app --app-dir src --port 8000` for the API and
 `cd web && npm run dev` for the UI. `src/bids.db` and `src/.env` live beside the code (gitignored).
