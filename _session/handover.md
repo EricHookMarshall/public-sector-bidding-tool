@@ -7,36 +7,35 @@
 
 ## Status
 
-`2026-07-11` (session 15) — **Wave 3 (doc/comment truth sweep) + Wave 4 (dead code) cleared, committed +
-pushed.** Net **−369 lines**. Deleted the three preview-era orphans (MockStage/ScopeCard/StagePlaceholder)
-+ their dead CSS + the orphaned `scope`/`asset` data in `journey.js`; `StagePlaceholder`'s never-rendered
-`App.jsx` fallback replaced with a minimal slug guard; `STATE_MAP` slimmed to the pill class. Doc sweep:
-"only Search is live" comments, `llm.py` opus→`claude-haiku-4-5` default, db.py/api.py post-port staleness,
-`discovery/.env`→`src/.env`, and `complete_ai.py`'s bogus "avoids a cycle" local import hoisted to top
-(**verified no cycle exists**). Two todo items were **false records**: Wave 6 `library.py` raise is
-**already implemented** (`library.py:422-438`), and the "inert" SearchStage eslint-disable / TriageStage
-"dead branch" didn't hold up — left both. Verified: `make check` green (29 tests + doc-consistency + vite
-build 131 kB); all changed backend modules import clean. **DB still 24 real opportunities, empty pipeline.**
-Full narrative: `progress.md`.
+`2026-07-11` (session 16) — **Code-review remediation queue fully cleared — Waves 5 + 6 done, committed +
+pushed.** Net **−163 code lines** + new `web/src/format.js`. Real refactors: collapsed the 5 near-identical
+`db.py` upserts into one `_upsert_one` helper (2-line wrappers now); extracted the duplicated web formatters
+(`fmtMoney`/`deadlineBadge`/`daysUntil`) into `format.js` and **fixed the genuine bug** — Complete hard-coded
+7/14-day urgency while siblings read `imminent_days`, so Complete now reads it too (added to
+`/api/complete/reference` from `P.IMMINENT_DAYS`); de-duped `_derive_open`/`_open_closed` into
+`db.derive_lifecycle`. Wave 6: MSAL cache → `sessionStorage`, `.env` entries added to `web/.gitignore`.
+**Four late items were false records** (already implemented): api.js error-handling consolidation,
+`LocalMirror.items()` caching, and the auth.py 401-logging / `jwt.PyJWTError` / JWKS-503 hardening. Verified:
+`make check` green (29 tests + doc-consistency + vite 131.12 kB); `_upsert_one` roundtrip-tested on a temp DB
+(insert/update/blank-update/no-smuggle/JSON). **DB still 24 real opportunities, empty pipeline.** Full
+narrative: `progress.md`.
 
 _Parallel Azure track (untouched since session 11):_ Phases B (DB portability) + C (Entra ID auth) done
 and locally verified; **Phase D (hosting scaffold) is the next Azure step** when the user returns to it.
 
 ## Active task
 
-**No task in flight. Pick the next work item.** Waves 2–4 of the code-review queue are now clear; what
-remains (all in `todo.md`):
+**No task in flight — the entire code-review remediation queue (Waves 0–6) is now clear.** Two real
+directions remain, both in `todo.md`:
 
-- **Wave 5 — right-sizing / consistency refactors** (quality; some coupling): consolidate `web/src/api.js`
-  error handling, collapse the 5 near-identical `db.py` upserts, extract shared web formatters
-  (`deadlineBadge`/`daysUntil`/`fmtMoney` + the 7/14-day threshold disagreement), de-dupe backend twins.
-- **Wave 6 — advisory security/seam hardening** (the `library.py` raise is already done): generic-401 logging,
-  `jwt.PyJWTError` vs bare `Exception`, `sessionStorage` for auth, `web/.gitignore` `.env` entries.
+1. **C-series "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff — the missed-renewal failure
+   the tool exists to prevent). Expiry plumbing already in `library.py` (ISO reads EXPIRED in live data); the
+   gap is an **org-level** view + structured renewal dates. **Scope with the user first** — what to track,
+   where renewal dates come from, where the view lives. Detail in `todo.md` → "C-series".
+2. **Azure Phase D — hosting scaffold** (`docs/design/azure-target.md`) — needs an Azure subscription.
 
-**Higher-payoff but needs scoping:** the **C-series "Compliance & Renewals" view** (the missed-renewal
-failure the tool exists to prevent) — expiry plumbing already in `library.py`; gap is an org-level view.
-**Scope with the user first** (what to track, where renewal dates come from, where the view lives). Detail
-in `todo.md` → "C-series".
+Only genuine cleanup still deferred: connector `to_record`/`run`/`main` are near-verbatim — extract when a
+**3rd source** lands (extracting now would be speculative).
 
 `make check` / `make check-fast` (`scripts/check.sh`) is the canonical health baseline — run before
 committing nontrivial changes.

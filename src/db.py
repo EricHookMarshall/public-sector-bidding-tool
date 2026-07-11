@@ -246,6 +246,26 @@ def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def derive_lifecycle(deadline, now=None):
+    """open / closed / unknown, from a bid deadline vs. `now` (UTC).
+
+    The single source of truth for this: api.py derives it live per row, while
+    refresh_clean writes it to the persisted flag over a whole batch — they must
+    agree, so both call this. `now` defaults to the current UTC instant; a naive
+    deadline is read as UTC. Anything unparseable / missing → "unknown"."""
+    if not deadline:
+        return "unknown"
+    try:
+        end = datetime.datetime.fromisoformat(deadline)
+    except ValueError:
+        return "unknown"
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=datetime.timezone.utc)
+    if now is None:
+        now = datetime.datetime.now(datetime.timezone.utc)
+    return "open" if end >= now else "closed"
+
+
 # --- Dual-mode engine + connection shim (Phase B) --------------------------
 # The app is written against a tiny slice of the sqlite3 Connection API:
 #   conn.execute("... ?", params).fetchone()/.fetchall()  (dict-like rows) + conn.commit()
@@ -583,22 +603,24 @@ def get_qualification(conn, opp_id):
     return _row_dict(row)
 
 
-def upsert_qualification(conn, opp_id, fields):
-    """Insert or update the FOR001 qualification for one opportunity.
+def _upsert_one(conn, table, key_col, key_val, fields, allowed_fields, json_fields):
+    """Insert or update one row in a stage table keyed by a single column.
 
-    Keyed on opportunity_id (one qualification per opportunity — re-triaging
-    updates in place). `fields` is a dict; only keys in QUALIFICATION_FIELDS are
-    written, so this can't smuggle in connector/source columns. JSON-valued
-    fields (delivery_team, win_qualification_rag) may be passed as dict/list and
-    are encoded here. Returns the qualification row id.
+    The five stage upserts (qualification, plan, manage, responses, outcome) are
+    identical bar the table, key column, and field allow-lists — this is the
+    shared body. Only keys in `allowed_fields` are written, so a caller can't
+    smuggle in other columns; JSON-valued fields (`json_fields`) passed as
+    dict/list are encoded here. Re-upserting the same key updates in place and
+    bumps updated_at (blank `fields` still touches updated_at). `table`/`key_col`
+    are internal constants, never user input. Returns the row id.
     """
-    rec = {f: fields[f] for f in QUALIFICATION_FIELDS if f in fields}
-    for f in QUALIFICATION_JSON_FIELDS:
+    rec = {f: fields[f] for f in allowed_fields if f in fields}
+    for f in json_fields:
         if isinstance(rec.get(f), (dict, list)):
             rec[f] = json.dumps(rec[f], ensure_ascii=False)
 
     existing = conn.execute(
-        "SELECT id FROM qualifications WHERE opportunity_id = ?", (opp_id,)
+        f"SELECT id FROM {table} WHERE {key_col} = ?", (key_val,)
     ).fetchone()
     now = now_iso()
 
@@ -606,27 +628,39 @@ def upsert_qualification(conn, opp_id, fields):
         if rec:
             assignments = ", ".join(f"{c} = ?" for c in rec)
             conn.execute(
-                f"UPDATE qualifications SET {assignments}, updated_at = ? WHERE opportunity_id = ?",
-                [rec[c] for c in rec] + [now, opp_id],
+                f"UPDATE {table} SET {assignments}, updated_at = ? WHERE {key_col} = ?",
+                [rec[c] for c in rec] + [now, key_val],
             )
         else:
             conn.execute(
-                "UPDATE qualifications SET updated_at = ? WHERE opportunity_id = ?",
-                (now, opp_id),
+                f"UPDATE {table} SET updated_at = ? WHERE {key_col} = ?", (now, key_val)
             )
-        qid = existing["id"]
+        row_id = existing["id"]
     else:
-        cols = ["opportunity_id", "created_at", "updated_at", *rec.keys()]
+        cols = [key_col, "created_at", "updated_at", *rec.keys()]
         placeholders = ", ".join("?" for _ in cols)
         conn.execute(
-            f"INSERT INTO qualifications ({', '.join(cols)}) VALUES ({placeholders})",
-            [opp_id, now, now, *rec.values()],
+            f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})",
+            [key_val, now, now, *rec.values()],
         )
-        qid = conn.execute(
-            "SELECT id FROM qualifications WHERE opportunity_id = ?", (opp_id,)
+        row_id = conn.execute(
+            f"SELECT id FROM {table} WHERE {key_col} = ?", (key_val,)
         ).fetchone()["id"]
     conn.commit()
-    return qid
+    return row_id
+
+
+def upsert_qualification(conn, opp_id, fields):
+    """Insert or update the FOR001 qualification for one opportunity.
+
+    Keyed on opportunity_id (one qualification per opportunity — re-triaging
+    updates in place). Only keys in QUALIFICATION_FIELDS are written, so this
+    can't smuggle in connector/source columns. JSON-valued fields (delivery_team,
+    win_qualification_rag) may be passed as dict/list. Returns the qualification
+    row id.
+    """
+    return _upsert_one(conn, "qualifications", "opportunity_id", opp_id, fields,
+                       QUALIFICATION_FIELDS, QUALIFICATION_JSON_FIELDS)
 
 
 def get_bid_for_opportunity(conn, opp_id):
@@ -680,44 +714,11 @@ def upsert_bid_plan(conn, bid_id, fields):
     """Insert or update the FOR002 bid plan for one bid.
 
     Keyed on bid_id (one plan per bid — re-planning updates in place). Only keys
-    in BID_PLAN_FIELDS are written, so this can't smuggle in other columns. The
-    JSON `phases` field may be passed as a list and is encoded here. Returns the
-    bid_plan row id.
+    in BID_PLAN_FIELDS are written. The JSON `phases` field may be passed as a
+    list. Returns the bid_plan row id.
     """
-    rec = {f: fields[f] for f in BID_PLAN_FIELDS if f in fields}
-    for f in BID_PLAN_JSON_FIELDS:
-        if isinstance(rec.get(f), (dict, list)):
-            rec[f] = json.dumps(rec[f], ensure_ascii=False)
-
-    existing = conn.execute(
-        "SELECT id FROM bid_plans WHERE bid_id = ?", (bid_id,)
-    ).fetchone()
-    now = now_iso()
-
-    if existing:
-        if rec:
-            assignments = ", ".join(f"{c} = ?" for c in rec)
-            conn.execute(
-                f"UPDATE bid_plans SET {assignments}, updated_at = ? WHERE bid_id = ?",
-                [rec[c] for c in rec] + [now, bid_id],
-            )
-        else:
-            conn.execute(
-                "UPDATE bid_plans SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
-            )
-        pid = existing["id"]
-    else:
-        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
-        placeholders = ", ".join("?" for _ in cols)
-        conn.execute(
-            f"INSERT INTO bid_plans ({', '.join(cols)}) VALUES ({placeholders})",
-            [bid_id, now, now, *rec.values()],
-        )
-        pid = conn.execute(
-            "SELECT id FROM bid_plans WHERE bid_id = ?", (bid_id,)
-        ).fetchone()["id"]
-    conn.commit()
-    return pid
+    return _upsert_one(conn, "bid_plans", "bid_id", bid_id, fields,
+                       BID_PLAN_FIELDS, BID_PLAN_JSON_FIELDS)
 
 
 def get_bid_manage(conn, bid_id):
@@ -733,44 +734,11 @@ def upsert_bid_manage(conn, bid_id, fields):
     """Insert or update the FOR003 manage record for one bid.
 
     Keyed on bid_id (one register per bid — re-managing updates in place). Only
-    keys in BID_MANAGE_FIELDS are written, so this can't smuggle in other columns.
-    The JSON `clarifications`/`preflight` fields may be passed as lists and are
-    encoded here. Returns the bid_manage row id.
+    keys in BID_MANAGE_FIELDS are written. The JSON `clarifications`/`preflight`
+    fields may be passed as lists. Returns the bid_manage row id.
     """
-    rec = {f: fields[f] for f in BID_MANAGE_FIELDS if f in fields}
-    for f in BID_MANAGE_JSON_FIELDS:
-        if isinstance(rec.get(f), (dict, list)):
-            rec[f] = json.dumps(rec[f], ensure_ascii=False)
-
-    existing = conn.execute(
-        "SELECT id FROM bid_manage WHERE bid_id = ?", (bid_id,)
-    ).fetchone()
-    now = now_iso()
-
-    if existing:
-        if rec:
-            assignments = ", ".join(f"{c} = ?" for c in rec)
-            conn.execute(
-                f"UPDATE bid_manage SET {assignments}, updated_at = ? WHERE bid_id = ?",
-                [rec[c] for c in rec] + [now, bid_id],
-            )
-        else:
-            conn.execute(
-                "UPDATE bid_manage SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
-            )
-        mid = existing["id"]
-    else:
-        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
-        placeholders = ", ".join("?" for _ in cols)
-        conn.execute(
-            f"INSERT INTO bid_manage ({', '.join(cols)}) VALUES ({placeholders})",
-            [bid_id, now, now, *rec.values()],
-        )
-        mid = conn.execute(
-            "SELECT id FROM bid_manage WHERE bid_id = ?", (bid_id,)
-        ).fetchone()["id"]
-    conn.commit()
-    return mid
+    return _upsert_one(conn, "bid_manage", "bid_id", bid_id, fields,
+                       BID_MANAGE_FIELDS, BID_MANAGE_JSON_FIELDS)
 
 
 def list_bids_for_manage(conn):
@@ -816,42 +784,10 @@ def upsert_bid_responses(conn, bid_id, fields):
 
     Keyed on bid_id (one matrix per bid — re-working updates in place). Only keys
     in BID_RESPONSE_FIELDS are written. The JSON `items` field may be passed as a
-    list and is encoded here. Returns the bid_responses row id.
+    list. Returns the bid_responses row id.
     """
-    rec = {f: fields[f] for f in BID_RESPONSE_FIELDS if f in fields}
-    for f in BID_RESPONSE_JSON_FIELDS:
-        if isinstance(rec.get(f), (dict, list)):
-            rec[f] = json.dumps(rec[f], ensure_ascii=False)
-
-    existing = conn.execute(
-        "SELECT id FROM bid_responses WHERE bid_id = ?", (bid_id,)
-    ).fetchone()
-    now = now_iso()
-
-    if existing:
-        if rec:
-            assignments = ", ".join(f"{c} = ?" for c in rec)
-            conn.execute(
-                f"UPDATE bid_responses SET {assignments}, updated_at = ? WHERE bid_id = ?",
-                [rec[c] for c in rec] + [now, bid_id],
-            )
-        else:
-            conn.execute(
-                "UPDATE bid_responses SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
-            )
-        rid = existing["id"]
-    else:
-        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
-        placeholders = ", ".join("?" for _ in cols)
-        conn.execute(
-            f"INSERT INTO bid_responses ({', '.join(cols)}) VALUES ({placeholders})",
-            [bid_id, now, now, *rec.values()],
-        )
-        rid = conn.execute(
-            "SELECT id FROM bid_responses WHERE bid_id = ?", (bid_id,)
-        ).fetchone()["id"]
-    conn.commit()
-    return rid
+    return _upsert_one(conn, "bid_responses", "bid_id", bid_id, fields,
+                       BID_RESPONSE_FIELDS, BID_RESPONSE_JSON_FIELDS)
 
 
 def list_bids_for_complete(conn):
@@ -894,44 +830,11 @@ def upsert_bid_outcome(conn, bid_id, fields):
     """Insert or update the B07 outcome record for one bid.
 
     Keyed on bid_id (one outcome per bid — re-recording updates in place). Only
-    keys in BID_OUTCOME_FIELDS are written, so this can't smuggle in other columns.
-    The JSON `lessons` field may be passed as a list and is encoded here. Returns
-    the bid_outcome row id.
+    keys in BID_OUTCOME_FIELDS are written. The JSON `lessons` field may be passed
+    as a list. Returns the bid_outcome row id.
     """
-    rec = {f: fields[f] for f in BID_OUTCOME_FIELDS if f in fields}
-    for f in BID_OUTCOME_JSON_FIELDS:
-        if isinstance(rec.get(f), (dict, list)):
-            rec[f] = json.dumps(rec[f], ensure_ascii=False)
-
-    existing = conn.execute(
-        "SELECT id FROM bid_outcomes WHERE bid_id = ?", (bid_id,)
-    ).fetchone()
-    now = now_iso()
-
-    if existing:
-        if rec:
-            assignments = ", ".join(f"{c} = ?" for c in rec)
-            conn.execute(
-                f"UPDATE bid_outcomes SET {assignments}, updated_at = ? WHERE bid_id = ?",
-                [rec[c] for c in rec] + [now, bid_id],
-            )
-        else:
-            conn.execute(
-                "UPDATE bid_outcomes SET updated_at = ? WHERE bid_id = ?", (now, bid_id)
-            )
-        oid = existing["id"]
-    else:
-        cols = ["bid_id", "created_at", "updated_at", *rec.keys()]
-        placeholders = ", ".join("?" for _ in cols)
-        conn.execute(
-            f"INSERT INTO bid_outcomes ({', '.join(cols)}) VALUES ({placeholders})",
-            [bid_id, now, now, *rec.values()],
-        )
-        oid = conn.execute(
-            "SELECT id FROM bid_outcomes WHERE bid_id = ?", (bid_id,)
-        ).fetchone()["id"]
-    conn.commit()
-    return oid
+    return _upsert_one(conn, "bid_outcomes", "bid_id", bid_id, fields,
+                       BID_OUTCOME_FIELDS, BID_OUTCOME_JSON_FIELDS)
 
 
 def list_bids_for_learn(conn):

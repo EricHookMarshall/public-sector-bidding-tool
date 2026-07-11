@@ -134,17 +134,10 @@ def _json_safe(obj):
 
 
 def _derive_open(deadline_date):
-    """open / closed / unknown, derived from the bid deadline vs. now (UTC)."""
-    if not deadline_date:
-        return "unknown"
-    try:
-        end = datetime.datetime.fromisoformat(deadline_date)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=datetime.timezone.utc)
-    except ValueError:
-        return "unknown"
-    now = datetime.datetime.now(datetime.timezone.utc)
-    return "open" if end >= now else "closed"
+    """open / closed / unknown, derived from the bid deadline vs. now (UTC).
+    Thin alias over db.derive_lifecycle — the shared source refresh_clean writes
+    the persisted flag from, so the live API and the stored flag can't disagree."""
+    return db.derive_lifecycle(deadline_date)
 
 
 def _row_to_dict(row, include_raw=False):
@@ -1325,7 +1318,9 @@ def _complete_summary(row):
 def complete_reference():
     """FOR006 vocabulary (response statuses, question types) + the library
     vocabulary (categories, expiry window) for the Complete matrix + library."""
-    return {**R.reference(), "library": LIB.reference()}
+    # imminent_days: the shared "urgent" window (same source Plan/Manage read) so
+    # Complete's deadline badges agree on what counts as urgent.
+    return {**R.reference(), "library": LIB.reference(), "imminent_days": P.IMMINENT_DAYS}
 
 
 @app.get("/api/complete/board")

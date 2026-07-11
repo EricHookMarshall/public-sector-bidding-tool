@@ -7,6 +7,7 @@
 // prevent. Click a bid to open its FOR002 phase timeline. No mock data.
 import { useEffect, useState } from "react";
 import { getPlanReference, getPlanBoard, getBidPlan, saveBidPlan } from "../api.js";
+import { fmtMoney, deadlineBadge, daysUntil } from "../format.js";
 
 // Trim float noise (19.5 stays 19.5, 5.0 → 5) for the capacity readout.
 const round1 = (n) => Math.round(Number(n) * 10) / 10;
@@ -15,22 +16,6 @@ const round1 = (n) => Math.round(Number(n) * 10) / 10;
 // date/datetime to its date part; anything non-ISO (legacy free text) → "" so the
 // picker stays usable rather than silently rejecting the value.
 const dateOnly = (v) => (/^\d{4}-\d{2}-\d{2}/.test(v || "") ? v.slice(0, 10) : "");
-
-function fmtMoney(n, currency = "GBP") {
-  if (n === null || n === undefined || n === "" || Number.isNaN(Number(n))) return "—";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency", currency, maximumFractionDigits: 0,
-  }).format(Number(n));
-}
-
-// A days-to-deadline count → short label + urgency class (drives colour).
-function deadlineBadge(days, imminent) {
-  if (days === null || days === undefined) return null;
-  if (days < 0) return { label: `${Math.abs(days)}d late`, cls: "crit" };
-  if (days <= imminent) return { label: `${days}d left`, cls: "crit" };
-  if (days <= imminent * 2) return { label: `${days}d`, cls: "warn" };
-  return { label: `${days}d`, cls: "ok" };
-}
 
 // Card top-border colour: red if a deadline is imminent/passed, green if it's
 // owned and in flight, neutral-blue otherwise (still needs attention).
@@ -333,13 +318,3 @@ function PlanDetail({ bidId, ref_, imminent, onBack }) {
   );
 }
 
-// Local mirror of bidplan.days_until for the detail badges (the board sends
-// pre-computed days; the detail reads raw opportunity dates).
-function daysUntil(value) {
-  if (!value) return null;
-  const d = new Date(String(value).slice(0, 10));
-  if (Number.isNaN(d.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d - today) / 86400000);
-}

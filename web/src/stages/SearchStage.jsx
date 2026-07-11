@@ -4,6 +4,7 @@
 // the shared top bar) was removed.
 import { useEffect, useState } from "react";
 import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport } from "../api.js";
+import { fmtMoney } from "../format.js";
 
 const EMPTY_FILTERS = {
   q: "",
@@ -20,18 +21,6 @@ const EMPTY_FILTERS = {
   order: "asc",
 };
 
-function fmtMoney(amount, currency) {
-  if (amount === null || amount === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: currency || "GBP",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${currency || ""} ${amount}`;
-  }
-}
 
 function fmtDate(s) {
   if (!s) return "—";

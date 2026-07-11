@@ -28,7 +28,11 @@ const msalConfig = {
     authority: tenantId ? `https://login.microsoftonline.com/${tenantId}` : undefined,
     redirectUri: "/",
   },
-  cache: { cacheLocation: "localStorage" },
+  // sessionStorage over localStorage: the token cache is scoped to the tab and
+  // cleared when it closes, so a cached access token can't linger on a shared
+  // machine or be read by another tab. Trade-off is a re-auth per new tab, which
+  // is a silent redirect against a live Entra session.
+  cache: { cacheLocation: "sessionStorage" },
 };
 
 // Null when Entra isn't configured — App.jsx / main.jsx branch on that so the

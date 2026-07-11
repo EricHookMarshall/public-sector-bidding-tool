@@ -9,27 +9,7 @@ import { useEffect, useState } from "react";
 import {
   getManageReference, getManageBoard, getBidManage, saveBidManage,
 } from "../api.js";
-
-// A days-to-deadline count → short label + urgency class (drives colour).
-// Mirrors PlanStage's badge so Plan and Manage read the same.
-function deadlineBadge(days, imminent) {
-  if (days === null || days === undefined) return null;
-  if (days < 0) return { label: `${Math.abs(days)}d late`, cls: "crit" };
-  if (days <= imminent) return { label: `${days}d left`, cls: "crit" };
-  if (days <= imminent * 2) return { label: `${days}d`, cls: "warn" };
-  return { label: `${days}d`, cls: "ok" };
-}
-
-// Local mirror of bidplan.days_until for the detail badges (the board sends
-// pre-computed days; the detail reads raw dates from the register form).
-function daysUntil(value) {
-  if (!value) return null;
-  const d = new Date(String(value).slice(0, 10));
-  if (Number.isNaN(d.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d - today) / 86400000);
-}
+import { deadlineBadge, daysUntil } from "../format.js";
 
 // A blank FOR003 register row — matches clarification.default_clarification.
 const blankClarification = () => ({

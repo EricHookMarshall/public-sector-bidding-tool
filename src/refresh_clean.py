@@ -53,17 +53,10 @@ CONNECTORS = [
 
 
 def _open_closed(deadline, now):
-    """open / closed / unknown from a bid deadline vs now (UTC). Mirrors
-    api._derive_open so the persisted flag and the live API agree."""
-    if not deadline:
-        return "unknown"
-    try:
-        end = datetime.datetime.fromisoformat(deadline)
-    except ValueError:
-        return "unknown"
-    if end.tzinfo is None:
-        end = end.replace(tzinfo=datetime.timezone.utc)
-    return "open" if end >= now else "closed"
+    """open / closed / unknown from a bid deadline vs `now` (UTC). Thin alias over
+    db.derive_lifecycle (the shared source api._derive_open also uses) so the
+    persisted flag and the live API agree. `now` is captured once per batch."""
+    return db.derive_lifecycle(deadline, now)
 
 
 def refresh(days):

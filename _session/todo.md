@@ -34,54 +34,12 @@
       Resolve the duplicate `fwf-tender-sweep` skill-name collision (two `tender_sweep/` variants). Parked
       until the chain is actually folded in.
 
-## Code-review remediation — Waves 2–6 (open)
+## Code-review remediation — ✅ FULLY CLEARED (Waves 0–6)
 
-> Two reviews in [`docs/code_reviews/`](../docs/code_reviews/). **Waves 0 (security) + 1 (Azure-promotion)
-> are DONE** — all 12 items verified in commit `0f35c70`; detail in `progress.md`. Waves 2–6 below are open,
-> each item independently pickable unless a `↳` notes a coupling.
-
-### Wave 2 — Correctness bugs ✅ CLEARED (session 14, committed `33980dd`)
-
-All four done — FTS lexicographic deadline compare (shared offset-aware `is_open`), `seed_learn_demo.py`
-3.12-only f-string, seeder `LIMIT 1` portability, seeder hard-coded dates. Retrospective in `progress.md`.
-
-### Wave 3 — Doc/comment truth sweep ✅ CLEARED (session 15)
-
-Done: `discovery/.env`→`src/.env` (the only real refs were `.env.example:1` + `api.py:28`; config.py/
-SettingsView refs were false records; journey.js refs removed with the `asset` data); "only Search is live"
-comments (App.jsx, journey.js header, SearchStage.jsx); `llm.py` opus→`claude-haiku-4-5` default;
-db.py "12-field sketch"/`sqlite3.Row` + api.py SQLite-only/3-endpoint docstring; `complete_ai.py` local
-import hoisted to top (**verified no cycle exists** — the "avoids a cycle" comment was wrong).
-
-### Wave 4 — Dead / orphaned code removal ✅ CLEARED (session 15)
-
-Done: deleted MockStage + ScopeCard + StagePlaceholder + their CSS; removed the orphaned `scope`/`asset`
-data from `journey.js` + slimmed `STATE_MAP` to the pill class; `StagePlaceholder`'s never-rendered App.jsx
-fallback → minimal slug guard. Unused imports: `clarification.py` `datetime`, `PlanStage.jsx` `useMemo`;
-`db.py:1024` `bids` local renamed (shadowed the Table); `SearchStage.jsx` no-op spread collapsed.
-**Not done (false records):** `TriageStage` "dead branch" couldn't be located; `SearchStage:268`
-eslint-disable is *not* inert (suppresses a real `seeded`-dep warning) — both left as-is.
-
-### Wave 5 — Right-sizing / consistency refactors (quality; some coupling)
-
-- [ ] **Consolidate `web/src/api.js` error handling** (`:87-94` ×8 vs `sendJSON:299-314`) — route stage
-      helpers through one JSON helper; make `getJSON:49-53` surface server `detail`. **Med.**
-- [ ] **Collapse the 5 near-identical `db.py` upserts** (`:559-907`) into one `_upsert_one` + thin wrappers;
-      the place to add the unique-violation retry. **Med.**
-- [ ] **Extract shared web formatters** — `deadlineBadge`/`daysUntil`/`fmtMoney` duplicated 2-3× across
-      stages; Complete hard-codes 7/14 thresholds while siblings read `imminent_days` from the server →
-      silent disagreement on "urgent". `web/src/format.js`. **Med.**
-- [ ] **De-dupe backend twins** — `api._derive_open` == `refresh_clean._open_closed` (→ `db.py`); connector
-      `to_record`/`run`/`main` near-verbatim (extract when a 3rd source lands); cache
-      `LocalMirrorProvider.items()` (xlsx parsed twice per `/api/library` request). **Low/Med.**
-
-### Wave 6 — Deferred-behind-seam hardening + advisory security
-
-- [x] **Raise on unknown `LIBRARY_PROVIDER`** (session 15 — **was already done**; false record). `src/library.py`
-      `get_provider()` (now `:422-438`) already raises loudly with valid options, mirroring `llm.get_provider()`.
-- [ ] **Advisory auth hardening** — `auth.py:216-219` generic 401 (log the real reason); catch
-      `jwt.PyJWTError` not bare `Exception` (JWKS outage ≠ 401 → 503); `authConfig.js:31` use `sessionStorage`
-      not `localStorage`; add `.env`/`.env.*`/`!.env.example` to `web/.gitignore`. **Low.**
+> Two reviews in [`docs/code_reviews/`](../docs/code_reviews/). **All waves are now done** — Waves 0–1
+> (`0f35c70`), Wave 2 (session 14, `33980dd`), Waves 3–4 (session 15), Waves 5–6 (session 16). Several late
+> items turned out to be false records (already implemented); full per-wave retrospectives + the false-record
+> list live in `progress.md`. Nothing left to pick here.
 
 ## Surfaced / open (parallel tracks + polish)
 
@@ -94,5 +52,7 @@ eslint-disable is *not* inert (suppresses a real `seeded`-dep warning) — both 
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same notice
       on FTS + CF) not yet handled. Low priority given the value-band split.
 - [ ] **AI-draft provenance persistence** — win-themes/evidence shown in the UI but not saved with the answer.
+- [ ] **Connector `to_record`/`run`/`main` dedup** (deferred from Wave 5) — the two connectors are near-verbatim;
+      extract the shared body **when a 3rd source lands** (doing it against 2 sources is speculative).
 - [ ] **Parked polish** — CPV label badge on cards · lifecycle (`stale`/`closed`) badge on cards · widen CPV
       scope beyond IT/software (`TARGET_CPV` + `src/cpv_catalog.py`) · a 3rd source via `src/sources.py`.

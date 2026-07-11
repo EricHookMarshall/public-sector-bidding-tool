@@ -14,17 +14,9 @@ import {
   getCompleteReference, getCompleteBoard, getBidResponses,
   saveBidResponses, aiDraftResponse,
 } from "../api.js";
+import { deadlineBadge } from "../format.js";
 
 function pct(n, d) { return d ? Math.round((100 * n) / d) : 0; }
-
-// A days-to-deadline count → short label + urgency class (mirrors the other stages).
-function deadlineBadge(days) {
-  if (days === null || days === undefined) return null;
-  if (days < 0) return { label: `${Math.abs(days)}d late`, cls: "crit" };
-  if (days <= 7) return { label: `${days}d left`, cls: "crit" };
-  if (days <= 14) return { label: `${days}d`, cls: "warn" };
-  return { label: `${days}d`, cls: "ok" };
-}
 
 // Library provider status → an honest connection strip.
 function ProviderStrip({ lib }) {
@@ -91,7 +83,8 @@ export default function CompleteStage() {
               <div className="label">Live bids — tender-response matrix</div>
               <div className="manage-grid">
                 {board.bids.map((b) => (
-                  <CompleteCard key={b.bid_id} b={b} onOpen={() => setSelectedBid(b.bid_id)} />
+                  <CompleteCard key={b.bid_id} b={b} imminent={ref?.imminent_days ?? 7}
+                    onOpen={() => setSelectedBid(b.bid_id)} />
                 ))}
               </div>
             </>
@@ -102,9 +95,9 @@ export default function CompleteStage() {
   );
 }
 
-function CompleteCard({ b, onOpen }) {
+function CompleteCard({ b, imminent, onOpen }) {
   const s = b.summary;
-  const sub = deadlineBadge(b.days_to_submission);
+  const sub = deadlineBadge(b.days_to_submission, imminent);
   const tone = s.ready ? "go" : s.over_word_limit > 0 ? "risk" : "draft";
   return (
     <button className={`kcard t-${tone} manage-card`} onClick={onOpen} title="Open the FOR006 matrix + AI pre-fill">
@@ -182,7 +175,7 @@ function CompleteDetail({ bidId, ref_, onBack }) {
   const wc = (t) => (t ? (String(t).match(/\S+/g) || []).length : 0);
   const approved = items.filter((it) => it.status === "Approved").length;
   const over = items.filter((it) => it.word_count_limit && wc(it.supplier_response) > it.word_count_limit);
-  const sub = deadlineBadge(payload.summary?.days_to_submission);
+  const sub = deadlineBadge(payload.summary?.days_to_submission, ref_?.imminent_days ?? 7);
 
   const q = items[sel] || null;
   const ai = aiByIdx[sel];

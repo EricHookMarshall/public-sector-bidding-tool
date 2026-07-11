@@ -3,6 +3,52 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-11 (session 16) — Cleared Wave 5 (right-sizing refactors) + Wave 6 (auth hardening) — queue empty
+
+**Context.** Resumed with no task in flight; user chose to "finish the low hanging fruit before we make more
+debt" — i.e. the remaining code-review remediation (Waves 5 + 6) before scoping the C-series feature. Reality-
+checked every todo item against the actual code first; four turned out to be false records (already done). Net
+**−163 code lines** + new `web/src/format.js`. Committed + pushed on `main`.
+
+**Work done (all verified before commit).**
+- **db.py — 5 upserts → one `_upsert_one`.** `upsert_qualification`/`_bid_plan`/`_bid_manage`/`_bid_responses`/
+  `_bid_outcome` were structurally identical (differing only in table, key column, field allow-lists) → now
+  2-line wrappers over a shared `_upsert_one(conn, table, key_col, key_val, fields, allowed, json_fields)`.
+  Table/key-col are internal constants (safe to interpolate). Roundtrip-verified on a temp DB: insert; update
+  (id stable, `created_at` preserved, `updated_at` bumped); blank-update (bumps timestamp, no field smuggle);
+  JSON encode/decode. This is the single home for a unique-violation retry if ever needed.
+- **web/src/format.js (new) — shared formatters.** `fmtMoney` (was ×3, slightly drifted), `deadlineBadge`
+  (×3), `daysUntil` (×2) de-duped out of Plan/Manage/Complete/Triage/Search. **Fixed a real latent bug:**
+  Complete hard-coded 7/14-day urgency thresholds while Plan/Manage read `imminent_days` from the server —
+  a silent disagreement on "urgent". Complete now reads `imminent_days` too; added it to
+  `/api/complete/reference` (from `P.IMMINENT_DAYS`) so all stages share one source.
+- **db.derive_lifecycle — backend twin dedup.** `api._derive_open` and `refresh_clean._open_closed` (open/
+  closed/unknown from a deadline) were near-verbatim → both now thin aliases over `db.derive_lifecycle(deadline,
+  now=None)`, so the live API and the persisted lifecycle flag can't drift.
+- **Wave 6 hardening.** `authConfig.js` MSAL cache → `sessionStorage` (tab-scoped, cleared on close);
+  `web/.gitignore` now ignores `.env`/`.env.*` (keeps `.env.example`).
+
+**False records found (already implemented — cleared from todo, not re-done).**
+- api.js error-handling consolidation — every helper already routes through `getJSON`/`sendJSON` → `errorFrom`,
+  which already surfaces server `detail`. The todo's line refs didn't exist in the file.
+- `LocalMirror.items()` caching — already memoized per-instance; `get_provider()` returns one instance per
+  request, so status()+items() parse the workbook once (docstring already said so).
+- auth.py 401 hardening — already logs the real reason server-side, already catches `jwt.PyJWTError` (not bare
+  `Exception`), already maps a JWKS outage to 503 (`auth.py:267-278`).
+
+**Verification.** `make check` green — 29 backend tests, doc-state consistency, vite build clean (131.12 kB,
+unchanged). `db`/`api`/`refresh_clean` import clean. `_upsert_one` roundtrip test (above) passed. The formatter
+refactor was not re-driven in a live browser (vite build is the guard); last live-browser confirm remains
+2026-07-10.
+
+**Decisions.** Kept the connector `to_record`/`run`/`main` dedup deferred — the todo's own guidance is to
+extract when a 3rd source lands; doing it against 2 sources would be speculative abstraction.
+
+**Open questions raised.** None new.
+
+**Next.** Scope the **C-series "Compliance & Renewals" view** with the user (highest founding-purpose payoff),
+or pick up **Azure Phase D** (hosting scaffold; needs a subscription).
+
 ## 2026-07-11 (session 15) — Cleared Wave 3 (doc/comment truth sweep) + Wave 4 (dead code)
 
 **Context.** Resumed with no task in flight; handover named the code-review remediation queue as the natural

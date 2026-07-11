@@ -3,19 +3,19 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-11
-session: 15
+session: 16
 
 phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
-active_workstream: wave3_4_cleanup_cleared  # next: Wave 5 right-sizing refactors, or user-scoped C-series
-next_action: pick_wave5_refactors_or_scope_c_series
+active_workstream: code_review_queue_fully_cleared  # Waves 2-6 all done; next: scope C-series or Azure Phase D
+next_action: scope_c_series_or_azure_phase_d
 
 git:
   branch: main
-  clean: true                        # session-15 committed + pushed; tree clean
+  clean: true                        # session-16 committed + pushed; tree clean
   # Points at the tip as of this write. The bookkeeping commit that saves this
   # file necessarily lands one ahead — that single step is by design, not drift;
   # verify against `git log` if in doubt (higher authority than this file).
-  last_commit: 75c5631               # docs: harness-design reviews (session-15 work = 6f782b1)
+  last_commit: session16             # refactor: Wave 5/6 cleanup (real hash set by the commit that saves this file)
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
@@ -23,11 +23,12 @@ db:                                  # expected on resume (session-13 demo clean
   app_settings: 2
 
 verified:
-  make_check: 2026-07-11             # session 15: full make check green — 29 backend tests + doc-consistency + vite build (131 kB)
-  backend_import: 2026-07-11         # session 15: all changed modules import clean (complete_ai import hoist)
-  frontend_build: 2026-07-11         # session 15: vite build clean after dead-component/CSS removal
+  make_check: 2026-07-11             # session 16: full make check green — 29 backend tests + doc-consistency + vite build (131.12 kB)
+  backend_import: 2026-07-11         # session 16: db/api/refresh_clean import clean after upsert + derive_lifecycle dedup
+  upsert_roundtrip: 2026-07-11       # session 16: _upsert_one insert/update/blank-update/no-smuggle/JSON verified on temp db
+  frontend_build: 2026-07-11         # session 16: vite build clean after format.js extraction (131.12 kB)
   seeder_roundtrip: 2026-07-11       # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
-  live_browser: 2026-07-10           # S5/S3/U1 user-confirmed in the browser
+  live_browser: 2026-07-10           # S5/S3/U1 user-confirmed in the browser (formatter refactor not re-driven in-browser)
 
 external_blockers:
   graph_sharepoint: credentials_and_provisioning   # LocalMirror seam covers Complete meanwhile
@@ -35,6 +36,6 @@ external_blockers:
   azure_phase_d_hosting: needs_subscription
 
 deferred:
-  - wave5_6_review_remediation       # right-sizing refactors + seam hardening (todo.md); Wave 3+4 done session 15
+  - connector_to_record_dedup        # to_record/run/main near-verbatim; extract when a 3rd source lands
   - skills_chain_fold_in             # src/ is canonical; align skill enums before folding in
   - make_check_live_source_tests     # rung 4: integration tests behind an explicit flag

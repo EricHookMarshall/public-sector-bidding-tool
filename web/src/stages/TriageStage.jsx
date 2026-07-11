@@ -9,6 +9,7 @@ import {
   getTriageBoard, getTriageReference, getQualification, saveQualification,
   aiDraftQualification, setTriageDismissed,
 } from "../api.js";
+import { fmtMoney } from "../format.js";
 
 // Handoff key set by Search's "Triage this" action (sessionStorage, so it
 // survives the hash navigation between stages without an app-wide store).
@@ -38,13 +39,6 @@ const DATE_FIELDS = [
   ["submission_deadline", "Submission deadline"],
   ["presentation_date", "Presentation date"],
 ];
-
-function fmtMoney(n) {
-  if (n === null || n === undefined || n === "" || Number.isNaN(Number(n))) return "—";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency", currency: "GBP", maximumFractionDigits: 0,
-  }).format(Number(n));
-}
 
 function fmtDate(s) {
   if (!s) return "—";
