@@ -54,16 +54,9 @@ STAGE = "tender"
 OPEN_ONLY = True
 
 
-def is_open(end_date, now):
-    """True if a tenderPeriod.endDate is in the future. Parses the offset-aware
-    ISO string (CF stamps +01:00) so the comparison is correct across timezones;
-    falls back to a string compare if parsing fails."""
-    if not end_date:
-        return False
-    try:
-        return datetime.datetime.fromisoformat(end_date) >= now
-    except ValueError:
-        return end_date >= now.isoformat()
+# Offset-aware open/closed check lives in find_tender_filter (shared by both
+# connectors). Re-exported so `cf.is_open` keeps resolving.
+is_open = ft.is_open
 
 
 def notice_url(rel):

@@ -5,7 +5,8 @@ consequential calculation is therefore "is this opportunity still open?" — and
 it must be correct *across timezones*, because a lexicographic string compare on
 an offset-stamped ISO date can call an already-closed tender "open".
 
-Covers `contracts_finder_filter.is_open` (the correct, offset-aware version) and
+Covers `is_open` (the correct, offset-aware version — now shared: defined in
+`find_tender_filter`, re-exported by `contracts_finder_filter`, used by both) and
 `bidplan.days_until` (drives every "urgent"/"overdue" badge and the expiry gate).
 """
 import datetime

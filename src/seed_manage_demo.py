@@ -18,10 +18,18 @@ three cases are chosen to exercise every signal Manage exists to give:
 Idempotent: keyed on bid_id via db.upsert_bid_manage, so re-running updates in
 place. Run:  python3 seed_manage_demo.py   ·   Reset:  python3 seed_manage_demo.py --clear
 """
+import datetime
 import sys
 
 import clarification as M
 import db
+
+
+def _day(offset):
+    """ISO date `offset` days from today. Demo dates are relative so the
+    passed / imminent / expired spread the three cases exercise stays realistic
+    instead of decaying to all-overdue as the old hard-coded 2026 dates would."""
+    return (datetime.date.today() + datetime.timedelta(days=offset)).isoformat()
 
 
 def _preflight(overrides):
@@ -40,7 +48,7 @@ def _preflight(overrides):
 # All-pass gate (a legitimately submittable bid): every mandatory item passed,
 # credentials in date. The auto clarifications item is derived, so its stored
 # status is irrelevant — the demo answers RTPI's clarification instead.
-_ALL_PASS = {it["key"]: ("pass", "2027-01-01" if it.get("expiry") else None)
+_ALL_PASS = {it["key"]: ("pass", _day(180) if it.get("expiry") else None)
              for it in M.PREFLIGHT_ITEMS}
 
 DEMO = [
@@ -51,7 +59,7 @@ DEMO = [
             "question_number": "CQ01",
             "question": "Confirm whether the Arobs parent company guarantee is acceptable in lieu of 3 years' filed accounts",
             "channel": "via portal", "owner": "", "backup_owner": "",
-            "buyer_deadline": "2026-07-06", "deadline_note": "12:00 BST",
+            "buyer_deadline": _day(-5), "deadline_note": "12:00 BST",   # PASSED, unowned
             "status": "Open",
         }],
         "preflight": _preflight({"pcg": ("pass", None)}),
@@ -64,7 +72,7 @@ DEMO = [
             "question_number": "CQ01",
             "question": "Confirm exact wording required for the parent company guarantee (Schedule 5)",
             "channel": "via portal", "owner": "EH", "backup_owner": "KS",
-            "buyer_deadline": "2026-07-14", "deadline_note": "17:00 BST",
+            "buyer_deadline": _day(4), "deadline_note": "17:00 BST",   # imminent, owned
             "status": "Drafting",
         }],
         # Nearly ready — but Cyber Essentials expired last month, so the gate
@@ -74,7 +82,7 @@ DEMO = [
             "carbon_plan": ("na", None), "modern_slavery": ("pass", None),
             "uk_gdpr": ("pass", None), "pcg": ("pass", None),
             "deadline_captured": ("pass", None),
-            "cyber_essentials": ("pass", "2026-06-15"),   # expired → enforced fail
+            "cyber_essentials": ("pass", _day(-28)),   # expired last month → enforced fail
         }),
         "submitted": "",
     },
@@ -85,8 +93,8 @@ DEMO = [
             "question_number": "CQ01",
             "question": "Confirm the hosting region requirement (UK-only data residency)",
             "channel": "via email", "owner": "KS", "backup_owner": "EH",
-            "buyer_deadline": "2026-06-20", "deadline_note": "17:00 BST",
-            "date_submitted": "2026-06-12", "response_date": "2026-06-18",
+            "buyer_deadline": _day(-21), "deadline_note": "17:00 BST",   # answered, in the past
+            "date_submitted": _day(-29), "response_date": _day(-23),     # submitted < response < deadline
             "buyer_response": "UK-only data residency confirmed; no offshore processing permitted.",
             "status": "Answered",
         }],
@@ -97,9 +105,11 @@ DEMO = [
 
 
 def _find_bid(conn, fragment):
+    # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
+    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
     row = conn.execute(
         "SELECT b.id AS bid_id FROM bids b JOIN opportunities o ON o.id = b.opportunity_id "
-        "WHERE o.title LIKE ? ORDER BY b.id LIMIT 1",
+        "WHERE o.title LIKE ? ORDER BY b.id",
         (f"%{fragment}%",),
     ).fetchone()
     return row["bid_id"] if row else None

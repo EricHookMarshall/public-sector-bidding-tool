@@ -43,9 +43,11 @@ OVERRIDES = {
 
 
 def _find_bid(conn, fragment):
+    # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
+    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
     row = conn.execute(
         "SELECT b.id AS bid_id FROM bids b JOIN opportunities o ON o.id = b.opportunity_id "
-        "WHERE o.title LIKE ? ORDER BY b.id LIMIT 1",
+        "WHERE o.title LIKE ? ORDER BY b.id",
         (f"%{fragment}%",),
     ).fetchone()
     return row["bid_id"] if row else None

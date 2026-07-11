@@ -60,6 +60,20 @@ def to_api_datetime(s):
         return s
     return f"{s}T00:00:00" if len(s) == 10 else s
 
+def is_open(end_date, now):
+    """True if a tenderPeriod.endDate is in the future. Parses the offset-aware
+    ISO string (the OCDS APIs stamp e.g. +01:00) so the comparison is correct
+    across timezones — a lexicographic string compare on an offset-stamped date
+    can wrongly call an already-closed tender "open". Falls back to a string
+    compare only if parsing fails. Shared by both connectors."""
+    if not end_date:
+        return False
+    try:
+        return datetime.datetime.fromisoformat(end_date) >= now
+    except ValueError:
+        return end_date >= now.isoformat()
+
+
 def cpvs_in(release):
     out = []
     t = release.get("tender", {}) or {}
@@ -151,9 +165,8 @@ def run(days=120, cpv_codes=None, stage=STAGE, open_only=OPEN_ONLY,
                 continue
             t = rel.get("tender", {}) or {}
             end = (t.get("tenderPeriod") or {}).get("endDate")
-            # active = still open for bids
-            open_now = bool(end) and end >= now.isoformat()
-            if open_only and not open_now:
+            # active = still open for bids (offset-aware; see is_open)
+            if open_only and not is_open(end, now):
                 continue
             records.append(to_record(rel, matched))
         nxt = (pkg.get("links") or {}).get("next")

@@ -22,10 +22,17 @@ both bids surface "library updates suggested, awaiting your approval" alerts.
 Idempotent: keyed on bid_id via db.upsert_bid_outcome, so re-running updates in
 place. Run:  python3 seed_learn_demo.py   ·   Reset:  python3 seed_learn_demo.py --clear
 """
+import datetime
 import sys
 
 import db
 import outcome as L
+
+
+def _day(offset):
+    """ISO date `offset` days from today. Outcome dates are relative so they stay
+    recent-past instead of drifting ever further behind the hard-coded 2026 dates."""
+    return (datetime.date.today() + datetime.timedelta(days=offset)).isoformat()
 
 
 DEMO = [
@@ -34,7 +41,7 @@ DEMO = [
         "outcome": {
             "result": "Won",
             "score_received": "88", "max_score": "100",
-            "award_date": "2026-07-02", "debrief_date": "2026-07-09",
+            "award_date": _day(-9), "debrief_date": _day(-2),
             "feedback": "Strong technical response and a clear, costed social value offer. "
                         "Evaluators singled out the UK data-residency design.",
             "lessons": [
@@ -54,7 +61,7 @@ DEMO = [
             "result": "Not Won",
             "score_received": "61", "max_score": "100",
             "winner": "Incumbent Digital Ltd",
-            "award_date": "2026-07-05", "debrief_date": "2026-07-11",
+            "award_date": _day(-6), "debrief_date": _day(-1),
             "feedback": "Priced above the incumbent; pricing narrative marked as unclear on "
                         "the implementation phasing.",
             "lessons": [
@@ -74,9 +81,11 @@ DEMO = [
 
 
 def _find_bid(conn, fragment):
+    # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
+    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
     row = conn.execute(
         "SELECT b.id AS bid_id FROM bids b JOIN opportunities o ON o.id = b.opportunity_id "
-        "WHERE o.title LIKE ? ORDER BY b.id LIMIT 1",
+        "WHERE o.title LIKE ? ORDER BY b.id",
         (f"%{fragment}%",),
     ).fetchone()
     return row["bid_id"] if row else None
@@ -109,10 +118,12 @@ def seed(conn):
         views.append(view)
         n = len(view["suggestions"])
         score = view["score_pct"]
+        # Fragments extracted so no f-string nests same-type quotes (PEP 701 is
+        # 3.12-only; this keeps the seeder importable on ≤3.11).
+        score_part = f" · {score}%" if score is not None else ""
+        winner_part = f" · lost to {view['winner']}" if view.get("winner") else ""
         print(f"  seeded outcome for bid {bid_id}: {spec['match']} "
-              f"[{view['result']}"
-              f"{f' · {score}%' if score is not None else ''}"
-              f"{f' · lost to {view['winner']}' if view.get('winner') else ''} "
+              f"[{view['result']}{score_part}{winner_part} "
               f"· {n} library suggestion{'s' if n != 1 else ''}]")
         made += 1
     conn.commit()

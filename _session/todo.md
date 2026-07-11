@@ -42,16 +42,20 @@
 
 ### Wave 2 — Correctness bugs (real defects, not just Azure)
 
-- [ ] **FTS deadline kept by string compare** (`src/find_tender_filter.py:155`) — `end >= now.isoformat()`
-      is lexicographic; an offset-stamped deadline already past UTC can be stored as **open** — in a deadline
-      tool. CF already solves this with a parsed offset-aware `is_open`; move `is_open` into find_tender and
-      use it in both connectors. **Med.** `↳` also removes duplication (Wave 5).
-- [ ] **`seed_learn_demo.py:115` is Python-3.12-only** — nested same-type quotes in an f-string (PEP 701);
-      `SyntaxError` at import on ≤3.11. Extract the fragment, or declare `requires-python>=3.12`. **Med.**
-- [ ] **Seeders use `LIMIT 1`** (`seed_plan/complete/manage/learn_demo.py`) — sqlite-only; needs
-      `OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY` for SQL Server. **Low** (dev-local seeders).
-- [ ] **Seeder demo dates hard-coded to ~July 2026** — the passed/imminent/done alert spread decays to
-      all-OVERDUE within weeks. Compute from `date.today()` offsets. **Low.**
+- [x] **FTS deadline string compare — FIXED** (session 14) — `is_open` (offset-aware, parses the ISO string)
+      now lives in `find_tender_filter.py`, is re-exported by `contracts_finder_filter.py`, and both connectors
+      use it. Verified: the offset-stamped-past-UTC case that the old lexicographic compare called "open" is now
+      correctly "closed" (`test_deadline.py` case + live check). Also removed the CF/FTS duplication (Wave 5 ↳).
+- [x] **`seed_learn_demo.py` 3.12-only f-string — FIXED** (session 14) — extracted the `score`/`winner`
+      fragments so no f-string nests same-type quotes; now importable on ≤3.11 (`ast.parse` clean).
+- [x] **Seeder `LIMIT 1` — FIXED** (session 14) — dropped `LIMIT 1` from all four `_find` helpers; `ORDER BY`
+      + `.fetchone()` already returns the first row, so the query is now identical on sqlite and SQL Server
+      (the suggested `FETCH NEXT` syntax would have broken sqlite — dual-mode DB). Exercised: all four seeders
+      run + clear against `bids.db`.
+- [x] **Seeder hard-coded dates — FIXED** (session 14) — each seeder now has a `_day(offset)` helper computing
+      ISO dates from `date.today()`; every literal converted to an offset preserving its intent
+      (passed/imminent/expired/in-date) and per-record chronological order. Verified the buckets land correctly
+      and the seed→clear roundtrip restores the empty pipeline.
 
 ### Wave 3 — Doc/comment truth sweep (cheap; batch in one pass)
 

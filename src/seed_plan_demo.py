@@ -17,10 +17,18 @@ Reset:  python3 seed_plan_demo.py --clear   (removes the seeded bids/quals/plans
 The opportunities themselves are NEVER touched — only the Stage 2/3 rows hung off
 them. Picks are by title match so it degrades gracefully if the DB differs.
 """
+import datetime
 import sys
 
 import db
 import qualification as Q
+
+
+def _day(offset):
+    """ISO date `offset` days from today. Demo deadlines are relative so the
+    passed/imminent spread stays realistic instead of decaying to all-overdue
+    as the old hard-coded 2026 dates would once that month passed."""
+    return (datetime.date.today() + datetime.timedelta(days=offset)).isoformat()
 
 # Each demo bid: a title fragment to find the opportunity, the FOR001 complexity
 # (drives the real cost-to-chase), a RAG sketch, where it sits on the pipeline
@@ -41,7 +49,7 @@ DEMO = [
         "complexity": "Low",
         "rag": {"budget_secured": 2, "commercially_viable": 2, "account_relationship": 1},
         "pipeline_stage": "Qualifying", "owner": "",          # deliberately unassigned → alert
-        "clarification_deadline": "2026-07-11",               # imminent → founding-failure alert
+        "clarification_deadline": _day(2),                    # imminent → founding-failure alert
     },
     {
         "match": "RTPI Cloud Hosted System",
@@ -54,8 +62,10 @@ DEMO = [
 
 
 def _find_opp(conn, fragment):
+    # ORDER BY + fetchone() returns the first match; no LIMIT/TOP/FETCH keeps the
+    # query identical on sqlite and SQL Server (dev-local seeder, dual-mode DB).
     row = conn.execute(
-        "SELECT * FROM opportunities WHERE title LIKE ? ORDER BY id LIMIT 1",
+        "SELECT * FROM opportunities WHERE title LIKE ? ORDER BY id",
         (f"%{fragment}%",),
     ).fetchone()
     return db._row_dict(row) if row else None
