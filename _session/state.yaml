@@ -15,7 +15,7 @@ git:
   # Points at the tip as of this write. The bookkeeping commit that saves this
   # file necessarily lands one ahead — that single step is by design, not drift;
   # verify against `git log` if in doubt (higher authority than this file).
-  last_commit: session16             # refactor: Wave 5/6 cleanup (real hash set by the commit that saves this file)
+  last_commit: fb71f88               # refactor: clear code-review Waves 5+6 (this bookkeeping commit lands one ahead)
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
