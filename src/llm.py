@@ -2,7 +2,9 @@
 """
 Provider-agnostic LLM seam for the bidding tool.
 
-Today the tool runs on **Anthropic** (`claude-opus-4-8`). The client will later
+Today the tool runs on **Anthropic** (`claude-haiku-4-5` by default — the human
+reviews every field, so the cheapest capable model fits; override with
+`ANTHROPIC_MODEL`). The client will later
 need it on **Azure OpenAI**, so every model call goes through one tiny interface —
 `complete_json` — that returns a schema-validated dict. Swapping providers is then
 a single-method implementation; the Triage prompt and FOR001 field-mapping

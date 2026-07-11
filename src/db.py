@@ -9,8 +9,7 @@ One common-record table, one idempotent upsert.
 Every connector (Find a Tender, Contracts Finder, ...) maps its source's raw
 response into the COMMON_FIELDS shape below and calls upsert_opportunity().
 
-Schema follows support/public_sector_bid_apis.md (the richer ~18-field shape),
-not the older 12-field sketch in CLAUDE.md.
+Schema follows support/public_sector_bid_apis.md (the richer ~18-field shape).
 
 Two column groups live on the `opportunities` table:
   - COMMON_FIELDS   — source data every connector normalises into (the fetch path).
@@ -561,7 +560,7 @@ _JSON_FIELDS = (QUALIFICATION_JSON_FIELDS | BID_PLAN_JSON_FIELDS
 
 
 def _row_dict(row):
-    """sqlite3.Row → plain dict (or None), decoding JSON stage fields
+    """DB Row → plain dict (or None), decoding JSON stage fields
     (qualification delivery_team/RAG, bid-plan phases)."""
     if row is None:
         return None
@@ -1021,7 +1020,7 @@ def list_triage_states(conn):
         "SELECT opportunity_id, decision, complexity, rag_summary_label, "
         "rag_summary_rating FROM qualifications"
     ).fetchall()
-    bids = conn.execute("SELECT opportunity_id, stage FROM bids").fetchall()
+    bid_rows = conn.execute("SELECT opportunity_id, stage FROM bids").fetchall()
 
     states = {
         q["opportunity_id"]: {
@@ -1032,7 +1031,7 @@ def list_triage_states(conn):
         }
         for q in quals
     }
-    bid_stage = {b["opportunity_id"]: b["stage"] for b in bids}
+    bid_stage = {b["opportunity_id"]: b["stage"] for b in bid_rows}
     return states, bid_stage
 
 

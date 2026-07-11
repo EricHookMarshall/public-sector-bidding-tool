@@ -16,6 +16,7 @@ items it leaned on — so the answer is anchored to FWF's actual credentials/cas
 studies, not invented. The answer must respect the question's word-count limit (the
 hard compliance gate the tool also checks independently in response.py).
 """
+import response as R
 from llm import get_provider
 from triage_ai import resolve_profile, _guidance_block
 
@@ -85,7 +86,6 @@ def draft_response(question, matches, profile=None, guidance=None):
     `meta` carries the win themes / evidence / gaps for the reviewer. Nothing is
     persisted. Raises `LLMUnavailable` (→ 503) if no provider is configured.
     """
-    import response as R  # local import avoids a cycle at module load
 
     provider = get_provider()
     raw = provider.complete_json(

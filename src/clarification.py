@@ -23,7 +23,6 @@ a gate.
 Kept here (not in db.py) for the same reason as qualification.py / bidplan.py:
 db.py is persistence; the domain vocabulary lives beside it.
 """
-import datetime
 
 # bidplan owns the lenient date maths (days-to-deadline); Manage races the same
 # kind of deadline, so it reuses that one utility rather than re-deriving it.

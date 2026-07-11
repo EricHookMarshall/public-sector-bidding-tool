@@ -3,6 +3,38 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-11 (session 15) — Cleared Wave 3 (doc/comment truth sweep) + Wave 4 (dead code)
+
+**Context.** Resumed with no task in flight; handover named the code-review remediation queue as the natural
+continuation. Picked the cheap, no-scoping-needed waves (3 + 4) plus the Wave 6 `library.py` win. Net **−369
+lines**. `make check` green (29 backend tests + doc-consistency + vite build 131 kB). Committed + pushed.
+
+**Work done (all verified before commit).**
+- **Wave 4 — dead code.** Deleted `MockStage.jsx`, `ScopeCard.jsx`, `StagePlaceholder.jsx` (preview-era
+  orphans). `StagePlaceholder` was still imported in `App.jsx` as a fallback but never rendered (all 6 stages
+  resolve to live views) → replaced with a minimal inline guard against a mistyped `component` slug. Stripped
+  the orphaned `scope`/`asset` data from all 6 stages in `journey.js`, simplified `STATE_MAP` to just the pill
+  class (its 2nd element only fed the deleted dot renderer) + updated the one `App.jsx` consumer. Removed the
+  matching dead CSS (`.split`, placeholder, scope-card, mock-screen, `.asset`, `.dot-*`). Unused imports:
+  `datetime` (`clarification.py`), `useMemo` (`PlanStage.jsx`); renamed a local `bids` shadowing the module
+  Table (`db.py:1024`); collapsed a no-op spread (`SearchStage.jsx`).
+- **Wave 3 — doc/comment truth sweep.** Fixed "only Search is live" comments (App.jsx, journey.js header,
+  SearchStage.jsx); corrected `llm.py` docstring (default is `claude-haiku-4-5`, not opus), db.py "12-field
+  sketch"/`sqlite3.Row` staleness, api.py SQLite-only/3-endpoint docstring (now dual-mode + noted
+  representative); `discovery/.env` → `src/.env` (.env.example, api.py). Hoisted `import response as R` to
+  module top in `complete_ai.py` — **verified empirically there is no import cycle** (response imports only
+  `re`; both import orders work), so the "local import avoids a cycle" comment was wrong.
+
+**Two todo claims that were false records (verified, left alone).**
+- **Wave 6 `library.py` "raise on unknown provider"** is **already implemented** (`library.py:422-438` already
+  fails loudly) — nothing to do; corrected the todo.
+- **SearchStage:268 eslint-disable** is *not* inert (deliberately suppresses a `seeded`-dep warning), and the
+  claimed **TriageStage "dead branch"** couldn't be located with confidence — left both rather than risk live
+  code.
+
+**Next.** Wave 5 (right-sizing refactors — api.js error handling, db.py upsert consolidation, shared web
+formatters) or the user-scoped C-series "Compliance & Renewals" view. Wave 6 auth hardening also open.
+
 ## 2026-07-11 (session 14) — Cleared Wave 2 correctness bugs (deadline compare, 3.12 f-string, seeder portability)
 
 **Context.** Resumed from session 13 (Active task = scope C-series, with Wave 2 bugs as a listed

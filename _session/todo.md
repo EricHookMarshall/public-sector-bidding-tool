@@ -45,25 +45,22 @@
 All four done — FTS lexicographic deadline compare (shared offset-aware `is_open`), `seed_learn_demo.py`
 3.12-only f-string, seeder `LIMIT 1` portability, seeder hard-coded dates. Retrospective in `progress.md`.
 
-### Wave 3 — Doc/comment truth sweep (cheap; batch in one pass)
+### Wave 3 — Doc/comment truth sweep ✅ CLEARED (session 15)
 
-- [ ] **Stale `discovery/.env` refs** (7×: `src/.env.example:1`, `config.py:4`, `api.py:26,455`,
-      `SettingsView.jsx:111`, `journey.js:72,132`) — dir doesn't exist; `.env` lives in `src/`. Two are
-      user-facing UI copy → make host-neutral. **Med.**
-- [ ] **"only Search is live" stale comments** (`App.jsx:19`, `journey.js:8-12`, `SearchStage.jsx:1`,
-      `styles.css:207-209` banner) — all six stages are live; these contradict the code. **Med/Low.**
-- [ ] **Post-port / model stale comments** — `llm.py:5` says Opus default (actually `claude-haiku-4-5`);
-      `db.py:12-13,536` + `api.py:164` still say "sqlite3.Row"/"12-field sketch"; `complete_ai.py:88` claims
-      a non-existent import cycle; `api.py:2-16` docstring lists 3 of ~30 endpoints + "SQLite" not dual-mode. **Low.**
+Done: `discovery/.env`→`src/.env` (the only real refs were `.env.example:1` + `api.py:28`; config.py/
+SettingsView refs were false records; journey.js refs removed with the `asset` data); "only Search is live"
+comments (App.jsx, journey.js header, SearchStage.jsx); `llm.py` opus→`claude-haiku-4-5` default;
+db.py "12-field sketch"/`sqlite3.Row` + api.py SQLite-only/3-endpoint docstring; `complete_ai.py` local
+import hoisted to top (**verified no cycle exists** — the "avoids a cycle" comment was wrong).
 
-### Wave 4 — Dead / orphaned code removal (cheap; batch)
+### Wave 4 — Dead / orphaned code removal ✅ CLEARED (session 15)
 
-- [ ] **Delete MockStage + ScopeCard + StagePlaceholder + their CSS** (`web/src/stages/MockStage.jsx`,
-      `ScopeCard.jsx`, `StagePlaceholder.jsx`; `styles.css:211-230,298-314`; strand the `scope`/`asset` data
-      in `journey.js:24-193`) — preview-era orphans imported by nothing. **Med.**
-- [ ] **Unused imports / dead branches** — `clarification.py:26` unused `datetime`; `PlanStage.jsx:8` unused
-      `useMemo`; `TriageStage.jsx:103-104` dead branch; `db.py:1015` `bids` local shadows the Table;
-      `SearchStage.jsx:88` no-op spread + `:259` inert eslint-disable. **Low.**
+Done: deleted MockStage + ScopeCard + StagePlaceholder + their CSS; removed the orphaned `scope`/`asset`
+data from `journey.js` + slimmed `STATE_MAP` to the pill class; `StagePlaceholder`'s never-rendered App.jsx
+fallback → minimal slug guard. Unused imports: `clarification.py` `datetime`, `PlanStage.jsx` `useMemo`;
+`db.py:1024` `bids` local renamed (shadowed the Table); `SearchStage.jsx` no-op spread collapsed.
+**Not done (false records):** `TriageStage` "dead branch" couldn't be located; `SearchStage:268`
+eslint-disable is *not* inert (suppresses a real `seeded`-dep warning) — both left as-is.
 
 ### Wave 5 — Right-sizing / consistency refactors (quality; some coupling)
 
@@ -80,9 +77,8 @@ All four done — FTS lexicographic deadline compare (shared offset-aware `is_op
 
 ### Wave 6 — Deferred-behind-seam hardening + advisory security
 
-- [ ] **Raise on unknown `LIBRARY_PROVIDER`** (`src/library.py:388`) — currently silently falls back to
-      LocalMirror, so a typo'd `graph_sharepoint` reads the absent mirror and reports "not connected" with no
-      hint. Mirror `llm.get_provider()`'s raise-with-valid-options. Cheap; do it now. **High/Low.**
+- [x] **Raise on unknown `LIBRARY_PROVIDER`** (session 15 — **was already done**; false record). `src/library.py`
+      `get_provider()` (now `:422-438`) already raises loudly with valid options, mirroring `llm.get_provider()`.
 - [ ] **Advisory auth hardening** — `auth.py:216-219` generic 401 (log the real reason); catch
       `jwt.PyJWTError` not bare `Exception` (JWKS outage ≠ 401 → 503); `authConfig.js:31` use `sessionStorage`
       not `localStorage`; add `.env`/`.env.*`/`!.env.example` to `web/.gitignore`. **Low.**

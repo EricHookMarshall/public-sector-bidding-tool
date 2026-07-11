@@ -153,48 +153,6 @@ header.top {
 .stage-body { padding-bottom: 24px; }
 .stage-sub { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
 
-.split { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; align-items: start; }
-@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
-
-/* ============ PLACEHOLDER STAGES ============ */
-.placeholder-main { display: flex; flex-direction: column; gap: 14px; }
-.ph-banner {
-  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-  border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
-  background: var(--panel); font-size: 13px; color: var(--ink-2);
-}
-.ph-banner b { color: var(--ink); font-weight: 640; }
-.ph-lead { margin: 0; color: var(--muted); font-size: 14px; max-width: 60ch; }
-.ph-lead b { color: var(--ink); font-weight: 640; }
-.st-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.dot-live { background: var(--good); }
-.dot-design { background: var(--warn); }
-.dot-gap { background: var(--crit); }
-
-/* scope card (right rail on placeholder stages) */
-.scope { display: flex; flex-direction: column; gap: 12px; }
-.scard { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
-.scard-h { padding: 12px 15px 10px; border-bottom: 1px solid var(--line); }
-.scard-h .label { color: var(--accent); }
-.scard-h h3 { margin: 4px 0 0; font-size: 15.5px; font-weight: 700; }
-.scard-b { padding: 6px 15px 14px; display: flex; flex-direction: column; }
-.srow { padding: 11px 0; border-bottom: 1px dashed var(--line); display: flex; gap: 11px; }
-.srow:last-child { border-bottom: 0; }
-.srow .si { font-size: 15px; flex: none; width: 20px; text-align: center; }
-.srow .sk { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 700; }
-.srow .sv { font-size: 13px; color: var(--ink-2); margin-top: 2px; line-height: 1.45; }
-.srow .sv b { color: var(--ink); font-weight: 640; }
-.scope-io { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); }
-.scope-io > div { padding: 11px 15px; }
-.scope-io .in { border-right: 1px solid var(--line); }
-.scope-io .label { margin-bottom: 7px; display: block; }
-.scope-io .in .label { color: var(--good); }
-.scope-io .out .label { color: var(--crit); }
-.scope-io ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.scope-io li { font-size: 12px; color: var(--ink-2); padding-left: 15px; position: relative; line-height: 1.35; }
-.scope-io .in li::before { content: "+"; position: absolute; left: 0; color: var(--good); font-weight: 800; }
-.scope-io .out li::before { content: "–"; position: absolute; left: 0; color: var(--crit); font-weight: 800; }
-
 /* ============ PAGER ============ */
 .pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 26px; padding: 18px 0 40px; border-top: 1px solid var(--line); }
 .pager button { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); border-radius: 9px; padding: 10px 15px; font-size: 13px; font-weight: 640; display: flex; flex-direction: column; gap: 1px; text-align: left; min-width: 150px; cursor: pointer; }
@@ -203,31 +161,6 @@ header.top {
 .pager .pl { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
 .pager .pn { font-weight: 680; }
 .pager .next { text-align: right; align-items: flex-end; }
-
-/* ============================================================
-   MOCK STAGE SCREENS (Triage → Learn — illustrative previews)
-   Ported from the approved mockup. Not wired to live data.
-   ============================================================ */
-.preview-note {
-  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 10px;
-  font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
-  text-transform: uppercase; color: var(--warn);
-  background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
-  padding: 4px 10px; border-radius: 20px;
-}
-.mono { font-family: var(--mono); }
-
-/* mock screen chrome */
-.screen { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
-.screen-bar { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
-.dots { display: flex; gap: 5px; }
-.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); display: block; }
-.screen-bar .addr { font-family: var(--mono); font-size: 11.5px; color: var(--faint); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; flex: 1; }
-.screen-body { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
-
-/* asset note under the scope card */
-.asset { display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 10px; border: 1px dashed var(--line-strong); background: var(--panel); font-size: 12px; color: var(--muted); }
-.asset b { color: var(--ink); font-weight: 640; }
 
 /* shared bits */
 .mini-btn { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 7px; padding: 6px 11px; font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer; }

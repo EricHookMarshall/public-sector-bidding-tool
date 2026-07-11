@@ -2,10 +2,13 @@
 """
 JSON API for the Public Sector Bidding PoC.
 
-Reads the shared SQLite store (db.py / bids.db) and exposes it to the React UI.
-No HTML here — this is a pure JSON API; the Vite/React app in web/ renders it.
+Reads the shared bids.db store (db.py — SQLite locally, SQL Server via DB_URL)
+and exposes it to the React UI. No HTML here — this is a pure JSON API; the
+Vite/React app in web/ renders it.
 
-Endpoints:
+Endpoints (representative — the full set spans all six journey stages; see the
+@app routes below): the Search stage reads
+
   GET /api/meta                  filter options (sources, statuses, countries,
                                  regions, currencies, value bounds) + freshness.
   GET /api/opportunities         filtered/searched list (raw_json omitted).
@@ -25,7 +28,7 @@ from contextlib import asynccontextmanager
 
 
 def _load_dotenv():
-    """Load discovery/.env into os.environ if present (no dependency). Real keys
+    """Load src/.env into os.environ if present (no dependency). Real keys
     live here, not in git — .env is git-ignored. Existing env vars win, so an
     explicit `export` still overrides the file."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")

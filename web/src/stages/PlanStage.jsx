@@ -5,7 +5,7 @@
 // against the team's days, and the alerts fire on the real deadlines — including
 // the clarification deadline whose loss is the failure this whole tool exists to
 // prevent. Click a bid to open its FOR002 phase timeline. No mock data.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { getPlanReference, getPlanBoard, getBidPlan, saveBidPlan } from "../api.js";
 
 // Trim float noise (19.5 stays 19.5, 5.0 → 5) for the capacity readout.

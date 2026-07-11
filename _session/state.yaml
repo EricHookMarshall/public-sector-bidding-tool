@@ -3,16 +3,16 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-11
-session: 14
+session: 15
 
 phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
-active_workstream: wave2_correctness_bugs_cleared  # next: Wave 3 doc sweep / Wave 4 dead code, or user-scoped C-series
-next_action: pick_wave3_doc_sweep_or_wave4_dead_code_or_scope_c_series
+active_workstream: wave3_4_cleanup_cleared  # next: Wave 5 right-sizing refactors, or user-scoped C-series
+next_action: pick_wave5_refactors_or_scope_c_series
 
 git:
   branch: main
-  clean: true                        # session-14 work committed + pushed at 33980dd
-  last_commit: 33980dd
+  clean: true                        # session-15 Wave 3+4 cleanup committed + pushed at 05938c9
+  last_commit: 05938c9
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
@@ -20,9 +20,9 @@ db:                                  # expected on resume (session-13 demo clean
   app_settings: 2
 
 verified:
-  make_check: 2026-07-11             # make check-fast: 29 backend tests + doc-consistency, green
-  backend_import: 2026-07-11
-  frontend_build: 2026-07-11
+  make_check: 2026-07-11             # session 15: full make check green — 29 backend tests + doc-consistency + vite build (131 kB)
+  backend_import: 2026-07-11         # session 15: all changed modules import clean (complete_ai import hoist)
+  frontend_build: 2026-07-11         # session 15: vite build clean after dead-component/CSS removal
   seeder_roundtrip: 2026-07-11       # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
   live_browser: 2026-07-10           # S5/S3/U1 user-confirmed in the browser
 
@@ -32,6 +32,6 @@ external_blockers:
   azure_phase_d_hosting: needs_subscription
 
 deferred:
-  - wave3_6_review_remediation       # doc/comment sweep, dead-code, right-sizing, seam hardening (todo.md)
+  - wave5_6_review_remediation       # right-sizing refactors + seam hardening (todo.md); Wave 3+4 done session 15
   - skills_chain_fold_in             # src/ is canonical; align skill enums before folding in
   - make_check_live_source_tests     # rung 4: integration tests behind an explicit flag

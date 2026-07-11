@@ -1,7 +1,7 @@
-// Stage 01 — Search. The one live stage: the discovery engine's search UI,
-// lifted out of the old top-level App so the journey shell can host it
-// alongside the other five stages. Logic is unchanged; only the outer page
-// chrome (moved to App.jsx as the shared top bar) was removed.
+// Stage 01 — Search. The discovery engine's search UI, lifted out of the old
+// top-level App so the journey shell can host it alongside the other five
+// stages. Logic is unchanged; only the outer page chrome (moved to App.jsx as
+// the shared top bar) was removed.
 import { useEffect, useState } from "react";
 import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport } from "../api.js";
 
@@ -85,7 +85,7 @@ export default function SearchStage() {
 
   const openDetail = (id) =>
     getOpportunity(id)
-      .then((o) => setSelected({ ...o, region_label: o.region_label }))
+      .then(setSelected)
       .catch((e) => setError(e.message));
 
   // After a live search, pull fresh meta (new sources/regions/options) + list.

@@ -13,11 +13,9 @@ import PlanStage from "./stages/PlanStage.jsx";
 import CompleteStage from "./stages/CompleteStage.jsx";
 import ManageStage from "./stages/ManageStage.jsx";
 import LearnStage from "./stages/LearnStage.jsx";
-import StagePlaceholder from "./stages/StagePlaceholder.jsx";
 import SettingsView from "./SettingsView.jsx";
 
-// Which component renders each stage. Only "search" is live; the rest are
-// labelled preview screens (see MockStage) until their stage is built.
+// Which component renders each stage. All six stages are live, wired to bids.db.
 const VIEWS = {
   search: SearchStage,
   triage: TriageStage,
@@ -96,7 +94,10 @@ export default function App() {
   const isAdmin = role === "Admin";
 
   const stage = STAGES[cur];
-  const StageView = VIEWS[stage.component] || (() => <StagePlaceholder stage={stage} />);
+  // Every journey stage maps to a live view; the fallback only guards against a
+  // mistyped `component` slug in journey.js — it should never render in practice.
+  const StageView =
+    VIEWS[stage.component] || (() => <p>Stage “{stage.component}” has no view.</p>);
 
   if (isAadConfigured && !isAuthenticated) {
     return <SignInScreen onSignIn={() => instance.loginRedirect({ scopes: apiScopes })} />;
@@ -129,7 +130,7 @@ export default function App() {
             <span className="n">{s.n}</span>
             <span className="t">{s.t}</span>
             <span className="d">{s.d}</span>
-            <span className={`state ${STATE_MAP[s.state][0]}`}>{s.stateLabel}</span>
+            <span className={`state ${STATE_MAP[s.state]}`}>{s.stateLabel}</span>
           </button>
         ))}
       </nav>

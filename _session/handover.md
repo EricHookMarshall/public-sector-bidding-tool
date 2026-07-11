@@ -7,29 +7,31 @@
 
 ## Status
 
-`2026-07-11` (session 14) — **Wave 2 correctness bugs cleared, committed + pushed at `33980dd`.**
-All four Wave 2 items done: (1) FTS lexicographic deadline compare fixed — offset-aware `is_open` now
-shared in `find_tender_filter.py`, re-exported by `contracts_finder_filter.py`, used by both connectors;
-(2) `seed_learn_demo.py` 3.12-only f-string extracted (importable on ≤3.11); (3) seeders drop `LIMIT 1`
-(`ORDER BY`+`fetchone` → identical on sqlite/SQL Server); (4) seeder dates now relative via `_day(offset)`
-so the passed/imminent/expired spread stays realistic. Verified: `make check-fast` green (29 tests) +
-seed→clear roundtrip against `bids.db`. **DB still 24 real opportunities, empty pipeline** (restored after
-the roundtrip). Full narrative: `progress.md`.
+`2026-07-11` (session 15) — **Wave 3 (doc/comment truth sweep) + Wave 4 (dead code) cleared, committed +
+pushed.** Net **−369 lines**. Deleted the three preview-era orphans (MockStage/ScopeCard/StagePlaceholder)
++ their dead CSS + the orphaned `scope`/`asset` data in `journey.js`; `StagePlaceholder`'s never-rendered
+`App.jsx` fallback replaced with a minimal slug guard; `STATE_MAP` slimmed to the pill class. Doc sweep:
+"only Search is live" comments, `llm.py` opus→`claude-haiku-4-5` default, db.py/api.py post-port staleness,
+`discovery/.env`→`src/.env`, and `complete_ai.py`'s bogus "avoids a cycle" local import hoisted to top
+(**verified no cycle exists**). Two todo items were **false records**: Wave 6 `library.py` raise is
+**already implemented** (`library.py:422-438`), and the "inert" SearchStage eslint-disable / TriageStage
+"dead branch" didn't hold up — left both. Verified: `make check` green (29 tests + doc-consistency + vite
+build 131 kB); all changed backend modules import clean. **DB still 24 real opportunities, empty pipeline.**
+Full narrative: `progress.md`.
 
 _Parallel Azure track (untouched since session 11):_ Phases B (DB portability) + C (Entra ID auth) done
 and locally verified; **Phase D (hosting scaffold) is the next Azure step** when the user returns to it.
 
 ## Active task
 
-**No task in flight. Pick the next work item.** The code-review remediation queue is the natural
-continuation now Wave 2 is clear (all in `todo.md`):
+**No task in flight. Pick the next work item.** Waves 2–4 of the code-review queue are now clear; what
+remains (all in `todo.md`):
 
-- **Wave 3 — doc/comment truth sweep** (cheap, batch in one pass): stale `discovery/.env` refs, "only Search
-  is live" comments, post-port/model stale comments. Low-risk, high tidiness.
-- **Wave 4 — dead/orphaned code removal** (cheap, batch): MockStage/ScopeCard/StagePlaceholder + CSS, unused
-  imports/dead branches.
-- **Wave 5/6** — right-sizing refactors + seam hardening (some coupling; `library.py` unknown-provider raise
-  is a cheap High/Low win).
+- **Wave 5 — right-sizing / consistency refactors** (quality; some coupling): consolidate `web/src/api.js`
+  error handling, collapse the 5 near-identical `db.py` upserts, extract shared web formatters
+  (`deadlineBadge`/`daysUntil`/`fmtMoney` + the 7/14-day threshold disagreement), de-dupe backend twins.
+- **Wave 6 — advisory security/seam hardening** (the `library.py` raise is already done): generic-401 logging,
+  `jwt.PyJWTError` vs bare `Exception`, `sessionStorage` for auth, `web/.gitignore` `.env` entries.
 
 **Higher-payoff but needs scoping:** the **C-series "Compliance & Renewals" view** (the missed-renewal
 failure the tool exists to prevent) — expiry plumbing already in `library.py`; gap is an org-level view.
