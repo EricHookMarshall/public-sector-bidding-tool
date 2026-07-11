@@ -3,6 +3,45 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-11 (session 14) — Cleared Wave 2 correctness bugs (deadline compare, 3.12 f-string, seeder portability)
+
+**Context.** Resumed from session 13 (Active task = scope C-series, with Wave 2 bugs as a listed
+alternative). User chose the **Wave 2 correctness bugs** — real defects, well-specified, no scoping needed.
+Worked all four items in one pass; committed + pushed at `33980dd`.
+
+**Work done (all verified; committed + pushed at session end).**
+- **FTS lexicographic deadline compare** (`find_tender_filter.py:155`). Moved the offset-aware `is_open`
+  (parses the ISO string via `datetime.fromisoformat`, string-compare fallback) out of
+  `contracts_finder_filter.py` into `find_tender_filter.py` as the shared home; CF re-exports it
+  (`is_open = ft.is_open`); FTS's `run()` now calls it instead of `end >= now.isoformat()`. Removes the
+  CF/FTS duplication (Wave 5 `↳`) at the same time. Updated `tests/test_deadline.py` docstring to the new
+  home. Verified: the `13:00+05:00` (= 08:00 UTC, past noon UTC) case the old string compare called "open"
+  (`True`) now correctly reads closed (`False`).
+- **`seed_learn_demo.py` 3.12-only f-string.** Extracted the `score`/`winner` conditional fragments to
+  `score_part`/`winner_part` locals so no f-string nests same-type quotes (PEP 701 is 3.12-only). `ast.parse`
+  clean → importable on ≤3.11.
+- **Seeder `LIMIT 1`** (all four `seed_*_demo.py` `_find` helpers). Dropped `LIMIT 1`; `ORDER BY` +
+  `.fetchone()` already returns the first row, so the query is identical on sqlite and SQL Server. (The
+  todo's suggested `FETCH NEXT` would have broken sqlite — this is a dual-mode DB, so removal is the
+  portable fix.)
+- **Seeder hard-coded ~July-2026 dates.** Added a `_day(offset)` helper (`date.today()` + `timedelta`) to
+  the plan/manage/learn seeders; every literal converted to an offset preserving intent
+  (passed/imminent/expired/in-date) and per-record chronological order.
+
+**Verification.** `make check-fast` green (29 backend tests + doc-consistency; web build skipped). Ran all
+four seeders against `bids.db` end-to-end (every `_find_bid` matched, dates inserted with the right spread,
+the fixed learn f-string rendered "lost to Incumbent Digital Ltd" at runtime), then `--clear`'d all four →
+empty pipeline restored (24 opps, 0 bids/plans/quals). `git push` → `51e3315..33980dd main`.
+
+**Decisions.** Fixed the `LIMIT 1` item by *removing* `LIMIT` rather than the todo's suggested
+`OFFSET…FETCH NEXT` — the latter is not valid sqlite, and this DB is dual-mode. Left the pre-existing
+untracked `docs/harness_design/` out of the commit (not this session's work).
+
+**Open questions raised.** None new.
+
+**Next.** No task in flight — pick the next code-review remediation wave (Wave 3 doc sweep or Wave 4
+dead-code, both cheap/batchable), or scope the C-series compliance view with the user. See handover.
+
 ## 2026-07-10 (session 13) — Cleared the walkthrough quick-wins queue + a user-requested Triage "dismiss" & demo cleanse
 
 **Context.** Resumed from session 12's handover (Active task = quick-wins-first). Worked the Session-12

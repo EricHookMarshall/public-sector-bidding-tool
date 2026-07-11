@@ -7,34 +7,37 @@
 
 ## Status
 
-`2026-07-10` (session 13) — **Journey feature-complete (all 6 stages real, committed at `9c31fa8`).**
-Cleared the session-12 UI-walkthrough quick-wins queue: team roster (S5), search defaults (S3), Triage
-card board (U1), and a reversible "dismiss from Triage" (U2) all shipped, committed, and live-verified
-(user confirmed S5/S3/U1 in the browser). The demo bids were cleansed → **24 real opportunities, empty
-pipeline**, so the user can push a real test bid end-to-end. Full session narrative: `progress.md`.
+`2026-07-11` (session 14) — **Wave 2 correctness bugs cleared, committed + pushed at `33980dd`.**
+All four Wave 2 items done: (1) FTS lexicographic deadline compare fixed — offset-aware `is_open` now
+shared in `find_tender_filter.py`, re-exported by `contracts_finder_filter.py`, used by both connectors;
+(2) `seed_learn_demo.py` 3.12-only f-string extracted (importable on ≤3.11); (3) seeders drop `LIMIT 1`
+(`ORDER BY`+`fetchone` → identical on sqlite/SQL Server); (4) seeder dates now relative via `_day(offset)`
+so the passed/imminent/expired spread stays realistic. Verified: `make check-fast` green (29 tests) +
+seed→clear roundtrip against `bids.db`. **DB still 24 real opportunities, empty pipeline** (restored after
+the roundtrip). Full narrative: `progress.md`.
 
 _Parallel Azure track (untouched since session 11):_ Phases B (DB portability) + C (Entra ID auth) done
 and locally verified; **Phase D (hosting scaffold) is the next Azure step** when the user returns to it.
 
 ## Active task
 
-**Quick-wins queue is cleared. Next: the C-series "Compliance & Renewals" view — but SCOPE IT WITH THE
-USER FIRST (don't start cold).** Highest founding-purpose payoff (the missed-renewal/expiry failure the
-tool exists to prevent). The expiry plumbing already exists in `library.py` (*Company Credentials*; ISO
-already reads **EXPIRED 2025-10-31** in live data) — the gap is an **org-level** view (today the ledger is
-buried per-bid in Complete). **C3** = structured renewal dates for the rest of the credentials + an
-org-level compliance view; **C4** = framework/contract membership-period tracker (RM6263-expired
-precedent). Scoping questions to ask: what exactly to track, where renewal dates come from, and where the
-org-level view lives (new stage/screen vs a Settings-adjacent page). Detail in `todo.md` → "C-series".
+**No task in flight. Pick the next work item.** The code-review remediation queue is the natural
+continuation now Wave 2 is clear (all in `todo.md`):
 
-**Lower-priority alternatives if the user redirects:** U-series polish on the new Triage board · the Wave 2
-correctness bugs (FTS lexicographic deadline compare — note `make check`'s deadline tests document the
-correct offset-aware behaviour the fix should adopt; the 3.12-only f-string in `seed_learn_demo.py`) ·
-Azure Phase D hosting scaffold (needs a subscription).
+- **Wave 3 — doc/comment truth sweep** (cheap, batch in one pass): stale `discovery/.env` refs, "only Search
+  is live" comments, post-port/model stale comments. Low-risk, high tidiness.
+- **Wave 4 — dead/orphaned code removal** (cheap, batch): MockStage/ScopeCard/StagePlaceholder + CSS, unused
+  imports/dead branches.
+- **Wave 5/6** — right-sizing refactors + seam hardening (some coupling; `library.py` unknown-provider raise
+  is a cheap High/Low win).
 
-**New this session:** `make check` (`scripts/check.sh`) is the canonical health baseline — 29 backend
-tests (deadline / CPV / qualification / preflight / auth-roles + app-construct) + a doc-consistency guard
-+ the Vite build. Run it before committing nontrivial changes.
+**Higher-payoff but needs scoping:** the **C-series "Compliance & Renewals" view** (the missed-renewal
+failure the tool exists to prevent) — expiry plumbing already in `library.py`; gap is an org-level view.
+**Scope with the user first** (what to track, where renewal dates come from, where the view lives). Detail
+in `todo.md` → "C-series".
+
+`make check` / `make check-fast` (`scripts/check.sh`) is the canonical health baseline — run before
+committing nontrivial changes.
 
 ## Blockers / prerequisites
 

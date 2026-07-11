@@ -40,22 +40,10 @@
 > are DONE** — all 12 items verified in commit `0f35c70`; detail in `progress.md`. Waves 2–6 below are open,
 > each item independently pickable unless a `↳` notes a coupling.
 
-### Wave 2 — Correctness bugs (real defects, not just Azure)
+### Wave 2 — Correctness bugs ✅ CLEARED (session 14, committed `33980dd`)
 
-- [x] **FTS deadline string compare — FIXED** (session 14) — `is_open` (offset-aware, parses the ISO string)
-      now lives in `find_tender_filter.py`, is re-exported by `contracts_finder_filter.py`, and both connectors
-      use it. Verified: the offset-stamped-past-UTC case that the old lexicographic compare called "open" is now
-      correctly "closed" (`test_deadline.py` case + live check). Also removed the CF/FTS duplication (Wave 5 ↳).
-- [x] **`seed_learn_demo.py` 3.12-only f-string — FIXED** (session 14) — extracted the `score`/`winner`
-      fragments so no f-string nests same-type quotes; now importable on ≤3.11 (`ast.parse` clean).
-- [x] **Seeder `LIMIT 1` — FIXED** (session 14) — dropped `LIMIT 1` from all four `_find` helpers; `ORDER BY`
-      + `.fetchone()` already returns the first row, so the query is now identical on sqlite and SQL Server
-      (the suggested `FETCH NEXT` syntax would have broken sqlite — dual-mode DB). Exercised: all four seeders
-      run + clear against `bids.db`.
-- [x] **Seeder hard-coded dates — FIXED** (session 14) — each seeder now has a `_day(offset)` helper computing
-      ISO dates from `date.today()`; every literal converted to an offset preserving its intent
-      (passed/imminent/expired/in-date) and per-record chronological order. Verified the buckets land correctly
-      and the seed→clear roundtrip restores the empty pipeline.
+All four done — FTS lexicographic deadline compare (shared offset-aware `is_open`), `seed_learn_demo.py`
+3.12-only f-string, seeder `LIMIT 1` portability, seeder hard-coded dates. Retrospective in `progress.md`.
 
 ### Wave 3 — Doc/comment truth sweep (cheap; batch in one pass)
 
