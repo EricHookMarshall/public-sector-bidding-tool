@@ -3,19 +3,19 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-11
-session: 16
+session: 17
 
 phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
-active_workstream: code_review_queue_fully_cleared  # Waves 2-6 all done; next: scope C-series or Azure Phase D
-next_action: scope_c_series_or_azure_phase_d
+active_workstream: local_azure_hybrid_review_security_hygiene  # S1-S10 + T1-T2 + ~35 hygiene done; refactors + Azure deferred
+next_action: user_rotate_anthropic_key_then_scope_R1_R3_and_azure_A_series
 
 git:
   branch: main
-  clean: true                        # session-16 committed + pushed; tree clean
+  clean: true                        # session-17 remediation committed; tree clean (triad commit lands one ahead)
   # Points at the tip as of this write. The bookkeeping commit that saves this
   # file necessarily lands one ahead — that single step is by design, not drift;
   # verify against `git log` if in doubt (higher authority than this file).
-  last_commit: fb71f88               # refactor: clear code-review Waves 5+6 (this bookkeeping commit lands one ahead)
+  last_commit: 43ed07a               # docs(reviews): remediation disposition + archive (this bookkeeping commit lands one ahead)
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
@@ -23,12 +23,13 @@ db:                                  # expected on resume (session-13 demo clean
   app_settings: 2
 
 verified:
-  make_check: 2026-07-11             # session 16: full make check green — 29 backend tests + doc-consistency + vite build (131.12 kB)
-  backend_import: 2026-07-11         # session 16: db/api/refresh_clean import clean after upsert + derive_lifecycle dedup
+  make_check: 2026-07-11             # session 17: full make check green — 53 backend tests + doc-consistency + vite build
+  backend_import: 2026-07-11         # session 17: api/connectors/triage_ai/complete_ai import clean after remediation
+  security_smoke: 2026-07-11         # session 17: TestClient — S1 CSV neutralise, S2 -> 422, S3 generic, S6 urlencode, S10 clean decode, _require_* 404s
   upsert_roundtrip: 2026-07-11       # session 16: _upsert_one insert/update/blank-update/no-smuggle/JSON verified on temp db
-  frontend_build: 2026-07-11         # session 16: vite build clean after format.js extraction (131.12 kB)
+  frontend_build: 2026-07-11         # session 17: vite build clean after S4/S8/S9 UI + fmtDate extraction + dead-CSS removal
   seeder_roundtrip: 2026-07-11       # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
-  live_browser: 2026-07-10           # S5/S3/U1 user-confirmed in the browser (formatter refactor not re-driven in-browser)
+  live_browser: 2026-07-10           # earlier: S5/S3/U1 user-confirmed in browser (session-17 changes not re-driven in-browser)
 
 external_blockers:
   graph_sharepoint: credentials_and_provisioning   # LocalMirror seam covers Complete meanwhile
@@ -36,6 +37,10 @@ external_blockers:
   azure_phase_d_hosting: needs_subscription
 
 deferred:
-  - connector_to_record_dedup        # to_record/run/main near-verbatim; extract when a 3rd source lands
+  - connector_to_record_dedup        # R3: to_record/run/main near-verbatim; extract when a 3rd source lands
+  - api_router_split                 # R1: ~1.6k-line api.py; split stage/settings/search routers
+  - shared_connector_fetch_helper    # C3: unify retry/backoff/pacing across both connectors
+  - azure_readiness_A1_A9            # Functions host, Bicep/IaC, GraphSharePoint provider, pyodbc — mostly net-new, A3 blocked
+  - anthropic_key_rotation           # S5: user must rotate the real key in src/.env (cannot be done in-session)
   - skills_chain_fold_in             # src/ is canonical; align skill enums before folding in
   - make_check_live_source_tests     # rung 4: integration tests behind an explicit flag

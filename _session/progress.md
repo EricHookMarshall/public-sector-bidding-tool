@@ -3,6 +3,46 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-11 (session 17) — Local/Azure hybrid review: security gate + tests + hygiene cleared
+
+**Context.** A new merged code review landed (`docs/code_reviews/2026-07-11-local-azure-hybrid-review-
+merged.md`, 58 findings from a GPT-5 + Opus 4.8 pass). Verified against HEAD that all spot-checked findings
+were still live. User chose scope: **security gate + tests + hygiene**; defer the structural refactors
+(R1/R3/C3) and the Azure-readiness block (A1–A9). Net **−461 lines** across 32 files, 4 commits on `main`.
+
+**Work done (all verified before commit).**
+- **Security gate (S1–S10, minus S5).** S1 `_csv_safe()` neutralises `= + - @ \t \r` export cells;
+  S2 `SearchRequest` validators bound `days`/cpv-list/stage/ISO-dates → 422; S3 connector failures log
+  server-side + return generic `"source fetch failed"`; S4 raw MSAL errors gated behind `import.meta.env.DEV`;
+  S6 connectors validate `stage` + `urllib.parse.urlencode` the query; S7 untrusted notice/question text fenced
+  in `<<<NOTICE_DATA>>>` markers + system-prompt data-boundary note (triage + complete); S8 AI-read dates →
+  `meta.provisional_dates`, surfaced in Triage UI; S9 `evidence_used` ∩ `matches_offered`, unsupported split
+  out + shown in Complete UI; S10 non-JSON 200 body → clean source-scoped error.
+- **Tests (T1, T2).** `tests/test_outcome.py` (win-rate denominators, rounding, CL3 unknown-result guard) +
+  `tests/test_response.py` (word-count/over-limit boundaries). Suite **29 → 53**.
+- **Hygiene (~35 findings).** Backend: U1/U4 dead code, N1 removed commented AzureOpenAIProvider (+ fixed two
+  stale doc pointers), N2/N3 orphaned alias/function, CL3 guard, CL4 redundant SELECT, C4 `_row_dict`, C5
+  keyword `HTTPException` (18 sites), **C6 `_require_bid`/`_require_opp` helpers** (replaced ~10 duplicated 404
+  guards; 404 paths re-verified), C7 end-date normalisation, C8 shared `IMMINENT_DAYS`, R4 `dict(row)`, CL2
+  connector logger, N4/N5/N7 documented invariants. Frontend: C10 `fmtDate`→`format.js`, N6 dead journey
+  states, O3 dead CSS. Skills: CL1 atomic writes, C1/U3 build_matrix, **U2 preflight `--stage` now genuinely
+  differs** (readiness advisory / final blocking — was a no-op), O1 documented standalone vocabulary, R2
+  whole-word stale matching. Config: O2 Azurite behind opt-in `storage` profile, O4 `make seed-demo`.
+- **Honesty note.** U1's dead `datetime` import was removed, but `datetime` is now legitimately used by the
+  S2 date validator, so the import stays — used, not dead.
+
+**Verified.** `make check` green (53 tests + doc-consistency + vite build); a `TestClient` security smoke
+confirmed S1 neutralise, S2 → 422, S3 generic, S6 urlencode, S10 clean decode, and the `_require_*` 404 paths;
+preflight `--stage readiness` vs `final` exit 0/1 confirmed; check_answer whole-word (no false hit on
+"success/access", real "CCS" still flagged); `make seed-demo` runs in dependency order. Ruff on touched files:
+remaining warnings are pre-existing (intentional post-`_load_dotenv` E402 in api.py; skills-script lint I
+didn't author).
+
+**Deferred (with the user's agreement).** S5 (rotate the real Anthropic key in `src/.env` — **user action**);
+R1 (split `api.py` routers); R3 (dedupe connector `to_record`/`run`); C3 (shared fetch/backoff); A1–A9 Azure
+readiness. R5/R6 are "no action" by design. The review file carries a remediation-status header and stays
+active (not archived) until the deferred items are addressed.
+
 ## 2026-07-11 (session 16) — Cleared Wave 5 (right-sizing refactors) + Wave 6 (auth hardening) — queue empty
 
 **Context.** Resumed with no task in flight; user chose to "finish the low hanging fruit before we make more

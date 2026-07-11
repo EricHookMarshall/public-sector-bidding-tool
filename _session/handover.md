@@ -7,35 +7,36 @@
 
 ## Status
 
-`2026-07-11` (session 16) — **Code-review remediation queue fully cleared — Waves 5 + 6 done, committed +
-pushed.** Net **−163 code lines** + new `web/src/format.js`. Real refactors: collapsed the 5 near-identical
-`db.py` upserts into one `_upsert_one` helper (2-line wrappers now); extracted the duplicated web formatters
-(`fmtMoney`/`deadlineBadge`/`daysUntil`) into `format.js` and **fixed the genuine bug** — Complete hard-coded
-7/14-day urgency while siblings read `imminent_days`, so Complete now reads it too (added to
-`/api/complete/reference` from `P.IMMINENT_DAYS`); de-duped `_derive_open`/`_open_closed` into
-`db.derive_lifecycle`. Wave 6: MSAL cache → `sessionStorage`, `.env` entries added to `web/.gitignore`.
-**Four late items were false records** (already implemented): api.js error-handling consolidation,
-`LocalMirror.items()` caching, and the auth.py 401-logging / `jwt.PyJWTError` / JWKS-503 hardening. Verified:
-`make check` green (29 tests + doc-consistency + vite 131.12 kB); `_upsert_one` roundtrip-tested on a temp DB
-(insert/update/blank-update/no-smuggle/JSON). **DB still 24 real opportunities, empty pipeline.** Full
-narrative: `progress.md`.
+`2026-07-11` (session 17) — **Local/Azure hybrid review (58 findings) — security gate + tests + hygiene
+cleared and committed.** Scope chosen with the user: fix the security gate, add the two missing test suites,
+and sweep the ~35 mechanical hygiene findings; defer the big refactors + Azure infra. **Net −461 lines**
+across 32 files, 4 commits (`5d5e317` backend · `33512fa` frontend · `b73a23f` skills/config · `43ed07a`
+review docs). Highlights: CSV-injection neutraliser (S1); search-input bounds → 422 (S2); generic client
+errors + server logging (S3); DEV-gated browser logs (S4); urlencoded + stage-validated connector queries
+(S6); prompt-injection data fences (S7); provisional AI-date + unsupported-evidence flags surfaced in the UI
+(S8/S9); clean non-JSON handling (S10). New `tests/test_outcome.py` + `tests/test_response.py` take the suite
+**29 → 53**. Real behaviour fixes beyond cosmetics: `--stage` in preflight.py now genuinely differs
+(readiness advisory vs final blocking); `_require_bid`/`_require_opp` helpers replace ~10 duplicated 404
+guards; `IMMINENT_DAYS` shared from bidplan. Verified: `make check` green (53 tests + doc-consistency + vite),
+plus a TestClient security smoke (S1/S2/S3/S6/S10 + the 404 paths). **DB unchanged: 24 opportunities, empty
+pipeline.** Full narrative + the deferred list: `progress.md` and the review's remediation-status header.
 
-_Parallel Azure track (untouched since session 11):_ Phases B (DB portability) + C (Entra ID auth) done
-and locally verified; **Phase D (hosting scaffold) is the next Azure step** when the user returns to it.
+⚠️ **User action — S5 (High):** the real Anthropic key in gitignored `src/.env` must be **rotated/revoked**
+by a human — I can't rotate a credential. `.env.example` + `.gitignore` are already correct.
 
 ## Active task
 
-**No task in flight — the entire code-review remediation queue (Waves 0–6) is now clear.** Two real
-directions remain, both in `todo.md`:
+**No task in flight.** The review's in-scope work is done + committed. Remaining, explicitly deferred
+(now tracked in `state.yaml → deferred` and the review header):
 
-1. **C-series "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff — the missed-renewal failure
-   the tool exists to prevent). Expiry plumbing already in `library.py` (ISO reads EXPIRED in live data); the
-   gap is an **org-level** view + structured renewal dates. **Scope with the user first** — what to track,
-   where renewal dates come from, where the view lives. Detail in `todo.md` → "C-series".
-2. **Azure Phase D — hosting scaffold** (`docs/design/azure-target.md`) — needs an Azure subscription.
-
-Only genuine cleanup still deferred: connector `to_record`/`run`/`main` are near-verbatim — extract when a
-**3rd source** lands (extracting now would be speculative).
+1. **S5 key rotation** — user action, do this first (security).
+2. **Structural refactors** — R1 (split ~1.6k-line `api.py` into routers), R3 (dedupe connector
+   `to_record`/`run`), C3 (shared fetch/backoff helper). Extract R3/C3 together when convenient (or when a
+   3rd source lands).
+3. **Azure readiness A1–A9** — Functions host, Bicep/IaC, `GraphSharePoint` provider, `pyodbc`; mostly
+   net-new and A3 is blocked without MS Graph. Ties into the parallel Azure track (Phases B+C done).
+4. **C-series "Compliance & Renewals" view** ⭐ — still the highest founding-purpose payoff (`todo.md`);
+   scope with the user first.
 
 `make check` / `make check-fast` (`scripts/check.sh`) is the canonical health baseline — run before
 committing nontrivial changes.
