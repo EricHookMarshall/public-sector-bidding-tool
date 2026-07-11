@@ -11,8 +11,11 @@ next_action: pick_wave5_refactors_or_scope_c_series
 
 git:
   branch: main
-  clean: true                        # session-15 Wave 3+4 cleanup committed + pushed at 05938c9
-  last_commit: 05938c9
+  clean: true                        # session-15 committed + pushed; tree clean
+  # Points at the tip as of this write. The bookkeeping commit that saves this
+  # file necessarily lands one ahead — that single step is by design, not drift;
+  # verify against `git log` if in doubt (higher authority than this file).
+  last_commit: 75c5631               # docs: harness-design reviews (session-15 work = 6f782b1)
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
