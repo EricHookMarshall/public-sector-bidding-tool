@@ -28,6 +28,16 @@ export function deadlineBadge(days, imminent = 7) {
   return { label: `${days}d`, cls: "ok" };
 }
 
+// An ISO date string → a short "12 Jan 2026" label, "—" for blank, or the raw
+// string if it doesn't parse. Was copy-pasted identically in Search + Triage.
+export function fmtDate(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", {
+    year: "numeric", month: "short", day: "numeric",
+  });
+}
+
 // Whole days from today (local midnight) until an ISO date, or null if blank/
 // unparseable. Used by the detail views, which read raw dates from the form (the
 // boards send pre-computed day counts).

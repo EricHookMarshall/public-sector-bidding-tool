@@ -4,7 +4,7 @@
 // the shared top bar) was removed.
 import { useEffect, useState } from "react";
 import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport } from "../api.js";
-import { fmtMoney } from "../format.js";
+import { fmtMoney, fmtDate } from "../format.js";
 
 const EMPTY_FILTERS = {
   q: "",
@@ -21,16 +21,6 @@ const EMPTY_FILTERS = {
   order: "asc",
 };
 
-
-function fmtDate(s) {
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function truncate(s, n = 220) {
   if (!s) return "";

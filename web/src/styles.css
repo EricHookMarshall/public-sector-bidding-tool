@@ -138,8 +138,6 @@ header.top {
   text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 20px;
 }
 .s-live { background: var(--good-soft); color: var(--good); }
-.s-design { background: var(--warn-soft); color: var(--warn); }
-.s-gap { background: var(--crit-soft); color: var(--crit); }
 
 /* ============ STAGE HEAD + BODY ============ */
 .stage-head {
@@ -227,24 +225,15 @@ header.top {
 .ledger .lr { border-top: 1px solid var(--line); }
 .ledger .lr .st { font-family: var(--mono); font-weight: 700; font-size: 10px; }
 
-/* Manage — clarification register + preflight */
-.reg { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.reg-row { display: grid; grid-template-columns: 1.5fr .8fr .9fr .7fr; gap: 10px; padding: 10px 12px; font-size: 12.5px; align-items: center; }
-.reg-row.h { background: var(--panel-2); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
-.reg-row + .reg-row { border-top: 1px solid var(--line); }
-.reg-row .q { font-weight: 620; }
-.reg-row .sub { color: var(--faint); font-size: 11px; }
+/* Manage — preflight checklist */
 .st-pill { font-family: var(--mono); font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; letter-spacing: .05em; }
 .checklist { display: flex; flex-direction: column; gap: 6px; }
 .ck { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
 .ck .box { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; font-weight: 800; flex: none; }
 .ck.ok .box { background: var(--good); color: #fff; }
 .ck.no .box { background: var(--crit-soft); color: var(--crit); border: 1px solid var(--crit); }
-.ck .cnote { margin-left: auto; font-size: 11px; color: var(--faint); font-family: var(--mono); }
 
 /* Learn — outcome + library updates */
-.outcome-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); border: 1px solid color-mix(in srgb, var(--good) 24%, transparent); flex-wrap: wrap; }
-.outcome-head .res { font-family: var(--mono); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--good); font-size: 13px; }
 .actions-l { display: flex; flex-direction: column; gap: 8px; }
 .lib-act { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
 .lib-act .ic { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-weight: 800; font-size: 13px; flex: none; }

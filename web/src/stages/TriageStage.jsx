@@ -9,7 +9,7 @@ import {
   getTriageBoard, getTriageReference, getQualification, saveQualification,
   aiDraftQualification, setTriageDismissed,
 } from "../api.js";
-import { fmtMoney } from "../format.js";
+import { fmtMoney, fmtDate } from "../format.js";
 
 // Handoff key set by Search's "Triage this" action (sessionStorage, so it
 // survives the hash navigation between stages without an app-wide store).
@@ -40,13 +40,6 @@ const DATE_FIELDS = [
   ["presentation_date", "Presentation date"],
 ];
 
-function fmtDate(s) {
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", {
-    year: "numeric", month: "short", day: "numeric",
-  });
-}
 
 // A board item's triage state → a labelled pill. Drives the card's status chip
 // and the funnel filter. Bid-live wins over the raw decision (it's further along).
@@ -243,6 +236,9 @@ export default function TriageStage() {
           {aiMeta.decision_rationale && <p><b>Why:</b> {aiMeta.decision_rationale}</p>}
           {aiMeta.complexity_rationale && <p><b>Complexity:</b> {aiMeta.complexity_rationale}</p>}
           {aiMeta.gate_notes && <p><b>Gates:</b> {aiMeta.gate_notes}</p>}
+          {aiMeta.provisional_dates?.length > 0 && (
+            <p className="ai-gaps"><b>⚠ Provisional dates (AI-read from the notice — verify before relying on them):</b>{" "}
+              {aiMeta.provisional_dates.join(", ")}</p>)}
         </div>
       )}
 

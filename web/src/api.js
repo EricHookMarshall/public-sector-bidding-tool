@@ -26,11 +26,15 @@ async function authHeader(path) {
     const { accessToken } = await msalInstance.acquireTokenSilent({ scopes: apiScopes, account });
     return { Authorization: `Bearer ${accessToken}` };
   } catch (err) {
-    console.error("[api] silent token acquisition failed; redirecting to sign in", err);
+    // Stable message in every build; the raw MSAL error object (tokens/claims/URLs)
+    // is gated to dev so it never lands in the deployed browser console.
+    console.error("[api] silent token acquisition failed; redirecting to sign in");
+    if (import.meta.env.DEV) console.error(err);
     try {
       await msalInstance.acquireTokenRedirect({ scopes: apiScopes, account });
     } catch (redirectErr) {
-      console.error("[api] interactive redirect failed", redirectErr);
+      console.error("[api] interactive redirect failed");
+      if (import.meta.env.DEV) console.error(redirectErr);
     }
     return {};
   }

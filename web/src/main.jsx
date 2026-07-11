@@ -44,7 +44,10 @@ if (msalInstance) {
       // deployed SPA permanently blank with no message. Mount anyway so the
       // sign-in gate (or the error) is at least visible. Azure-only path —
       // msalInstance is null in local dev, so this never fires there.
-      console.error("[auth] MSAL initialisation failed; rendering the app unauthenticated", err);
+      // Log a stable message in all builds; the raw MSAL error object (which can
+      // carry tokens/claims/URLs) only in dev, never in the deployed console.
+      console.error("[auth] MSAL initialisation failed; rendering the app unauthenticated");
+      if (import.meta.env.DEV) console.error(err);
       render();
     });
 } else {

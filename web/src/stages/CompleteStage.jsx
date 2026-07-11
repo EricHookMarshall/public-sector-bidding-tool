@@ -269,6 +269,9 @@ function CompleteDetail({ bidId, ref_, onBack }) {
                   {ai.meta?.win_themes && <p><b>Win themes:</b> {ai.meta.win_themes}</p>}
                   {ai.meta?.evidence_used?.length > 0 && (
                     <p><b>Evidence used:</b> {ai.meta.evidence_used.join("; ")}</p>)}
+                  {ai.meta?.evidence_unsupported?.length > 0 && (
+                    <p className="ai-gaps"><b>⚠ Cited but not in the library (unverifiable — check before trusting):</b>{" "}
+                      {ai.meta.evidence_unsupported.join("; ")}</p>)}
                   {ai.meta?.gaps && <p className="ai-gaps"><b>⚠ Gaps to check:</b> {ai.meta.gaps}</p>}
                   <div className="src-note">
                     ◆ Drafted from FWF's real library. Review, add win themes, and <b>approve</b> — nothing is

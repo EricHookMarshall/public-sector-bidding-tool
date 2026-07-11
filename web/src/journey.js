@@ -3,10 +3,7 @@
 // The stepper nav reads from here, so the journey shape lives in one place.
 //
 // `state` reflects honest build status. All six stages are `live` today (wired
-// to bids.db); `design`/`gap` remain in STATE_MAP for any future stage that is
-// scoped but not yet built.
-//
-// `component` names which stage view App.jsx renders for each stage.
+// to bids.db). `component` names which stage view App.jsx renders for each stage.
 
 export const STAGES = [
   {
@@ -71,9 +68,8 @@ export const STAGES = [
   },
 ];
 
-// state slug → stepper pill class
+// state slug → stepper pill class. Only `live` is used today; add a slug here (and
+// its CSS) if a future stage ships as scoped-but-not-built.
 export const STATE_MAP = {
   live: "s-live",
-  design: "s-design",
-  gap: "s-gap",
 };
