@@ -33,6 +33,11 @@ knowledge/SharePoint Folder/
 src/bids.db
 src/bids.db-wal
 src/bids.db-shm
+
+# Compliance-asset uploads (ISO certs, insurance, policies) — company-confidential;
+# same hard rule as the bid library. The bytes live here locally (LocalFileStore),
+# SharePoint later; never committed.
+src/compliance_store/
 *.sqlite
 *.sqlite3
 .env

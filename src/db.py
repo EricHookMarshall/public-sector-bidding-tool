@@ -27,6 +27,7 @@ Dedupe / freshness:
 """
 import json
 import os
+import uuid
 import datetime
 from collections.abc import Mapping
 
@@ -241,6 +242,32 @@ BID_RESPONSE_FIELDS = [
 # JSON-valued response columns — encoded on write, decoded on read.
 BID_RESPONSE_JSON_FIELDS = {"items"}
 
+# --- Compliance & Renewals (C-series) --------------------------------------
+# An app-OWNED compliance-asset register (ISO certs, insurance, policies,
+# framework memberships). Unlike the Complete-stage bid library — read live from
+# the LocalMirror export (library.py) — this table is the *system of record*:
+# assets are uploaded/registered here, their file location logged, and expiry
+# extracted so renewals surface org-wide. It lifts the "expired cert at bid time"
+# failure the tool exists to prevent out of per-bid burial into one view. The
+# file BYTES live in a gitignored store (compliance_store.py — LocalFileStore now,
+# SharePoint later behind the same seam); this row holds only metadata + the
+# stored-path pointer. `expiry_date` is the stored renewal date; the expired/
+# expiring STATUS is derived live on read (compliance.py) against today, never
+# persisted — facts decay (knowledge/VERIFIED_FACTS.md).
+COMPLIANCE_ASSET_FIELDS = [
+    "category",         # Company Credentials / Governance / Commercial / Frameworks / ...
+    "name",             # e.g. "ISO 27001 Certificate"
+    "file_name",        # original uploaded filename ("" for a registered reference)
+    "stored_path",      # location in the store (the logged file location)
+    "content_type",     # MIME type as uploaded (advisory only)
+    "size_bytes",       # file size (text — PoC text-tolerant)
+    "expiry_date",      # ISO renewal/expiry date, or ""
+    "review_frequency", # Annually / As Required / ...
+    "owner",
+    "notes",
+    "source",           # "upload" | "seed:library" | "reference"
+]
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -392,6 +419,20 @@ triage_dismissals = Table(
     "triage_dismissals", metadata,
     Column("opportunity_id", Integer, ForeignKey("opportunities.id"), primary_key=True),
     Column("dismissed_at", UnicodeText),
+)
+
+# The compliance-asset register (see COMPLIANCE_ASSET_FIELDS above). `asset_uid`
+# is a generated stable handle — it exists so an insert can read its own new id
+# back with a plain SELECT (dialect-neutral: sqlite lastrowid and mssql
+# SCOPE_IDENTITY differ, but the codebase's INSERT-then-SELECT-by-key pattern
+# needs a key, and this table has no natural one).
+compliance_assets = Table(
+    "compliance_assets", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("asset_uid", Unicode(64), unique=True),
+    *_text_cols(COMPLIANCE_ASSET_FIELDS),
+    Column("created_at", UnicodeText),
+    Column("updated_at", UnicodeText),
 )
 
 
@@ -1003,6 +1044,82 @@ def set_triage_dismissed(conn, opp_id, dismissed):
         )
     conn.commit()
     return bool(dismissed)
+
+
+# --- Compliance-asset register CRUD (C-series) -----------------------------
+
+def list_compliance_assets(conn):
+    """Every compliance asset, oldest first (the org register). Derived expiry
+    status is added by compliance.py on read, not stored here."""
+    rows = conn.execute("SELECT * FROM compliance_assets ORDER BY id ASC").fetchall()
+    return [_row_dict(r) for r in rows]
+
+
+def get_compliance_asset(conn, asset_id):
+    """One compliance asset by row id, or None."""
+    row = conn.execute(
+        "SELECT * FROM compliance_assets WHERE id = ?", (asset_id,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+def insert_compliance_asset(conn, fields):
+    """Insert one compliance asset. Only keys in COMPLIANCE_ASSET_FIELDS are
+    written (so a caller can't smuggle in other columns). A generated asset_uid
+    lets us read the new id back cross-dialect. Returns the new row id."""
+    rec = {f: fields[f] for f in COMPLIANCE_ASSET_FIELDS if f in fields}
+    uid = uuid.uuid4().hex
+    now = now_iso()
+    cols = ["asset_uid", "created_at", "updated_at", *rec.keys()]
+    placeholders = ", ".join("?" for _ in cols)
+    conn.execute(
+        f"INSERT INTO compliance_assets ({', '.join(cols)}) VALUES ({placeholders})",
+        [uid, now, now, *rec.values()],
+    )
+    row_id = conn.execute(
+        "SELECT id FROM compliance_assets WHERE asset_uid = ?", (uid,)
+    ).fetchone()["id"]
+    conn.commit()
+    return row_id
+
+
+def update_compliance_asset(conn, asset_id, fields):
+    """Update metadata on one asset (name/category/expiry/owner/notes/...). Only
+    keys in COMPLIANCE_ASSET_FIELDS are written; bumps updated_at. Returns the
+    number of fields written (0 if nothing recognised)."""
+    rec = {f: fields[f] for f in COMPLIANCE_ASSET_FIELDS if f in fields}
+    if not rec:
+        return 0
+    assignments = ", ".join(f"{c} = ?" for c in rec)
+    conn.execute(
+        f"UPDATE compliance_assets SET {assignments}, updated_at = ? WHERE id = ?",
+        [rec[c] for c in rec] + [now_iso(), asset_id],
+    )
+    conn.commit()
+    return len(rec)
+
+
+def delete_compliance_asset(conn, asset_id):
+    """Delete one asset. Returns its stored_path (so the caller can remove the
+    file from the store) — "" if it had no file, or None if the id didn't exist."""
+    row = conn.execute(
+        "SELECT stored_path FROM compliance_assets WHERE id = ?", (asset_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute("DELETE FROM compliance_assets WHERE id = ?", (asset_id,))
+    conn.commit()
+    return row["stored_path"] or ""
+
+
+def seed_compliance_assets(conn, assets):
+    """Bulk-insert seed assets, but ONLY if the register is currently empty — an
+    idempotent bootstrap (re-running never duplicates). Returns the count inserted."""
+    if conn.execute("SELECT COUNT(*) FROM compliance_assets").fetchone()[0]:
+        return 0
+    for a in assets:
+        insert_compliance_asset(conn, a)
+    return len(assets)
 
 
 def get_setting(conn, key, default=None):

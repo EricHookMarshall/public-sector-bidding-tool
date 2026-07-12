@@ -3,47 +3,52 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 18
+session: 19
 
-phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
-active_workstream: triage_pull_gate  # Search->Triage is now explicit-pull (only picked opps reach Triage); shipped
-next_action: user_rotate_anthropic_key_then_scope_R1_R3_and_azure_A_series
+phase: feature_complete_local          # 6 journey stages + a new org-level Compliance view, all wired to bids.db
+active_workstream: compliance_renewals # C-series C3: app-owned Compliance & Renewals register — built + live-verified
+next_action: user_choose_next_C4_frameworks_or_phase2_file_extraction_or_R1_R3_refactors
 
 git:
   branch: main
-  clean: true                        # session-18 pull-gate committed; tree clean (triad commit lands one ahead)
-  # Points at the tip as of this write. The bookkeeping commit that saves this
-  # file necessarily lands one ahead — that single step is by design, not drift;
-  # verify against `git log` if in doubt (higher authority than this file).
-  last_commit: cd0a75d               # session-17 triad; session-18 feature + triad commits land ahead
+  clean: false                         # C-series changes are ON DISK, not yet committed (user hasn't asked to commit)
+  # last_commit points at the tip as of this write. This session's work is not yet
+  # committed — 7 modified + 4 new files (see handover). Commit only when the user asks.
+  last_commit: eb14d13                 # session-18 pull gate (tip); session-19 C-series work uncommitted on top
 
-db:                                  # expected on resume (session-13 demo cleanse)
+db:                                    # expected on resume
   opportunities: 24
-  pipeline: empty                    # 0 quals/bids/plans/manage/responses/outcomes — intentional
-  triage_selections: 0               # NEW table (pull gate) — empty, so Triage board shows 0 until an opp is picked
-
+  pipeline: empty                      # 0 quals/bids/plans/manage/responses/outcomes — intentional (session-13 cleanse)
+  triage_selections: 0                 # pull gate — empty until an opp is picked
+  compliance_assets: 19                # NEW table — seeded from the real bid library on first server start (incl. EXPIRED ISO). 18 no-date + 1 expired
   app_settings: 2
 
 verified:
-  make_check: 2026-07-12             # session 18: full make check green — 53 backend tests + doc-consistency + vite build
-  triage_gate_live: 2026-07-12       # session 18: live /api/triage/board on real bids.db -> 0 items (was 24); TestClient select/deselect round-trip + worked-item backward-compat + 404
-  backend_import: 2026-07-11         # session 17: api/connectors/triage_ai/complete_ai import clean after remediation
-  security_smoke: 2026-07-11         # session 17: TestClient — S1 CSV neutralise, S2 -> 422, S3 generic, S6 urlencode, S10 clean decode, _require_* 404s
-  upsert_roundtrip: 2026-07-11       # session 16: _upsert_one insert/update/blank-update/no-smuggle/JSON verified on temp db
-  frontend_build: 2026-07-12         # session 18: vite build clean after SearchStage select-wire + TriageStage empty-state copy
-  seeder_roundtrip: 2026-07-11       # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
-  live_browser: 2026-07-12           # session 18: user screenshot showed old (unfiltered) board — was a no-reload server; restarted, endpoint now 0. Browser refresh not re-confirmed by user post-restart
+  make_check: 2026-07-12               # session 19: full make check green — 63 backend tests (+10 compliance) + doc-consistency + vite build
+  compliance_live: 2026-07-12          # session 19: live against real bids.db — board seeded 19 (1 expired ISO); upload→derive-expiry-from-notes→attachment download→PUT→422 guards→delete-removes-file→404; path-traversal blocked
+  triage_gate_live: 2026-07-12         # session 18: live /api/triage/board on real bids.db -> 0 items (was 24)
+  backend_import: 2026-07-12           # session 19: api imports clean with compliance/compliance_store added
+  security_smoke: 2026-07-11           # session 17: TestClient — S1 CSV neutralise, S2 -> 422, S3 generic, S6 urlencode, S10 clean decode
+  frontend_build: 2026-07-12           # session 19: vite build clean (133.31 kB) after ComplianceView + App route/TopBar
+  seeder_roundtrip: 2026-07-11         # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
+  live_browser: 2026-07-12             # session 18 (Triage). session 19 Compliance view: API + build verified, NOT yet clicked in a live browser this session
 
 external_blockers:
-  graph_sharepoint: credentials_and_provisioning   # LocalMirror seam covers Complete meanwhile
+  graph_sharepoint: credentials_and_provisioning   # LocalMirror (Complete) + LocalFileStore (Compliance) seams cover meanwhile
   azure_openai: provisioning
-  azure_phase_d_hosting: needs_subscription
+  azure_phase_d_hosting: iac_not_built              # FWF Intern subscription IS live (verified 2026-07-12); NO resource group for this app exists yet. No longer 'needs_subscription' — the gap is now Bicep/IaC (A1) + creating the RG
 
 deferred:
-  - connector_to_record_dedup        # R3: to_record/run/main near-verbatim; extract when a 3rd source lands
-  - api_router_split                 # R1: ~1.6k-line api.py; split stage/settings/search routers
-  - shared_connector_fetch_helper    # C3: unify retry/backoff/pacing across both connectors
-  - azure_readiness_A1_A9            # Functions host, Bicep/IaC, GraphSharePoint provider, pyodbc — mostly net-new, A3 blocked
-  - anthropic_key_rotation           # S5: user must rotate the real key in src/.env (cannot be done in-session)
-  - skills_chain_fold_in             # src/ is canonical; align skill enums before folding in
-  - make_check_live_source_tests     # rung 4: integration tests behind an explicit flag
+  # Compliance C-series follow-ons (this session shipped C3 MVP)
+  - compliance_file_content_extraction # parse expiry from uploaded PDF/docx bytes (today: mined from name/notes text only)
+  - compliance_c4_frameworks           # framework/contract membership-period tracker (RM6263-expired precedent) — category exists, no source yet
+  - compliance_file_replace_in_edit    # edit form can't swap the stored file (delete+re-add today)
+  - compliance_sharepoint_store        # SharePointStore behind the compliance_store seam when MS Graph lands
+  # Pre-existing
+  - connector_to_record_dedup          # R3: to_record/run/main near-verbatim; extract when a 3rd source lands
+  - api_router_split                   # R1: ~1.9k-line api.py; split stage/settings/compliance/search routers
+  - shared_connector_fetch_helper      # unify retry/backoff/pacing across both connectors
+  - azure_readiness_A1_A9              # Functions host, Bicep/IaC, GraphSharePoint provider, pyodbc — sub now live, IaC still net-new
+  - anthropic_key_rotation             # S5: user must rotate the real key in src/.env (cannot be done in-session)
+  - skills_chain_fold_in               # src/ is canonical; align skill enums before folding in
+  - make_check_live_source_tests       # rung 4: integration tests behind an explicit flag

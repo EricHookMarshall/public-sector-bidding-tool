@@ -81,6 +81,15 @@ async function sendJSON(url, method, body) {
   return res.json();
 }
 
+// Multipart POST (file uploads). Deliberately does NOT set Content-Type — the
+// browser sets it with the correct boundary. Routes through apiFetch so auth +
+// base-URL handling stay identical to the JSON helpers.
+async function sendForm(url, method, formData) {
+  const res = await apiFetch(url, { method, body: formData });
+  if (!res.ok) throw await errorFrom(res);
+  return res.json();
+}
+
 export const getMeta = () => getJSON("/api/meta");
 
 // The signed-in caller's identity ({role, display_name, email, via}) — drives
@@ -282,3 +291,52 @@ export const saveTeamRoster = (people) =>
 export const getSearchDefaults = () => getJSON("/api/settings/search-defaults");
 export const saveSearchDefaults = (body) =>
   sendJSON("/api/settings/search-defaults", "PUT", body);
+
+// ---- Compliance & Renewals (C-series) ----
+
+// Vocabulary for the Compliance view (categories + the expiring-soon window).
+export const getComplianceReference = () => getJSON("/api/compliance/reference");
+
+// The org-level register: every asset with derived expiry status (sorted
+// soonest-to-lapse first), status counts, and whether a library import is offerable.
+export const getComplianceBoard = () => getJSON("/api/compliance/board");
+
+// Register (or upload) an asset. `fields` = {name, category, expiry_date,
+// review_frequency, owner, notes}; `file` optional (a File from an <input>). When
+// a file is present the bytes go to the store; otherwise it's a reference.
+export const createComplianceAsset = (fields, file) => {
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v ?? ""));
+  if (file) fd.append("file", file);
+  return sendForm("/api/compliance/assets", "POST", fd);
+};
+
+// Update an asset's metadata (name/category/expiry/owner/notes/review). Returns
+// the refreshed asset so the UI can re-render in place.
+export const updateComplianceAsset = (id, fields) =>
+  sendJSON(`/api/compliance/assets/${id}`, "PUT", fields);
+
+// Delete an asset (and its stored file).
+export const deleteComplianceAsset = (id) =>
+  sendJSON(`/api/compliance/assets/${id}`, "DELETE");
+
+// Seed the register from the bid library's credential items (idempotent — only
+// populates an empty register). Throws 409 if the library isn't available.
+export const importComplianceFromLibrary = () =>
+  sendJSON("/api/compliance/import-from-library", "POST");
+
+// Download an asset's stored file. Fetches through apiFetch (so the Entra Bearer
+// is attached when auth is on) and triggers a browser save via a blob URL.
+export const downloadComplianceAsset = async (id, filename) => {
+  const res = await apiFetch(`/api/compliance/assets/${id}/file`);
+  if (!res.ok) throw await errorFrom(res);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || `asset-${id}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};

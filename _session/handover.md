@@ -7,77 +7,82 @@
 
 ## Status
 
-`2026-07-12` (session 18) — **Triage is now an explicit "pull" gate — only opps the user picks reach the
-board.** Bug the user spotted: the Triage board ran the *same unfiltered query as Search*, so all 24 stored
-opportunities showed up as "Untriaged" by default. Fix (mirrors the existing `triage_dismissals` side-table
-pattern so Search stays untouched): new **`triage_selections`** table + `selected_opportunity_ids()` /
-`set_triage_selected()` helpers ([src/db.py](../src/db.py)); the board now skips any opp that isn't
-selected **and** isn't already worked (`triage_board` in [src/api.py](../src/api.py) — the OR-worked clause
-keeps existing Go/No-go decisions from vanishing); new `PUT /api/opportunities/{id}/triage-select`; the
-Search "Triage this →" button now actually pulls the opp in before navigating
-([SearchStage.jsx](../web/src/stages/SearchStage.jsx)); Triage empty-state copy updated
-([TriageStage.jsx](../web/src/stages/TriageStage.jsx)). Verified: `make check` green (53 tests + doc + vite);
-TestClient select→board→deselect round-trip, worked-item backward-compat, and 404 on missing opp; **live
-`/api/triage/board` on the real `bids.db` now returns 0 items (was 24).** DB gains an empty `triage_selections`
-table; **still 24 opportunities, empty pipeline.**
+`2026-07-12` (session 19) — **Shipped the C-series "Compliance & Renewals" view — the highest
+founding-purpose payoff.** The tool now has an **org-level, app-OWNED compliance-asset register**: every
+credential / policy / framework and its renewal status in one screen, lifting the "expired cert at bid time"
+failure (the reason this project exists) out of per-bid burial. Key design call the user reframed mid-scope:
+this is the *system of record*, **not** a read of the bid library — assets are **uploaded** (bytes → a
+gitignored store) or registered as references, are **updatable**, and expiry is **derived** to drive alerts.
 
-⚠️ **Gotcha that wasted the first pass:** the running `uvicorn` had been started **without `--reload`**, so
-it kept serving pre-change code and the user's browser still showed 24. Restarted with `--reload`; endpoint
-now correct. If a code change "doesn't take", check the server was started with `--reload` first.
+Built (all live-verified against the real `bids.db` + a running server):
+- **`src/db.py`** — new `compliance_assets` table + CRUD helpers (`insert/get/list/update/delete` +
+  idempotent `seed_compliance_assets`). Expiry STATUS is never stored — derived live (facts decay).
+- **`src/compliance_store.py`** (new) — the file-store seam, mirroring `library.py`: **`LocalFileStore`**
+  now (gitignored `src/compliance_store/`), **`SharePointStore`** later behind the same interface. Stored
+  paths are generated (uuid+ext), never the client filename → **path traversal blocked** (verified).
+- **`src/compliance.py`** (new) — expiry derivation (reuses `library.py` date maths), board sort
+  (urgency-first), summary counts, and seed-from-library.
+- **`src/api.py`** — `GET /api/compliance/board|reference`, `POST /assets` (multipart upload),
+  `PUT /assets/{id}`, `DELETE /assets/{id}`, `GET /assets/{id}/file` (attachment-only), `POST
+  /import-from-library`; startup one-time seed; **CORS gained DELETE**.
+- **Frontend** — new top-level **`ComplianceView.jsx`** (`#compliance` route, open to all — TopBar "🛡
+  Compliance" button), `api.js` helpers, KPI banner + urgency-sorted register + upload/edit/delete.
+- **`python-multipart`** added to `requirements.txt`; `src/compliance_store/` added to `.gitignore`.
 
-⚠️ **User action — S5 (High, still open):** the real Anthropic key in gitignored `src/.env` must be
-**rotated/revoked** by a human — I can't rotate a credential. `.env.example` + `.gitignore` are already correct.
+Verified: **`make check` green — 63 backend tests (+10 new) + doc-consistency + vite build clean.** Live on
+real `bids.db`: startup **seeded 19 assets from the real bid library, incl. the EXPIRED ISO (2025-10-31)**;
+upload → **expiry auto-mined from notes** → attachment download → PUT update → `422` on bad type/date →
+delete removes the file → `404`. **DB now carries a `compliance_assets` table (19 rows).**
+
+⚠️ **Not committed.** All changes are on disk only (7 modified + 4 new files). Commit when you're ready —
+I did not, since you didn't ask. ⚠️ **Not yet clicked in a live browser** this session (API + build verified;
+the UI is build-clean but I couldn't drive a browser here — worth a manual look).
 
 ## Active task
 
-**No task in flight.** The pull-gate is shipped + committed. Remaining, explicitly deferred
-(tracked in `state.yaml → deferred`):
-
-1. **S5 key rotation** — user action, do this first (security).
-2. **Structural refactors** — R1 (split ~1.6k-line `api.py` into routers), R3 (dedupe connector
-   `to_record`/`run`), C3 (shared fetch/backoff helper). Extract R3/C3 together when convenient (or when a
-   3rd source lands).
-3. **Azure readiness A1–A9** — Functions host, Bicep/IaC, `GraphSharePoint` provider, `pyodbc`; mostly
-   net-new and A3 is blocked without MS Graph. Ties into the parallel Azure track (Phases B+C done).
-4. **C-series "Compliance & Renewals" view** ⭐ — still the highest founding-purpose payoff (`todo.md`);
-   scope with the user first.
-
-*(Follow-on the user may want next: the board's ✕ still `dismiss`es (reversible hide) rather than
-de-selecting; in a pull model these overlap. Left as-is deliberately — flag if you want ✕ to remove the
-selection outright.)*
-
-`make check` / `make check-fast` (`scripts/check.sh`) is the canonical health baseline — run before
-committing nontrivial changes.
+**No task in flight.** C-series C3 MVP is shipped. Natural follow-ons (in `state.yaml → deferred`):
+1. **Commit** this session's work (your call).
+2. **C-series phase 2** — extract expiry from uploaded **PDF/docx bytes** (today it's mined from the
+   name/notes text only); **C4** framework/contract membership tracker (category exists, no data source yet);
+   file-replace in the edit form.
+3. **Structural refactors** — R1 (api.py is now ~1.9k lines — split routers, compliance is a clean seam to
+   carve first), R3 connector dedupe.
+4. **S5 key rotation** — your action (rotate the Anthropic key in `src/.env`).
 
 ## Blockers / prerequisites
 
-- **Empty pipeline is expected, not a regression** — the session-13 cleanse removed the seeded demo bids
-  so a real bid could be pushed through. Plan/Manage/Complete/Learn boards read 0 bids until an
-  opportunity is triaged to "Go". Re-seed with `seed_*_demo.py --clear` for reviewable demo data.
-- **Live `GraphSharePoint`** — no MS Graph in this environment; Complete runs on the sanctioned local
-  export via `LocalMirror`. **Azure Phase D** needs a subscription. Don't fake either — see CLAUDE.md hard rules.
+- **Empty *bid* pipeline is expected** (session-13 cleanse) — Plan/Manage/Complete/Learn read 0 bids until an
+  opp is triaged to Go. The new **compliance register is separate** and now seeded (19).
+- **Live `GraphSharePoint` / `SharePointStore`** — no MS Graph here; Complete uses `LocalMirror`, Compliance
+  uses `LocalFileStore`. Both drop the live provider in behind the seam later. Don't fake either.
+- **Azure correction:** the **FWF Intern subscription IS live** (verified `az account list` 2026-07-12) but
+  **no resource group for this app exists yet**. The old `needs_subscription` note is stale; Azure Phase D's
+  real gap is now Bicep/IaC (A1) + creating the RG, not access.
 
 ## Open decisions
 
-1. **What next** — C-series (scope first) vs U-series polish vs Wave 2 bugs vs Azure Phase D. Not decided.
-2. **AI-draft provenance persistence** — save the evidence/win-themes alongside the saved answer? (Not yet.)
-3. **Live `GraphSharePoint` / Azure OpenAI timing** — build behind the existing seams when access is provisioned.
+1. **What next** — commit + C4/phase-2 compliance, vs R1 router split (compliance makes a clean first carve),
+   vs Azure IaC now that the sub is confirmed. Not decided.
+2. **Compliance write-gating** — asset create/update/delete are open to any authenticated user (like bid
+   saves), not Admin-only. Revisit if compliance should be ops-restricted.
+3. **File-content expiry extraction** — parse dates out of the PDF/docx itself (needs a parser dep), vs the
+   current text-field mining. Deferred.
 
 ## Auth quick-reference
 
-Local dev default is `LOCAL_AUTH_BYPASS=1` (API unauthenticated, synthetic Admin) + `VITE_AAD_*` unset
-(SPA no sign-in gate) → runs like sessions 1–9. To exercise role-gating locally, add `LOCAL_AUTH_ROLE=User`.
-To turn auth on, set `LOCAL_AUTH_BYPASS=0` + `AAD_TENANT_ID` + `AAD_API_CLIENT_ID` (+ all three `VITE_AAD_*`).
-Full config lives in the templates: `src/.env.example` (API) and `web/.env.example` (SPA).
+Local dev default is `LOCAL_AUTH_BYPASS=1` (API unauthenticated, synthetic Admin) + `VITE_AAD_*` unset →
+runs like sessions 1–9. To exercise role-gating add `LOCAL_AUTH_ROLE=User`. Full config: `src/.env.example`
+(API) + `web/.env.example` (SPA). New env knobs: `COMPLIANCE_STORE` (default `local_file`),
+`COMPLIANCE_STORE_ROOT` (override the store dir, used by tests).
 
 ## Start-of-session checklist
 
 1. Read [`state.yaml`](state.yaml), [`CLAUDE.md`](../CLAUDE.md), this file, and [`todo.md`](todo.md).
-2. Confirm DB: `python3 src/db.py` → `opportunities: 24`, **empty pipeline** (expected — see Blockers).
+2. Confirm DB: `python3 src/db.py` → `opportunities: 24`, empty *bid* pipeline; the compliance register holds
+   19 seeded assets (separate from the bid pipeline).
 3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev` → <http://localhost:5173>.
-4. Complete's library reads the gitignored export at `knowledge/SharePoint Folder/Bids/`; absent = "library
-   not connected" (honest, not a bug). `src/.env` holds the Anthropic key for AI drafting.
-5. Dual-mode DB defaults to local sqlite; SQL Server path via `docker compose up -d --wait db` + `DB_URL`.
+   The **"🛡 Compliance"** button (top bar) opens the new `#compliance` view.
+4. Complete's library reads the gitignored export; Compliance's files live in gitignored `src/compliance_store/`.
 
 ## End-of-session checklist
 

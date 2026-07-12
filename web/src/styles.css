@@ -757,3 +757,24 @@ header.top {
 .ai-meta { border-top: 1px dashed var(--line); padding-top: 9px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .ai-meta p { margin: 0; line-height: 1.5; }
 .ai-gaps { color: var(--warn); }
+
+/* --- Compliance & Renewals (C-series): org-level asset register ----------- */
+.compliance .stage-sub { max-width: 720px; margin: 4px 0 14px; }
+.comp-stats { margin-bottom: 12px; }
+.compliance .alert-strip { border: 1px solid var(--line); border-left-width: 3px; border-radius: 8px; padding: 8px 12px; font-size: 13px; background: var(--paper); margin-bottom: 14px; }
+.comp-form { margin-bottom: 16px; }
+.comp-form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; }
+.comp-form textarea { width: 100%; resize: vertical; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); }
+/* Six-column register grid (Asset | Category | Owner | Expiry | File | actions). */
+.comp-ledger .comp-row { grid-template-columns: 1.6fr 1fr 0.9fr 1.1fr 1.1fr auto; align-items: center; gap: 10px; }
+.comp-name { font-weight: 640; }
+.comp-cat { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.comp-noref { color: var(--faint); font-size: 11px; }
+.comp-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.mini-btn.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, var(--line)); }
+.mini-btn.danger:hover { background: var(--crit-soft); }
+.comp-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+@media (max-width: 720px) {
+  .comp-form-grid { grid-template-columns: 1fr; }
+  .comp-ledger .comp-row { grid-template-columns: 1fr 1fr; }
+}

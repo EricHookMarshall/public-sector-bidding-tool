@@ -3,6 +3,65 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 19) — C-series "Compliance & Renewals" view shipped
+
+**Context.** Opened on a terse status line ("still no rg in az") that I first mis-read as a task — the user
+corrected sharply: it was a statement (no Resource Group in Azure), the question was "what's next?". Saved
+that as a working-style memory. Chose **C-series** (highest founding-purpose payoff). While scoping, the user
+**reframed C3**: the app should be the **system of record** for compliance assets (upload to a store, log
+file locations, updatable, expiry extracted) — *not* a read of the bid library. Locked: **real file upload
+now** (gitignored store + SharePoint seam later), **seed from the current library** on day one, **new
+top-level view**.
+
+**Work done (all verified before it was called done).**
+- **`src/db.py`** — new `compliance_assets` table (+ `asset_uid` for cross-dialect id read-back) and CRUD
+  helpers: `insert/get/list/update/delete_compliance_asset` + idempotent `seed_compliance_assets`
+  (inserts only when the register is empty). Field allow-list guards against column smuggling.
+- **`src/compliance_store.py`** (new) — the file-store seam, mirroring `library.py`'s provider pattern:
+  `LocalFileStore` (gitignored `src/compliance_store/`) now, `SharePointStore` later behind the same
+  interface (`COMPLIANCE_STORE` env). Stored paths are `uuid+ext`, never the client filename; every
+  read/delete re-confines to the root → **path traversal blocked**. 25 MB cap + allowed-extension filter.
+- **`src/compliance.py`** (new) — expiry derivation **live against today** (reuses `library.py` date maths,
+  so Complete's ledger and this view agree), with a fallback that **mines a date from name/notes** when no
+  `expiry_date` is set; board sort (expired→soonest→ok→undated); status summary; seed-from-library
+  (evidence categories only, carries extracted expiry).
+- **`src/api.py`** — full CRUD: `GET /api/compliance/board|reference`, `POST /assets` (multipart, optional
+  file), `PUT /assets/{id}`, `DELETE /assets/{id}`, `GET /assets/{id}/file` (**attachment-only**, generic
+  content-type so a stored HTML/SVG can't execute), `POST /import-from-library`. One-time startup seed in
+  lifespan (no-op once populated / when library absent — never fakes). **CORS gained `DELETE`.** ISO-date
+  and file-type/size validation → `422`/`413`.
+- **Frontend** — new top-level **`ComplianceView.jsx`** (`#compliance` route via a generalised
+  `routeFromHash`; a **"🛡 Compliance"** TopBar button open to all, not just Admin), `api.js` helpers
+  (incl. a `sendForm` multipart helper + blob download), KPI banner (expired/expiring/no-date), an
+  urgency-sorted register with per-row edit/delete/download, and an "Import from bid library" empty state.
+  Small CSS block reusing the app's `.pd-facts`/`.ledger` idioms.
+- **Deps/hygiene** — `python-multipart` added to `requirements.txt`; `src/compliance_store/` gitignored.
+
+**Verification (honest, live).** `make check` green — **63 backend tests (+10 new: expiry derivation,
+store round-trip + traversal, DB CRUD + idempotent seed) + doc-consistency + vite build clean**. Against the
+real running server + `bids.db`: startup **seeded 19 assets from the real bid library, incl. the EXPIRED ISO
+27001 (2025-10-31)** surfaced org-wide — the founding failure now visible in one place. Full cycle: upload a
+cert with expiry only in the notes → **auto-mined to 2026-09-30 / expiring_soon**; attachment download (28
+bytes, `Content-Disposition: attachment`); `PUT` expiry → recomputed; `.exe` upload and bad date → `422`;
+delete → file removed + `404` after. `git check-ignore` confirms the store is **IGNORED** — no confidential
+bytes tracked.
+
+**Decisions.** (1) App-owned table + file-store seam over reading the library — the user's reframe; the
+store mirrors `LocalMirror→GraphSharePoint` exactly. (2) Expiry status derived, never stored (facts decay).
+(3) Writes open to any authenticated user (like bid saves), not Admin-only — flagged to revisit. (4) File
+upload real; **file-content parsing (PDF/docx) deferred** — today expiry is mined from the text fields.
+
+**Azure aside (source-of-truth fix).** Verified `az account list`: the **FWF Intern subscription is live**
+(`0965…1ef1`), and the TalentGrow blueprint RGs exist. So `state.yaml`'s old
+`azure_phase_d_hosting: needs_subscription` was stale → corrected to `iac_not_built` (the real gap is A1
+Bicep, not access). Did **not** touch Azure — the user was explicit about not drifting there.
+
+**Not committed.** All on disk (7 modified + 4 new). Left for the user to commit. UI is build- and
+API-verified but **not clicked in a live browser** this session.
+
+**Next.** Commit (user's call); then C4 frameworks / phase-2 file-content extraction, or R1 router split
+(compliance is a clean first carve of the now-~1.9k-line api.py).
+
 ## 2026-07-12 (session 18) — Triage becomes an explicit "pull" gate
 
 **Context.** User observed that the Triage board (Stage 2) showed *every* stored opportunity by default —

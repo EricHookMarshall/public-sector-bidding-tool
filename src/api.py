@@ -48,13 +48,15 @@ def _load_dotenv():
 
 _load_dotenv()
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 import bidplan as P
 import clarification as M
+import compliance as CMP
+import compliance_store as CSTORE
 import config as app_config
 import complete_ai
 import cpv_catalog
@@ -77,6 +79,7 @@ async def lifespan(app):
     conn = db.connect()
     try:
         db.init_db(conn)
+        _bootstrap_compliance_register(conn)
     finally:
         conn.close()
     yield
@@ -116,7 +119,7 @@ _allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] or _DE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -1679,6 +1682,200 @@ def save_bid_outcome(bid_id: int, body: dict = Body(default_factory=dict), conn=
 
     db.upsert_bid_outcome(conn, bid_id, fields)
     return _outcome_payload(conn, bid_id)
+
+
+# ---- Compliance & Renewals (C-series) --------------------------------------
+# The app-owned compliance-asset register (compliance.py / compliance_store.py):
+# an ORG-LEVEL view of every credential/policy/framework + its renewal status,
+# lifting the "expired cert at bid time" failure out of per-bid burial. Assets are
+# uploaded here (bytes → gitignored store) or registered as references; expiry is
+# derived live so a lapse is impossible to miss.
+
+
+def _require_compliance_asset(conn, asset_id):
+    """Fetch a compliance asset or raise 404."""
+    asset = db.get_compliance_asset(conn, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="compliance asset not found")
+    return asset
+
+
+def _validate_iso_or_blank(value):
+    """A blank or valid ISO (YYYY-MM-DD) date, else 422 — so a typo can't land a
+    junk expiry that silently never alerts."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    try:
+        datetime.date.fromisoformat(v)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"expiry_date must be ISO YYYY-MM-DD, got '{v}'")
+    return v
+
+
+def _compliance_asset_payload(conn, asset_id):
+    """One asset with derived expiry + whether its file is actually in the store."""
+    asset = CMP.derive_expiry(db.get_compliance_asset(conn, asset_id))
+    asset["has_file"] = CSTORE.get_store().exists(asset.get("stored_path"))
+    return asset
+
+
+def _bootstrap_compliance_register(conn):
+    """One-time bootstrap: on a fresh DB, seed the compliance register from the bid
+    library (incl. any already-expired credential) so the org view isn't empty on
+    day one. No-op once the register has rows, or when the library isn't present —
+    never fakes data (CLAUDE.md hard rule)."""
+    try:
+        if db.list_compliance_assets(conn):
+            return
+        prov = LIB.get_provider()
+        if not prov.available():
+            return
+        n = db.seed_compliance_assets(conn, CMP.seed_assets_from_library(prov.items()))
+        if n:
+            log.info("compliance register seeded from bid library: %d asset(s)", n)
+    except Exception:  # bootstrap must never block startup
+        log.warning("compliance seed-from-library skipped", exc_info=True)
+
+
+@app.get("/api/compliance/reference")
+def compliance_reference():
+    """Vocabulary for the Compliance view (categories + the expiring-soon window)."""
+    return CMP.reference()
+
+
+@app.get("/api/compliance/board")
+def compliance_board(conn=Depends(get_conn)):
+    """The org-level Compliance & Renewals register: every asset with derived
+    expiry status, sorted soonest-to-lapse first, plus status counts for the
+    banner. `library_available` tells the UI whether an import is offerable."""
+    assets = db.list_compliance_assets(conn)
+    rows = CMP.board(assets)
+    store = CSTORE.get_store()
+    for a in rows:
+        a["has_file"] = store.exists(a.get("stored_path"))
+    return {
+        "count": len(rows),
+        "assets": rows,
+        "summary": CMP.summary(rows),
+        "reference": CMP.reference(),
+        "library_available": LIB.get_provider().available(),
+    }
+
+
+@app.post("/api/compliance/assets")
+async def create_compliance_asset(
+    name: str = Form(...),
+    category: str = Form("Company Credentials"),
+    expiry_date: str = Form(""),
+    review_frequency: str = Form(""),
+    owner: str = Form(""),
+    notes: str = Form(""),
+    file: UploadFile | None = File(None),
+    conn=Depends(get_conn),
+):
+    """Register (or upload) one compliance asset. multipart/form-data: the metadata
+    fields, plus an optional `file` whose bytes go to the store (source=upload) —
+    without a file it's a reference (source=reference). Expiry is derived on read."""
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    fields = {
+        "name": name,
+        "category": (category or "").strip() or "Company Credentials",
+        "expiry_date": _validate_iso_or_blank(expiry_date),
+        "review_frequency": (review_frequency or "").strip(),
+        "owner": (owner or "").strip(),
+        "notes": (notes or "").strip(),
+        "source": "reference",
+        "file_name": "", "stored_path": "", "content_type": "", "size_bytes": "",
+    }
+    if file is not None and file.filename:
+        if not CSTORE.safe_ext(file.filename):
+            raise HTTPException(status_code=422,
+                                detail=f"unsupported file type (allowed: {', '.join(sorted(CSTORE.ALLOWED_EXTENSIONS))})")
+        data = await file.read()
+        if len(data) > CSTORE.MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413,
+                                detail=f"file exceeds the {CSTORE.MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit")
+        stored = CSTORE.get_store().save(data, file.filename)
+        fields.update({
+            "source": "upload",
+            "file_name": os.path.basename(file.filename),
+            "stored_path": stored,
+            "content_type": file.content_type or "",
+            "size_bytes": str(len(data)),
+        })
+    asset_id = db.insert_compliance_asset(conn, fields)
+    return _compliance_asset_payload(conn, asset_id)
+
+
+class ComplianceAssetUpdate(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    expiry_date: str | None = None
+    review_frequency: str | None = None
+    owner: str | None = None
+    notes: str | None = None
+
+
+@app.put("/api/compliance/assets/{asset_id}")
+def update_compliance_asset(asset_id: int, body: ComplianceAssetUpdate, conn=Depends(get_conn)):
+    """Update an asset's metadata (name/category/expiry/owner/notes/review). Only
+    these fields; the stored file is left untouched (re-upload to replace it). The
+    response mirrors GET so the UI can re-render in place."""
+    _require_compliance_asset(conn, asset_id)
+    fields = body.model_dump(exclude_none=True)
+    if "expiry_date" in fields:
+        fields["expiry_date"] = _validate_iso_or_blank(fields["expiry_date"])
+    if "name" in fields and not fields["name"].strip():
+        raise HTTPException(status_code=422, detail="name cannot be blank")
+    db.update_compliance_asset(conn, asset_id, fields)
+    return _compliance_asset_payload(conn, asset_id)
+
+
+@app.delete("/api/compliance/assets/{asset_id}")
+def delete_compliance_asset(asset_id: int, conn=Depends(get_conn)):
+    """Delete an asset and remove its stored file (if any). 404 if it doesn't exist."""
+    stored_path = db.delete_compliance_asset(conn, asset_id)
+    if stored_path is None:
+        raise HTTPException(status_code=404, detail="compliance asset not found")
+    if stored_path:
+        CSTORE.get_store().delete(stored_path)
+    return {"deleted": asset_id}
+
+
+@app.get("/api/compliance/assets/{asset_id}/file")
+def download_compliance_asset(asset_id: int, conn=Depends(get_conn)):
+    """Download the stored file for an asset. Always served as an attachment with a
+    generic content-type, so a stored HTML/SVG can never render/execute in the app
+    origin. 404 if the asset has no stored file."""
+    asset = _require_compliance_asset(conn, asset_id)
+    stored = asset.get("stored_path") or ""
+    store = CSTORE.get_store()
+    if not stored or not store.exists(stored):
+        raise HTTPException(status_code=404, detail="no file stored for this asset")
+    data = store.open(stored)
+    # Strip CR/LF/quotes so the filename can't break out of the header.
+    filename = re.sub(r'[\r\n"]', "", asset.get("file_name") or f"asset-{asset_id}")[:200]
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/compliance/import-from-library")
+def import_compliance_from_library(conn=Depends(get_conn)):
+    """Seed the register from the bid library's credential items (idempotent — only
+    populates an empty register). 409 if the library isn't available rather than
+    faking data."""
+    prov = LIB.get_provider()
+    if not prov.available():
+        raise HTTPException(status_code=409,
+                            detail=f"bid library not available: {prov.unavailable_reason()}")
+    n = db.seed_compliance_assets(conn, CMP.seed_assets_from_library(prov.items()))
+    return {"imported": n}
 
 
 @app.get("/api/opportunities/{opp_id}")

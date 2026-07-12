@@ -6,11 +6,15 @@
 
 ## Feature backlog (needs scoping with the user)
 
-- [ ] **C-series — "Compliance & Renewals" view** ⭐ (highest founding-purpose payoff — the missed-renewal
-      failure the tool exists to prevent). **C3:** compliance docs already exist + are expiry-tracked in
-      `library.py` (*Company Credentials*; ISO reads **EXPIRED 2025-10-31** in live data) — gap = structured
-      renewal dates for the rest + an **org-level** view (today buried per-bid in Complete). **C4:**
-      framework/contract membership-period tracker (RM6263-expired precedent). **Scope with the user first.**
+- [x] **C3 — "Compliance & Renewals" view** ⭐ (session 19) — SHIPPED. App-owned `compliance_assets`
+      register + gitignored file store (`compliance_store.py`, SharePoint seam later) + org-level view
+      (`ComplianceView.jsx`, `#compliance`). Uploads, updatable, expiry derived live; seeded from the real
+      library incl. the EXPIRED ISO. Full retrospective in `progress.md`.
+- [ ] **C-series follow-ons** (from the C3 MVP) — **phase-2:** extract expiry from uploaded **PDF/docx
+      bytes** (today mined from name/notes text only); **file-replace** in the edit form (delete+re-add now).
+      **C4:** framework/contract membership-period tracker (RM6263-expired precedent) — the `Frameworks`
+      category exists but has no data source yet; scope with the user. **SharePointStore** behind the
+      `compliance_store` seam when MS Graph lands.
 - [ ] **C1 — clarifications: discoverability + AI dedupe** — the FOR003 register exists on Manage (click a
       bid); make the drill-in obvious (board shows only a count). NEW: AI-ingest incoming CQs, dedupe, flag
       "already answered by CQ #n".
@@ -46,7 +50,10 @@
 - [ ] **Azure Phase C tail — live MSAL browser sign-in** — redirect round-trip needs a real dev-tenant app
       reg (no emulator). Supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`, set `LOCAL_AUTH_BYPASS=0`,
       sign in, confirm the Bearer reaches the API and role-gating works.
-- [ ] **Azure Phase D — hosting scaffold** per `docs/design/azure-target.md` (needs an Azure subscription).
+- [ ] **Azure Phase D — hosting scaffold** per `docs/design/azure-target.md`. NOTE (2026-07-12): the **FWF
+      Intern subscription is live** (verified `az account list`; TalentGrow blueprint RGs exist) — so the
+      blocker is no longer access, it's the net-new **Bicep/IaC (A1)**. There is still **no resource group
+      for this app** — creating one is a one-liner, but the real work is the IaC.
 - [ ] **Azure OpenAI provider** — `src/llm.py` has a documented skeleton, not implemented; build when Azure
       access is provisioned (sequenced into Phase E).
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same notice

@@ -14,6 +14,7 @@ import CompleteStage from "./stages/CompleteStage.jsx";
 import ManageStage from "./stages/ManageStage.jsx";
 import LearnStage from "./stages/LearnStage.jsx";
 import SettingsView from "./SettingsView.jsx";
+import ComplianceView from "./ComplianceView.jsx";
 
 // Which component renders each stage. All six stages are live, wired to bids.db.
 const VIEWS = {
@@ -29,6 +30,15 @@ function hashId() {
   return window.location.hash.replace(/^#/, "");
 }
 
+// Routes outside the 6-stage journey: Settings (#settings, Admin-only) and
+// Compliance & Renewals (#compliance, everyone). Anything else is the journey.
+function routeFromHash() {
+  const id = hashId();
+  if (id === "settings") return "settings";
+  if (id === "compliance") return "compliance";
+  return "journey";
+}
+
 function stageIndexFromHash() {
   const i = STAGES.findIndex((s) => s.id === hashId());
   return i === -1 ? 0 : i;
@@ -36,13 +46,13 @@ function stageIndexFromHash() {
 
 export default function App() {
   const [cur, setCur] = useState(stageIndexFromHash);
-  // "settings" is a route outside the 6-stage journey (its own #settings view).
-  const [route, setRoute] = useState(() => (hashId() === "settings" ? "settings" : "journey"));
+  // Routes outside the 6-stage journey (Settings, Compliance) have their own hash.
+  const [route, setRoute] = useState(routeFromHash);
 
   // Keep state in sync with the hash (back/forward, manual edits, deep links).
   useEffect(() => {
     const onHash = () => {
-      setRoute(hashId() === "settings" ? "settings" : "journey");
+      setRoute(routeFromHash());
       setCur(stageIndexFromHash());
     };
     window.addEventListener("hashchange", onHash);
@@ -59,7 +69,7 @@ export default function App() {
   // and while on the Settings view — arrows there shouldn't jump to a stage).
   useEffect(() => {
     const onKey = (e) => {
-      if (hashId() === "settings") return;
+      if (routeFromHash() !== "journey") return;
       const t = e.target;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.key === "ArrowRight") go(cur + 1);
@@ -101,6 +111,16 @@ export default function App() {
 
   if (isAadConfigured && !isAuthenticated) {
     return <SignInScreen onSignIn={() => instance.loginRedirect({ scopes: apiScopes })} />;
+  }
+
+  // Compliance & Renewals — an org-level view outside the journey, open to all.
+  if (route === "compliance") {
+    return (
+      <>
+        <TopBar isAdmin={isAdmin} />
+        <ComplianceView />
+      </>
+    );
   }
 
   // Settings is Admin-only. A non-Admin who deep-links #settings falls through to
@@ -238,6 +258,13 @@ function TopBar({ isAdmin = false }) {
           </div>
         </div>
         <div className="top-spacer" />
+        <button
+          className="ghost-btn"
+          onClick={() => { window.location.hash = "compliance"; }}
+          aria-label="Compliance and renewals"
+        >
+          🛡 Compliance
+        </button>
         {isAdmin && (
           <button
             className="ghost-btn"

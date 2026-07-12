@@ -2,6 +2,9 @@
 # Standard library covers the connectors; db.py + the JSON API need the below.
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# Multipart form parsing — required by FastAPI for the compliance-asset file
+# uploads (api.py Form/UploadFile). Without it those routes fail at import time.
+python-multipart>=0.0.9
 # Dual-mode data layer (src/db.py): SQLAlchemy Core over SQLite locally, or Azure
 # SQL / SQL Server when DB_URL is set. SQLAlchemy is always required; pyodbc only
 # for the SQL Server / Azure SQL backend (also needs the system ODBC Driver 18),
