@@ -11,8 +11,10 @@ next_action: user_choose_commit_F1_or_surface_partition_errors_or_next
 
 git:
   branch: main
-  clean: false                         # session-20 F1 work on disk only — NOT committed (2 new + 4 modified files)
-  last_commit: a72e427                  # tip before session-20 F1 work; PCS connector not yet committed
+  clean: true                          # session-20 F1 (PCS + Sell2Wales) committed + pushed (b211bd9); this state.yaml sync lands one ahead
+  # The bookkeeping commit that saves this file necessarily lands one ahead of the
+  # feature commit — that single step is by design, not drift; verify against `git log`.
+  last_commit: b211bd9                  # session-20 F1 connectors + docs, pushed to origin/main
 
 db:                                    # expected on resume
   opportunities: 24
