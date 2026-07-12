@@ -56,6 +56,15 @@ settled decisions, verification evidence — into `progress.md` (Step 5) **befor
 restate what `CLAUDE.md`, `state.yaml`, or `todo.md` already own; point to them instead. Only update
 the handover if the current state or the next action actually changed this session.
 
+**Never assert commit status in the handover (or todo).** You are writing these docs *before* Step 7's
+commit, so any "not committed / uncommitted / N files on disk / not yet pushed" claim is true for a few
+seconds and then frozen false the moment the docs get committed — that is exactly the recurring lie this
+rule exists to kill. Commit state is **git's** (authority rank 1): whoever needs it runs `git status` /
+`git log`. The *only* commit reference in the session docs is `state.yaml`'s `last_commit: <hash>` — a
+hash plus the documented "+1 docs-sync commit" note, which is decay-proof because it never flips. If you
+want to point at commit state from the handover, link to git, don't snapshot it. The `make check`
+doc-consistency guard enforces this — it will FAIL the build if a commit-status word reappears.
+
 ## Step 5 — Prepend to `_session/progress.md` (cold history — immutable, newest-first)
 
 Add a new dated entry **at the top** (most-recent-first), using this shape:

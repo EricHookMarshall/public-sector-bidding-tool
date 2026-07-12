@@ -43,10 +43,17 @@ if [ -n "$preview_hits" ]; then
 else
   ok "no stale 'preview screen' labels in the live docs"
 fi
-if grep -rIn "Uncommitted" _session/handover.md _session/todo.md >/dev/null 2>&1; then
-  bad "handover/todo still label committed work 'Uncommitted'"
+# A committed doc must not assert its own commit status: it's written before the
+# commit, so any "not committed / uncommitted / on disk only / not pushed" claim
+# freezes false the instant the doc is committed. Commit state is git's (authority
+# rank 1); state.yaml's last_commit hash is the only sanctioned commit reference.
+# Match the assertion phrasings, not the "commit state lives in git" pointer.
+commit_claims="$(grep -rInE "[Uu]ncommitted|[Nn]ot committed|not yet committed|on disk only|not (yet )?pushed" _session/handover.md _session/todo.md 2>/dev/null)"
+if [ -n "$commit_claims" ]; then
+  bad "a session doc asserts its own commit status — that's git's job (authority rank 1), not the docs"
+  printf '%s\n' "$commit_claims"
 else
-  ok "no false 'Uncommitted' labels in the session docs"
+  ok "no frozen commit-status claims in the session docs"
 fi
 if [ -f _session/state.yaml ]; then ok "_session/state.yaml present"; else bad "_session/state.yaml missing"; fi
 

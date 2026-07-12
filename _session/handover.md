@@ -24,19 +24,18 @@
 - **`make check` green: 80 backend tests** (74 + 2 partition-surfacing + 4 hide-closed), doc-consistency, vite
   build (133.49 kB). `bids.db` untouched — verification was GET-only, no live search run.
 
-⚠️ **Not committed.** 3 modified (`src/api.py`, `web/src/stages/SearchStage.jsx`, `web/src/styles.css`) + 2
-new test files (`tests/test_search_surfacing.py`, `tests/test_search_hide_closed.py`), all on disk only.
+> **Commit state lives in git, not in this doc.** Whether work is saved/pushed is git's record (authority
+> rank 1) — run `git status` / `git log`. `state.yaml` carries the last feature-commit hash (the docs-sync
+> commit lands +1 by design); that hash is the only commit reference the session docs keep.
 
 ## Active task
 
 **No task in flight — both punch-list items are done; next step is the user's call.**
 
-1. **Commit this session's work** (your call — nothing staged yet; session 20's F1 connectors are already
-   committed/pushed at `7c954e2`, so this would be a clean, separate commit).
-2. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
+1. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
    aspx-postback form (`__VIEWSTATE` present), not a clean GET. Bigger lift.
-3. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
-4. Or pick up **G1–G3** (GCA/frameworks intelligence — user reqs from session 19, not yet built).
+2. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
+3. Or pick up **G1–G3** (GCA/frameworks intelligence — user reqs from session 19, not yet built).
 
 ## Blockers / prerequisites
 
@@ -47,8 +46,8 @@ new test files (`tests/test_search_surfacing.py`, `tests/test_search_hide_closed
 
 ## Open decisions
 
-1. **What next** — commit this session's work, chase the Sell2Wales bulk-download fallback, do F1
-   remainder (eTendersNI/G-Cloud), or start on G1–G3. Not decided.
+1. **What next** — chase the Sell2Wales bulk-download fallback, do F1 remainder (eTendersNI/G-Cloud),
+   or start on G1–G3. Not decided.
 2. **Cert pin maintenance** — `src/certs/sectigo_dv_r36_intermediate.pem` is shared by PCS + Sell2Wales;
    refresh instructions live in the module docstrings + `src/certs/README.md` if either site changes CA.
 3. Carried from session 19 (untouched this session): compliance write-gating, file-content expiry
@@ -66,7 +65,7 @@ Unchanged this session. Local dev default `LOCAL_AUTH_BYPASS=1`. Full config: `s
 3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev`. Search now
    default-hides closed opps (toggle in the Filters panel) and shows a partial-results warning if a source
    (e.g. Sell2Wales) returns `incomplete`.
-4. `git status` will show 3 modified + 2 new files from this session, uncommitted.
+4. `git status` for the true commit state (this doc doesn't duplicate it).
 
 ## End-of-session checklist
 
