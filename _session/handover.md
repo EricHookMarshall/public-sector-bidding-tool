@@ -7,35 +7,31 @@
 
 ## Status
 
-`2026-07-12` (session 21) — **Two small F-series follow-ons shipped, both from session 20's punch list:**
+`2026-07-12` (session 22) — **G-series (GCA/frameworks intelligence) shipped — G3, G1, G2, in that order:**
 
-- **Search partition-error surfacing** — `/api/search` now passes `incomplete: true` + a `failed_partitions`
-  count through on a partial source run (e.g. Sell2Wales's per-partition degrade), so a live Wales outage is
-  visible instead of masquerading as "kept 0". Raw `partition_errors` (upstream detail) are deliberately kept
-  server-side-only, matching the endpoint's existing don't-leak-internals policy. UI: an amber "⚠ partial —
-  N partition(s) unavailable upstream" note in the Search run-summary (`SearchStage.jsx`), new `.warn` style.
-- **F6 — hide closed opps by default** — `_query_opportunities` now drops `bid_status == "closed"` by default
-  unless the opp is "in flight" (in `triage_selections`, has a qualification, or has a bid) — new
-  `_inflight_opportunity_ids()` helper mirrors the Triage pull-gate carve-out. An explicit `bid_status` filter
-  always overrides. Applies to both the list view and CSV export (same query). UI: a "Hide closed (unless in
-  pipeline)" checkbox, checked by default, auto-disabled when Bid-status is explicitly filtered.
-- **Live-verified against real `bids.db`** (24 opps, read-only): `hide_closed=false` → 24 (14 open/6 unknown/4
-  closed); default → 20 (the 4 closed dropped); `bid_status=closed` override → 4, correctly bypassing the hide.
-- **`make check` green: 80 backend tests** (74 + 2 partition-surfacing + 4 hide-closed), doc-consistency, vite
-  build (133.49 kB). `bids.db` untouched — verification was GET-only, no live search run.
-
-> **Commit state lives in git, not in this doc.** Whether work is saved/pushed is git's record (authority
-> rank 1) — run `git status` / `git log`. `state.yaml` carries the last feature-commit hash (the docs-sync
-> commit lands +1 by design); that hash is the only commit reference the session docs keep.
+- **G3 — How to supply** (`#supply`, 📘): curated read-only reference — 5 routes to market (Frameworks,
+  Dynamic Markets, DPS, Catalogues, finding notices) + novice getting-started + help links. Source link per
+  route + a `verified` date + re-verify disclaimer. `src/supply_reference.py`, `GET /api/supply/reference`.
+- **G1 — Our contracts** (`#awards`, 🏆): FWF's OWN awards from the OCDS **award** packages (FTS + CF), matched
+  by **Companies House number** (GB-COH) so no false records. New `awards` sibling table +
+  `upsert_award`/`list_awards`. CH number is app config (`own_org` = `11934102`, lives in the gitignored
+  bids.db), never hardcoded. `src/own_awards.py`; `GET/PUT /api/settings/own-org`, `/api/awards/board`, `/api/awards/refresh`.
+- **G2 — Framework radar** (`#frameworks`, 📡): curated GCA agreements, but **lifecycle + recommendation
+  computed LIVE against today** (act/pursue/prepare/maintain/watch/skip) — guards the RM6263 stale-listing
+  failure. `src/frameworks_radar.py`, `GET /api/frameworks/radar`.
+- **`make check` green: 98 backend tests** (was 80; +4 supply, +8 own-awards, +6 radar), doc-consistency, vite
+  build (135.92 kB). Live via uvicorn: all endpoints OK; **G1 matcher fired on real live FTS data** (Softcat Plc).
 
 ## Active task
 
-**No task in flight — both punch-list items are done; next step is the user's call.**
+**No task in flight — G3/G1/G2 all shipped and committed to main. Two open threads:**
 
-1. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
-   aspx-postback form (`__VIEWSTATE` present), not a clean GET. Bigger lift.
-2. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
-3. Or pick up **G1–G3** (GCA/frameworks intelligence — user reqs from session 19, not yet built).
+1. **A clean award refresh** — the first refresh 429'd (I'd hammered FTS in the smokes); backoff added to both
+   sources + page pacing; a **4-year retry was running** at session close (check its output + `awards` count).
+   FWF's real awards (likely NHS, 3–4yr back) only populate once a run completes un-rate-limited.
+2. **"Bids we lost" (user req)** — NOT available from public OCDS (award notices name only the winner). Source
+   it from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector — new work.
+3. **Click the 3 new views in a live browser** — API + build verified only so far.
 
 ## Blockers / prerequisites
 

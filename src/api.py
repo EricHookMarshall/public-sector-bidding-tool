@@ -60,13 +60,16 @@ import compliance_store as CSTORE
 import config as app_config
 import complete_ai
 import cpv_catalog
+import frameworks_radar as FRAD
 import db
 import library as LIB
 import outcome as L
+import own_awards as OWN
 import qualification as Q
 import response as R
 import regions
 import sources
+import supply_reference as SUPPLY
 import triage_ai
 from auth import auth_status, require_auth, require_roles
 from llm import LLMUnavailable, get_provider
@@ -1775,6 +1778,135 @@ def _bootstrap_compliance_register(conn):
             log.info("compliance register seeded from bid library: %d asset(s)", n)
     except Exception:  # bootstrap must never block startup
         log.warning("compliance seed-from-library skipped", exc_info=True)
+
+
+# "How to supply" reference (G3): curated, read-only help on the UK routes to
+# market. Static content (no DB, no live fetch) — served verbatim from
+# supply_reference.py. Its own routed view (#supply) outside the journey.
+@app.get("/api/supply/reference")
+def supply_reference():
+    """The novice-facing 'how to supply' reference: routes to market, a
+    getting-started path, and help links. Curated + re-verifiable (carries a
+    `verified` date), never live data."""
+    return SUPPLY.reference()
+
+
+# --- G1: our own awarded contracts -----------------------------------------
+# FWF's own public-sector awards, matched from the OCDS award packages by
+# Companies House number. The number is app config (own_org), never hardcoded —
+# an empty number leaves the feature inert. Its own routed view (#awards).
+
+def _own_org(conn):
+    """FWF's identity config: {companies_house_number, legal_name}. Empty by
+    default so the feature is inert until an Admin sets the number."""
+    saved = db.get_setting(conn, "own_org", {}) or {}
+    return {
+        "companies_house_number": (saved.get("companies_house_number") or "").strip(),
+        "legal_name": (saved.get("legal_name") or "").strip(),
+    }
+
+
+def _own_ch(conn):
+    """The configured CH number in canonical form, or "" if unset."""
+    return OWN.normalise_ch(_own_org(conn)["companies_house_number"])
+
+
+@app.get("/api/settings/own-org")
+def get_own_org(conn=Depends(get_conn)):
+    """FWF's own-organisation identity (drives G1 award matching)."""
+    org = _own_org(conn)
+    return {**org, "configured": bool(_own_ch(conn))}
+
+
+class OwnOrgUpdate(BaseModel):
+    companies_house_number: str = ""
+    legal_name: str = ""
+
+
+@app.put("/api/settings/own-org", dependencies=[Depends(require_roles("Admin"))])
+def put_own_org(body: OwnOrgUpdate, conn=Depends(get_conn)):
+    """Set FWF's Companies House number (+ optional legal name). Validates the
+    number's shape so a malformed value can't silently match nothing later; a
+    blank number is allowed (it clears/keeps the feature inert)."""
+    raw = (body.companies_house_number or "").strip()
+    canon = OWN.normalise_ch(raw)
+    if canon and not (6 <= len(canon) <= 10 and canon.isalnum()):
+        raise HTTPException(
+            status_code=400,
+            detail="Companies House number looks malformed (expect ~8 alphanumerics, e.g. 11934102).",
+        )
+    db.set_setting(conn, "own_org", {
+        "companies_house_number": canon,
+        "legal_name": (body.legal_name or "").strip(),
+    })
+    return get_own_org(conn)
+
+
+def _awards_summary(awards):
+    """Headline numbers for the awards board: count, summed value, source split."""
+    total_value = 0.0
+    by_source = {}
+    for a in awards:
+        try:
+            total_value += float(a.get("value_amount") or 0)
+        except (TypeError, ValueError):
+            pass
+        by_source[a["source"]] = by_source.get(a["source"], 0) + 1
+    return {
+        "total": len(awards),
+        "total_value": total_value,
+        "by_source": by_source,
+        "latest_award_date": max((a.get("award_date") or "" for a in awards), default=""),
+    }
+
+
+@app.get("/api/awards/board")
+def awards_board(conn=Depends(get_conn)):
+    """FWF's stored own-awards (most-recently-awarded first) + a summary, plus the
+    own-org config so the UI can prompt for the CH number when it's unset."""
+    org = _own_org(conn)
+    awards = db.list_awards(conn)
+    return {
+        "configured": bool(_own_ch(conn)),
+        "own_org": org,
+        "awards": awards,
+        "summary": _awards_summary(awards),
+    }
+
+
+@app.post("/api/awards/refresh", dependencies=[Depends(require_roles("Admin"))])
+def awards_refresh(days: int = Query(365, ge=1, le=3650), conn=Depends(get_conn)):
+    """Pull FWF's own awards from the OCDS award packages and upsert them. Refuses
+    (409) if no CH number is configured. Mirrors the search-surfacing policy: the
+    client sees `incomplete` + a failed-source count, not the raw upstream errors."""
+    ch = _own_ch(conn)
+    if not ch:
+        raise HTTPException(
+            status_code=409,
+            detail="No Companies House number configured — set it in Settings first.",
+        )
+    res = OWN.run(ch, days=days)  # own_awards opens its own connection for the upsert
+    if res["source_errors"]:
+        log.warning("awards refresh partial: %s", res["source_errors"])
+    return {
+        "ran": True,
+        "scanned": res["scanned"],
+        "kept": res["kept"],
+        "inserted": res["inserted"],
+        "updated": res["updated"],
+        "incomplete": res["incomplete"],
+        "failed_sources": len(res["source_errors"]),
+        "board": awards_board(conn),
+    }
+
+
+# G2 — framework radar: which GCA agreements FWF should join. Curated agreements,
+# lifecycle + recommendation computed live against today (no DB, no live fetch).
+@app.get("/api/frameworks/radar")
+def frameworks_radar():
+    """The framework radar: candidate agreements scored (act/pursue/prepare/
+    maintain/watch/skip) against today, plus a recommendation summary."""
+    return FRAD.radar()
 
 
 @app.get("/api/compliance/reference")

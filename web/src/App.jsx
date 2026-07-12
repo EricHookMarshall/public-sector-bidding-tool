@@ -15,6 +15,9 @@ import ManageStage from "./stages/ManageStage.jsx";
 import LearnStage from "./stages/LearnStage.jsx";
 import SettingsView from "./SettingsView.jsx";
 import ComplianceView from "./ComplianceView.jsx";
+import SupplyGuideView from "./SupplyGuideView.jsx";
+import AwardsView from "./AwardsView.jsx";
+import FrameworksView from "./FrameworksView.jsx";
 
 // Which component renders each stage. All six stages are live, wired to bids.db.
 const VIEWS = {
@@ -30,12 +33,16 @@ function hashId() {
   return window.location.hash.replace(/^#/, "");
 }
 
-// Routes outside the 6-stage journey: Settings (#settings, Admin-only) and
-// Compliance & Renewals (#compliance, everyone). Anything else is the journey.
+// Routes outside the 6-stage journey: Settings (#settings, Admin-only),
+// Compliance & Renewals (#compliance) and How to supply (#supply) — the last two
+// open to everyone. Anything else is the journey.
 function routeFromHash() {
   const id = hashId();
   if (id === "settings") return "settings";
   if (id === "compliance") return "compliance";
+  if (id === "supply") return "supply";
+  if (id === "awards") return "awards";
+  if (id === "frameworks") return "frameworks";
   return "journey";
 }
 
@@ -119,6 +126,36 @@ export default function App() {
       <>
         <TopBar isAdmin={isAdmin} />
         <ComplianceView />
+      </>
+    );
+  }
+
+  // How to supply — a read-only reference view outside the journey, open to all.
+  if (route === "supply") {
+    return (
+      <>
+        <TopBar isAdmin={isAdmin} />
+        <SupplyGuideView />
+      </>
+    );
+  }
+
+  // Our contracts (G1) — FWF's own awarded contracts, outside the journey.
+  if (route === "awards") {
+    return (
+      <>
+        <TopBar isAdmin={isAdmin} />
+        <AwardsView />
+      </>
+    );
+  }
+
+  // Framework radar (G2) — which agreements FWF should join, outside the journey.
+  if (route === "frameworks") {
+    return (
+      <>
+        <TopBar isAdmin={isAdmin} />
+        <FrameworksView />
       </>
     );
   }
@@ -258,6 +295,27 @@ function TopBar({ isAdmin = false }) {
           </div>
         </div>
         <div className="top-spacer" />
+        <button
+          className="ghost-btn"
+          onClick={() => { window.location.hash = "awards"; }}
+          aria-label="Our contracts"
+        >
+          🏆 Our contracts
+        </button>
+        <button
+          className="ghost-btn"
+          onClick={() => { window.location.hash = "frameworks"; }}
+          aria-label="Framework radar"
+        >
+          📡 Radar
+        </button>
+        <button
+          className="ghost-btn"
+          onClick={() => { window.location.hash = "supply"; }}
+          aria-label="How to supply"
+        >
+          📘 How to supply
+        </button>
         <button
           className="ghost-btn"
           onClick={() => { window.location.hash = "compliance"; }}

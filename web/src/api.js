@@ -292,6 +292,32 @@ export const getSearchDefaults = () => getJSON("/api/settings/search-defaults");
 export const saveSearchDefaults = (body) =>
   sendJSON("/api/settings/search-defaults", "PUT", body);
 
+// ---- Our awarded contracts (G1) ----
+
+// FWF's own-org identity (the Companies House number that drives award matching).
+export const getOwnOrg = () => getJSON("/api/settings/own-org");
+export const saveOwnOrg = (body) => sendJSON("/api/settings/own-org", "PUT", body);
+
+// The board of FWF's own awarded contracts + summary + own-org config.
+export const getAwardsBoard = () => getJSON("/api/awards/board");
+
+// Pull awards from the OCDS award packages and upsert them (Admin; hits live APIs).
+export const refreshAwards = (days = 365) =>
+  sendJSON(`/api/awards/refresh?days=${days}`, "POST");
+
+// ---- Framework radar (G2) ----
+
+// Candidate GCA agreements relevant to FWF, each scored (act/pursue/prepare/
+// maintain/watch/skip) live against today, with a recommendation summary.
+export const getFrameworksRadar = () => getJSON("/api/frameworks/radar");
+
+// ---- How to supply reference (G3) ----
+
+// Curated, read-only help on the UK routes to market (frameworks, dynamic
+// markets, DPS, catalogues, finding notices) + a getting-started path and help
+// links. Static/re-verifiable content — carries a `verified` date.
+export const getSupplyReference = () => getJSON("/api/supply/reference");
+
 // ---- Compliance & Renewals (C-series) ----
 
 // Vocabulary for the Compliance view (categories + the expiring-soon window).

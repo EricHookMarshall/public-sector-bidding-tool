@@ -83,6 +83,34 @@ ENRICHMENT_FIELDS = [
     "known_competitors",      # incumbents / likely bidders
 ]
 
+# --- G1: our own awarded contracts -----------------------------------------
+# FWF's OWN public-sector awards — contracts FWF has WON, pulled from the OCDS
+# award packages (Find a Tender + Contracts Finder) and matched to FWF by its
+# Companies House number (scheme GB-COH). A SIBLING table to opportunities, not a
+# row-in-opportunities: these are won contracts, conceptually distinct from open
+# opportunities to bid on, so they don't belong in the bid pipeline. Normalised
+# into this shape by own_awards.py; dedupe key is (source, award_id).
+AWARD_FIELDS = [
+    "source",            # e.g. "Find a Tender (awards)"
+    "source_endpoint",   # OCDS endpoint the award came from (provenance)
+    "ocid",              # OCDS contracting-process id
+    "award_id",          # the OCDS award id (dedupe key within a source)
+    "title",             # tender/contract title
+    "buyer_name",        # the awarding authority
+    "supplier_name",     # the supplier as named in OCDS (the matched party)
+    "supplier_scheme",   # identifier scheme the match was made on (e.g. GB-COH)
+    "supplier_id",       # the identifier value matched (FWF's CH number)
+    "cpv_codes",         # comma-separated CPV ids on the award/tender
+    "value_amount",      # award value
+    "currency",
+    "award_date",        # when the award was made
+    "contract_start",    # contractPeriod.startDate, if present
+    "contract_end",      # contractPeriod.endDate, if present
+    "status",            # award status (active / cancelled / ...)
+    "url",               # human-facing notice URL
+    "raw_json",          # raw OCDS award/release payload, kept for re-mapping
+]
+
 # --- Stage 2 (Triage) ------------------------------------------------------
 # The bid/no-bid gate, reverse-engineered from FWF's real FOR001 Bid
 # Qualification Questionnaire. Two tables:
@@ -342,6 +370,20 @@ source_runs = Table(
     Column("checked_at", UnicodeText, nullable=False),
     Column("scanned", Integer),
     Column("kept", Integer),
+)
+
+# G1: FWF's own awarded contracts (see AWARD_FIELDS). Sibling to opportunities.
+# `source` + `award_id` are bounded (Unicode) so they can carry the UNIQUE key on
+# SQL Server (NVARCHAR(MAX) is rejected as a key column, exactly as for
+# opportunities' (source, ocid)); the rest are UnicodeText/NVARCHAR(MAX).
+awards = Table(
+    "awards", metadata,
+    Column("id", Integer, primary_key=True),
+    *[Column(f, Unicode(400) if f in {"source", "award_id"} else UnicodeText)
+      for f in AWARD_FIELDS],
+    Column("first_seen_at", UnicodeText),
+    Column("last_seen_at", UnicodeText),
+    UniqueConstraint("source", "award_id"),
 )
 
 qualifications = Table(
@@ -1044,6 +1086,54 @@ def set_triage_dismissed(conn, opp_id, dismissed):
         )
     conn.commit()
     return bool(dismissed)
+
+
+# --- G1: our own awarded contracts -----------------------------------------
+
+def upsert_award(conn, record):
+    """Insert or update one of FWF's own awards, keyed on (source, award_id).
+
+    `record` is a dict with any subset of AWARD_FIELDS; `raw_json` may be a
+    dict/list (json-encoded) or a string. `first_seen_at` is set once on insert;
+    `last_seen_at` bumps every time. Returns "inserted" or "updated"."""
+    rec = dict(record)
+    if isinstance(rec.get("raw_json"), (dict, list)):
+        rec["raw_json"] = json.dumps(rec["raw_json"], ensure_ascii=False)
+    if not rec.get("source") or not rec.get("award_id"):
+        raise ValueError("upsert_award requires both 'source' and 'award_id'")
+
+    now = now_iso()
+    exists = conn.execute(
+        "SELECT 1 FROM awards WHERE source = ? AND award_id = ?",
+        (rec["source"], rec["award_id"]),
+    ).fetchone() is not None
+
+    cols = [f for f in AWARD_FIELDS if f in rec]
+    if exists:
+        set_cols = [c for c in cols if c not in ("source", "award_id")]
+        assignments = ", ".join(f"{c} = ?" for c in set_cols)
+        sep = ", " if set_cols else ""
+        conn.execute(
+            f"UPDATE awards SET {assignments}{sep}last_seen_at = ? "
+            "WHERE source = ? AND award_id = ?",
+            [rec[c] for c in set_cols] + [now, rec["source"], rec["award_id"]],
+        )
+        return "updated"
+    all_cols = cols + ["first_seen_at", "last_seen_at"]
+    placeholders = ", ".join("?" for _ in all_cols)
+    conn.execute(
+        f"INSERT INTO awards ({', '.join(all_cols)}) VALUES ({placeholders})",
+        [rec[c] for c in cols] + [now, now],
+    )
+    return "inserted"
+
+
+def list_awards(conn):
+    """Every stored own-award, most-recently-awarded first (blank dates last)."""
+    rows = conn.execute(
+        "SELECT * FROM awards ORDER BY COALESCE(award_date, '') DESC, id DESC"
+    ).fetchall()
+    return [_row_dict(r) for r in rows]
 
 
 # --- Compliance-asset register CRUD (C-series) -----------------------------

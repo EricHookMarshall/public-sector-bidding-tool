@@ -788,3 +788,62 @@ header.top {
   .comp-form-grid { grid-template-columns: 1fr; }
   .comp-ledger .comp-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* How to supply (G3) — read-only reference view */
+.supply-guide .stage-sub { max-width: 720px; margin: 4px 0 14px; }
+.supply-disclaimer { max-width: 760px; margin: 0 0 16px; }
+.supply-card { max-width: none; margin-bottom: 16px; }
+.supply-steps { margin: 4px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.supply-steps li { line-height: 1.45; }
+.supply-routes-head { margin: 4px 0 10px; font-size: 1rem; }
+.supply-routes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
+.supply-route { max-width: none; margin: 0; }
+.supply-route h4 { margin: 0 0 6px; font-size: 0.98rem; }
+.supply-summary { margin: 0 0 8px; line-height: 1.45; }
+.supply-points { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.supply-points li { font-size: 0.86rem; line-height: 1.4; color: var(--muted); }
+.supply-example { margin: 0 0 8px; font-size: 0.86rem; }
+.supply-src { display: inline-block; font-size: 0.84rem; }
+.supply-links { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+.supply-verified { color: var(--faint); font-size: 0.8rem; margin: 6px 0 0; }
+@media (max-width: 720px) {
+  .supply-routes { grid-template-columns: 1fr; }
+}
+
+/* Our contracts (G1) — FWF's own awarded contracts */
+.awards .stage-sub { max-width: 720px; margin: 4px 0 14px; }
+.awards-org { max-width: none; margin-bottom: 14px; }
+.awards-org-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin: 6px 0; }
+.awards-stats { margin-bottom: 14px; }
+.awards-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.awards-list { display: flex; flex-direction: column; gap: 10px; }
+.award-card { max-width: none; margin: 0; }
+.award-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.award-top h4 { margin: 0; font-size: 0.98rem; }
+.award-value { font-weight: 700; white-space: nowrap; color: var(--good); }
+.award-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; font-size: 0.86rem; color: var(--muted); }
+.award-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px; }
+.award-src { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+@media (max-width: 720px) {
+  .awards-org-grid { grid-template-columns: 1fr; }
+}
+
+/* Framework radar (G2) */
+.frameworks .stage-sub { max-width: 720px; margin: 4px 0 12px; }
+.fr-disclaimer { max-width: 760px; margin: 0 0 14px; }
+.fr-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.fr-chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 0.82rem; }
+.fr-list { display: flex; flex-direction: column; gap: 10px; }
+.fr-card { max-width: none; margin: 0; }
+.fr-dim { opacity: 0.62; }
+.fr-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.fr-top h4 { margin: 0; font-size: 0.98rem; }
+.fr-code { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 500; }
+.fr-cat { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.fr-rec { color: #fff; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+.fr-fit { margin: 8px 0; line-height: 1.45; font-size: 0.9rem; }
+.fr-dates { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; font-size: 0.82rem; color: var(--muted); }
+.fr-reasons { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.fr-reasons li { font-size: 0.84rem; line-height: 1.4; }
+.fr-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.fr-member { font-size: 0.78rem; color: var(--faint); }

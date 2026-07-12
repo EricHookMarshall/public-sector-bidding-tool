@@ -41,25 +41,27 @@
 
 ## G-series — GCA / Frameworks intelligence (user reqs, 2026-07-12)
 
-> All net-new. Together these turn the static framework prose in `knowledge/VERIFIED_FACTS.md` into a live,
-> app-owned Frameworks capability. Natural home is the deferred **C4 Frameworks** compliance category
-> (`compliance.py` already lists `Frameworks`; `db.py:76` `opportunity_type` already knows DPS/Framework).
+- [x] **G1 — public data on OUR awarded contracts** (session 22) — SHIPPED. `src/own_awards.py` pulls FWF's
+      OWN awards from the OCDS *award* packages (FTS + Contracts Finder), matched by **Companies House number**
+      (GB-COH) so no false records. New `awards` sibling table + `upsert_award`/`list_awards`. CH number is app
+      config (`own_org`), never hardcoded. `web/src/AwardsView.jsx` (`#awards`). Matcher live-verified on real
+      FTS data (Softcat Plc). See `progress.md` session-22.
+- [x] **G2 — Framework radar** (session 22) — SHIPPED. `src/frameworks_radar.py`: curated GCA agreements,
+      lifecycle + recommendation computed LIVE against today (act/pursue/prepare/maintain/watch/skip).
+      `web/src/FrameworksView.jsx` (`#frameworks`).
+- [x] **G3 — "How to supply" reference** (session 22) — SHIPPED. `src/supply_reference.py` + `SupplyGuideView`
+      (`#supply`): 5 routes to market + getting-started + help links, source-per-route + verified date.
 
-- [ ] **G1 — Collect public data on OUR frameworks / agreements / awarded contracts** — pull FWF's *own*
-      memberships & call-offs from public procurement data, not just biddable opportunities. **Concrete API
-      path (verified via api.gov.uk):** the **Find a Tender OCDS API** exposes *award* + *record* packages
-      (`/api/1.0/ocdsReleasePackages`, filterable by procurement stage), and Contracts Finder has the same
-      (OCDS + v2 API) — so awards where FWF is the winning supplier are retrievable. New connector behind the
-      existing normalise→`bids.db` seam (or a sibling table), keyed on FWF as supplier. GCA's own site
-      (`gca.gov.uk/agreements`, `/suppliers`) has **no documented JSON API** — treat as scrape/reference only.
-- [ ] **G2 — Framework opportunity radar: which agreements should FWF join** — surface GCA agreements
-      (~100 live, `gca.gov.uk/agreements`) relevant to FWF's CPV/IT-services scope and score "should we
-      pursue" (live vs expiring, re-entry window open, fit). Today this reasoning is static prose in
-      `VERIFIED_FACTS.md` (RM1557.15 / RM6190 / RM6263→DOS7); make it a live view. Depends on G1's data pull;
-      no clean GCA API, so likely a curated list + periodic re-verify (facts decay — don't hardcode statuses).
-- [ ] **G3 — "How to supply" reference / help** — in-app reference for Frameworks, Dynamic Markets, DPS,
-      Catalogues + help resources, sourced from `gca.gov.uk/how-to-supply`. Reference content (links +
-      distilled summaries), not a connector. Lowest-effort of the three; helps the "even a novice" goal.
+**G-series follow-ons (open):**
+
+- [ ] **G1 clean award refresh** — the awards table is empty because refreshes 429'd (rate-limited), not
+      because FWF has no awards. Backoff + page pacing added; get one un-rate-limited 4-year dual-source run to
+      actually populate FWF's own (likely NHS, 3–4yr back) awards.
+- [ ] **G1 "bids we lost" (user req)** — NOT in public OCDS (award notices name only the winner). Source lost
+      bids from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector.
+- [ ] **G2 membership from G1 data** — corroborate the radar's `fwf_status` (member/not) from real own-awards
+      data once populated, instead of the curated VERIFIED_FACTS claim (currently flagged "confirm").
+- [ ] **Click the 3 new views in a live browser** — API + build verified only so far.
 
 > **Noted (already built — no action):** Modern Slavery is already a Manage pre-flight item + a library
 > credential ("Anti-Bribery & Modern Slavery Policies") — don't re-add.

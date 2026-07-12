@@ -3,6 +3,45 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 22) — G-series: how-to-supply reference (G3) + own-awards (G1) + framework radar (G2)
+
+**Context.** Resumed from session 21 (F-series polish, `1a8f7ae`). User asked "what's next?"; agreed to work
+the recommended order of the deferred G-series (GCA/frameworks intelligence): G3 → G1 → G2.
+
+**Work done.**
+
+- **G3 — How to supply** (`src/supply_reference.py`, `GET /api/supply/reference`, `web/src/SupplyGuideView.jsx`
+  at `#supply`, TopBar 📘). Curated, read-only reference: 5 routes to market (Frameworks, Dynamic Markets, DPS,
+  Catalogues, finding notices) + a novice getting-started path + help/registration links. Honest-provenance
+  pattern: a `source` link per route + a doc-level `verified` date (2026-07-08, mirrors VERIFIED_FACTS) + a
+  re-verify disclaimer. No DB, no live fetch. `tests/test_supply_reference.py` (4).
+- **G1 — Our contracts** (`src/own_awards.py`, `awards` sibling table in `db.py`, `web/src/AwardsView.jsx` at
+  `#awards`, TopBar 🏆). Pulls FWF's OWN awards from the OCDS **award** packages (Find a Tender + Contracts
+  Finder) and matches FWF by **Companies House number** (scheme GB-COH) — the one unambiguous identifier, so no
+  false records (a buyer sharing the number is excluded; leading-zero tolerance; inline-supplier fallback). The
+  number is app config (`own_org` in app_settings, `11934102` set in bids.db), never hardcoded — empty = inert.
+  New DB helpers `upsert_award`/`list_awards` (dedupe on `(source, award_id)`). API: `GET/PUT
+  /api/settings/own-org`, `GET /api/awards/board`, `POST /api/awards/refresh` (Admin; surfaces
+  `incomplete`+failed-source count, raw errors server-side only). `tests/test_own_awards.py` (8).
+- **G2 — Framework radar** (`src/frameworks_radar.py`, `GET /api/frameworks/radar`, `web/src/FrameworksView.jsx`
+  at `#frameworks`, TopBar 📡). Curated candidate GCA agreements (G-Cloud 14/15, RM6190 TS4, DOS7, RM6263) but
+  **lifecycle + recommendation computed LIVE against today** (act/pursue/prepare/maintain/watch/skip) — the
+  antidote to the RM6263 "still listed after it expired" failure. Projected dates flagged; source per agreement.
+  `tests/test_frameworks_radar.py` (6).
+
+**Verification.** `make check` green — **98 backend tests** (was 80; +18), doc-consistency, vite build clean
+(135.92 kB). Live via uvicorn: all new endpoints respond correctly; **G1's matcher fired on real live FTS award
+data** (Softcat Plc, CH 02174990, correctly matched + normalised); G2 radar scores correctly at today's date.
+
+**Honest gaps.**
+
+- **Award table is empty — rate-limiting, not "no awards".** The first 365-day refresh 429'd on both sources
+  (I'd just hammered FTS in the live smokes). The connector degraded correctly (2 source_errors, kept 0, no
+  crash). Added 429-backoff to BOTH sources + inter-page pacing; a 4-year retry is running. Needs a clean run.
+- **"Bids we lost" is not in public OCDS** — award notices name only the winner. That history lives in the
+  app's internal Learn/outcome capture (Stage 6) + bid library, not the connector (user req 2026-07-12; deferred).
+- The 3 new views are API + build verified only — **not yet clicked in a live browser.**
+
 ## 2026-07-12 (session 21) — F-series polish: search partition-error surfacing + F6 hide-closed default
 
 **Context.** Resumed from session 20 (F1: PCS + Sell2Wales connectors, committed/pushed at `7c954e2`). User

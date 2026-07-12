@@ -3,28 +3,35 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 21
+session: 22
 
-phase: feature_complete_local          # 6 journey stages + org-level Compliance view + 4 search connectors (PCS, Sell2Wales added)
-active_workstream: f_series_polish     # session 21: surfaced partition errors in Search UI + F6 (hide-closed default)
-next_action: user_choose_commit_session21_or_next_backlog_item
+phase: feature_complete_local          # 6 journey stages + Compliance + 4 search connectors + G-series (G1/G2/G3) intelligence views
+active_workstream: g_series_frameworks_intelligence  # session 22: G3 how-to-supply + G1 own-awards + G2 framework radar
+next_action: await_4yr_award_refresh_then_browser_click_new_views
 
 git:
   branch: main
-  clean: true                          # session-21 (partition-surfacing + F6) committed at 1a8f7ae; this state.yaml sync lands one ahead
-  # The bookkeeping commit that saves this file necessarily lands one ahead of the
-  # feature commit — that single step is by design, not drift; verify against `git log`.
-  last_commit: 1a8f7ae                 # session-21 feature + docs, pushed to origin/main
+  clean: false                         # session-22 (G1/G2/G3) committed to main this pass; verify with `git log`
+  # The bookkeeping/doc-sync content travels IN the same commit as the features this
+  # session (user asked to commit to main directly), so there is no +1 split here.
+  last_commit: 1a8f7ae                 # PRIOR tip (session-21); session-22 commit lands on top — read `git log` for its hash
 
 db:                                    # expected on resume
   opportunities: 24
   pipeline: empty                      # 0 quals/bids/plans/manage/responses/outcomes — intentional (session-13 cleanse)
   triage_selections: 0                 # pull gate — empty until an opp is picked
-  compliance_assets: 19                # NEW table — seeded from the real bid library on first server start (incl. EXPIRED ISO). 18 no-date + 1 expired
-  app_settings: 2
+  compliance_assets: 19                # seeded from the real bid library on first server start (incl. EXPIRED ISO). 18 no-date + 1 expired
+  app_settings: 3                      # +own_org (G1): FWF CH number 11934102 set in the gitignored bids.db
+  awards: 0                            # NEW table (G1) — FWF's own OCDS awards; empty pending a successful refresh (see verified.awards_refresh)
 
 verified:
-  make_check: 2026-07-12               # session 21: full make check green — 80 backend tests (74 + 2 partition-error-surfacing + 4 hide-closed) + doc-consistency + vite build (133.49 kB)
+  make_check: 2026-07-12               # session 22: full make check green — 98 backend tests (80 + 4 supply-ref + 8 own-awards + 6 framework-radar) + doc-consistency + vite build (135.92 kB)
+  g3_supply_ref_live: 2026-07-12       # session 22 (G3): GET /api/supply/reference live via uvicorn — 5 routes, 5 steps, 5 links. Curated reference, verified-date + source per route. tests/test_supply_reference.py (4)
+  g1_own_awards_match_live: 2026-07-12 # session 22 (G1): matcher fired on LIVE FTS award data — real supplier Softcat Plc (CH 02174990) correctly matched + normalised; FWF (11934102) matched 0 in a random 5-day window (expected). 209 live notices parsed cleanly. tests/test_own_awards.py (8)
+  g1_endpoints_live: 2026-07-12        # session 22: /api/awards/board (configured=true, own_org set, 0 awards), /api/settings/own-org, POST /api/awards/refresh all live via uvicorn
+  g2_radar_live: 2026-07-12            # session 22 (G2): GET /api/frameworks/radar live — RM6190 pursue / G-Cloud15 prepare / DOS7 watch / G-Cloud14 maintain / RM6263 SKIP(expired). lifecycle+rec computed live vs today. tests/test_frameworks_radar.py (6)
+  awards_refresh: RATE_LIMITED         # session 22: first 365d refresh 429'd on BOTH sources (I'd just hammered FTS in smokes). Degrade path worked (2 source_errors, kept 0, no crash). Added backoff to both sources + page pacing; 4yr retry running. bids.db awards table still 0 until a clean run.
+  new_views_browser_clicked: NOT_YET   # session 22: G1/G2/G3 views API+build verified only — NOT yet clicked in a live browser
   search_partition_errors_surfaced: 2026-07-12  # session 21: /api/search now passes incomplete + failed_partitions through on a partial source run (raw partition_errors deliberately NOT leaked to client); tests/test_search_surfacing.py (2 tests, via real TestClient route)
   search_hide_closed_live: 2026-07-12  # session 21 (F6): live-verified against real bids.db (24 opps) — hide_closed=false: 24 (14 open/6 unknown/4 closed); default hide_closed=true: 20 (4 closed dropped); bid_status=closed override: 4. tests/test_search_hide_closed.py (4 tests)
   pcs_connector_live: 2026-07-12       # session 20 (F1): Public Contracts Scotland connector live — --no-db run returned real Scottish IT opps; 6 offline unit tests pass. NOT committed; bids.db NOT repopulated.
@@ -44,10 +51,11 @@ external_blockers:
   azure_phase_d_hosting: iac_not_built              # FWF Intern subscription IS live (verified 2026-07-12); NO resource group for this app exists yet. No longer 'needs_subscription' — the gap is now Bicep/IaC (A1) + creating the RG
 
 deferred:
-  # User reqs captured 2026-07-12 (session 19; full scope in todo.md)
-  - gca_g1_own_frameworks_data          # G1: pull FWF's own awards/memberships via Find a Tender / Contracts Finder OCDS award packages
-  - gca_g2_framework_radar              # G2: score which GCA agreements FWF should join (live view over today's static VERIFIED_FACTS prose)
-  - gca_g3_how_to_supply_reference      # G3: in-app reference for Frameworks/Dynamic Markets/DPS/Catalogues from gca.gov.uk/how-to-supply
+  # G1/G2/G3 SHIPPED session 22 (see verified.* + progress). Follow-ons:
+  - g1_lost_bids_from_internal          # "bids we lost" is NOT in public OCDS (award notices name only the winner) — source it from the app's Learn/outcome capture (Stage 6) + bid library, not the connector. User req 2026-07-12.
+  - g1_award_refresh_clean_run          # get a non-rate-limited 4yr dual-source refresh to actually populate FWF's own awards (NHS-related, may go back 3-4yr). Retry when APIs aren't cooling down.
+  - g1_g2_g3_browser_click              # click the 3 new views in a live browser (API + build verified only so far)
+  - g2_membership_from_g1               # corroborate G2's fwf_status (member/not) from G1's real own-awards data once populated, instead of the curated VERIFIED_FACTS claim
   # Compliance C-series follow-ons (this session shipped C3 MVP)
   - compliance_file_content_extraction # parse expiry from uploaded PDF/docx bytes (today: mined from name/notes text only)
   - compliance_c4_frameworks           # framework/contract membership-period tracker (RM6263-expired precedent) — category exists, no source yet
