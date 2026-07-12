@@ -11,10 +11,10 @@ next_action: user_choose_next_C4_frameworks_or_phase2_file_extraction_or_R1_R3_r
 
 git:
   branch: main
-  clean: false                         # C-series changes are ON DISK, not yet committed (user hasn't asked to commit)
-  # last_commit points at the tip as of this write. This session's work is not yet
-  # committed — 7 modified + 4 new files (see handover). Commit only when the user asks.
-  last_commit: eb14d13                 # session-18 pull gate (tip); session-19 C-series work uncommitted on top
+  clean: true                          # session-19 C-series committed + pushed (77f2385); this state.yaml fix lands one ahead
+  # The bookkeeping commit that saves this file necessarily lands one ahead of the
+  # feature commit — that single step is by design, not drift; verify against `git log`.
+  last_commit: 77f2385                  # session-19 C-series feature + docs, pushed to origin/main
 
 db:                                    # expected on resume
   opportunities: 24
