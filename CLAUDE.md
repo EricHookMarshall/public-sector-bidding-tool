@@ -38,7 +38,8 @@ but not yet folded into the app. Roadmap and status live in
 
 ```
 src/         The app backend. FastAPI + SQLite. Connectors (Find a Tender +
-             Contracts Finder) → normalise → bids.db; Triage (FOR001) + Plan
+             Contracts Finder + Public Contracts Scotland + Sell2Wales) →
+             normalise → bids.db; Triage (FOR001) + Plan
              (FOR002) domain logic + AI pre-fill seam. bids.db + .env live here
              (both resolved relative to the code, so they travel with it).
 web/         The app frontend. React/Vite — the 6-stage journey shell + per-stage

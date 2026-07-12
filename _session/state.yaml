@@ -3,18 +3,16 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 19
+session: 20
 
-phase: feature_complete_local          # 6 journey stages + a new org-level Compliance view, all wired to bids.db
-active_workstream: compliance_renewals # C-series C3: app-owned Compliance & Renewals register — built + live-verified
-next_action: user_choose_next_C4_frameworks_or_phase2_file_extraction_or_R1_R3_refactors
+phase: feature_complete_local          # 6 journey stages + org-level Compliance view + 4 search connectors (PCS, Sell2Wales added)
+active_workstream: f1_more_sources     # F1: Public Contracts Scotland + Sell2Wales connectors built this session
+next_action: user_choose_commit_F1_or_surface_partition_errors_or_next
 
 git:
   branch: main
-  clean: true                          # session-19 C-series committed + pushed (77f2385); this state.yaml fix lands one ahead
-  # The bookkeeping commit that saves this file necessarily lands one ahead of the
-  # feature commit — that single step is by design, not drift; verify against `git log`.
-  last_commit: 77f2385                  # session-19 C-series feature + docs, pushed to origin/main
+  clean: false                         # session-20 F1 work on disk only — NOT committed (2 new + 4 modified files)
+  last_commit: a72e427                  # tip before session-20 F1 work; PCS connector not yet committed
 
 db:                                    # expected on resume
   opportunities: 24
@@ -24,7 +22,10 @@ db:                                    # expected on resume
   app_settings: 2
 
 verified:
-  make_check: 2026-07-12               # session 19: full make check green — 63 backend tests (+10 compliance) + doc-consistency + vite build
+  make_check: 2026-07-12               # session 20: full make check green — 74 backend tests (+6 PCS, +5 Sell2Wales) + doc-consistency + vite build
+  pcs_connector_live: 2026-07-12       # session 20 (F1): Public Contracts Scotland connector live — --no-db run returned real Scottish IT opps; 6 offline unit tests pass. NOT committed; bids.db NOT repopulated.
+  pcs_tls_pinned: 2026-07-12           # session 20: PCS omits its intermediate cert → pinned the public Sectigo intermediate (src/certs/sectigo_dv_r36_intermediate.pem, shared with Sell2Wales), FULL verification kept (verify_mode=CERT_REQUIRED, no verify=False). Proven: default ctx rejects, pinned accepts. Cert valid to 2036.
+  sell2wales_degrades: 2026-07-12      # session 20 (F1): Sell2Wales connector built as resilient per-partition adapter. Live check: upstream /Notices API BROKEN (HTTP 500 nvarchar->float on all partitions — their bug) → connector records 4 partition errors, keeps 0, does NOT raise/poison the source. 5 offline unit tests incl. partial-outage + poisoned-partition. Recovers automatically when upstream fixed.
   compliance_live: 2026-07-12          # session 19: live against real bids.db — board seeded 19 (1 expired ISO); upload→derive-expiry-from-notes→attachment download→PUT→422 guards→delete-removes-file→404; path-traversal blocked
   triage_gate_live: 2026-07-12         # session 18: live /api/triage/board on real bids.db -> 0 items (was 24)
   backend_import: 2026-07-12           # session 19: api imports clean with compliance/compliance_store added
@@ -39,15 +40,24 @@ external_blockers:
   azure_phase_d_hosting: iac_not_built              # FWF Intern subscription IS live (verified 2026-07-12); NO resource group for this app exists yet. No longer 'needs_subscription' — the gap is now Bicep/IaC (A1) + creating the RG
 
 deferred:
+  # User reqs captured 2026-07-12 (session 19; full scope in todo.md)
+  - search_hide_closed_default          # F6: Search default-excludes closed opps unless picked (triage_selections carve-out)
+  - gca_g1_own_frameworks_data          # G1: pull FWF's own awards/memberships via Find a Tender / Contracts Finder OCDS award packages
+  - gca_g2_framework_radar              # G2: score which GCA agreements FWF should join (live view over today's static VERIFIED_FACTS prose)
+  - gca_g3_how_to_supply_reference      # G3: in-app reference for Frameworks/Dynamic Markets/DPS/Catalogues from gca.gov.uk/how-to-supply
   # Compliance C-series follow-ons (this session shipped C3 MVP)
   - compliance_file_content_extraction # parse expiry from uploaded PDF/docx bytes (today: mined from name/notes text only)
   - compliance_c4_frameworks           # framework/contract membership-period tracker (RM6263-expired precedent) — category exists, no source yet
   - compliance_file_replace_in_edit    # edit form can't swap the stored file (delete+re-add today)
   - compliance_sharepoint_store        # SharePointStore behind the compliance_store seam when MS Graph lands
+  # F1 follow-ons (PCS + Sell2Wales shipped session 20)
+  - sell2wales_bulk_download_fallback  # official monthly JSON/XML — an aspx-postback form, needs reverse-engineering
+  - sell2wales_fts_crosspublish_recovery # recover Welsh notices via their Find a Tender cross-publish while S2W list API is down
+  - surface_partition_errors_in_ui     # sell2wales.run() returns partition_errors/incomplete; api.py's /api/search currently drops them
   # Pre-existing
-  - connector_to_record_dedup          # R3: to_record/run/main near-verbatim; extract when a 3rd source lands
+  - connector_to_record_dedup          # R3: to_record/run/main near-verbatim across 4 connectors now (PCS+S2W are ~twins) — extract shared Proactis base
   - api_router_split                   # R1: ~1.9k-line api.py; split stage/settings/compliance/search routers
-  - shared_connector_fetch_helper      # unify retry/backoff/pacing across both connectors
+  - shared_connector_fetch_helper      # unify retry/backoff/pacing across all 4 connectors
   - azure_readiness_A1_A9              # Functions host, Bicep/IaC, GraphSharePoint provider, pyodbc — sub now live, IaC still net-new
   - anthropic_key_rotation             # S5: user must rotate the real key in src/.env (cannot be done in-session)
   - skills_chain_fold_in               # src/ is canonical; align skill enums before folding in

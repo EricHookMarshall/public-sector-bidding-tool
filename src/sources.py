@@ -12,6 +12,8 @@ signature and append one entry here. Nothing else needs to know about it.
 """
 import find_tender_filter as ft
 import contracts_finder_filter as cf
+import public_contracts_scotland as pcs
+import sell2wales as s2w
 
 # key -> registry entry. `key` is the stable id the UI/API pass around;
 # `name` is the human label (and matches the connector's SOURCE_NAME so it lines
@@ -28,6 +30,19 @@ SOURCES = {
         "endpoint": cf.API,
         "run": cf.run,
         "note": "UK Contracts Finder — lower-value notices; rate-limited, slower to run.",
+    },
+    "public_contracts_scotland": {
+        "name": pcs.SOURCE_NAME,
+        "endpoint": pcs.API,
+        "run": pcs.run,
+        "note": "Public Contracts Scotland — Scottish notices incl. sub-threshold (OCDS).",
+    },
+    "sell2wales": {
+        "name": s2w.SOURCE_NAME,
+        "endpoint": s2w.API,
+        "run": s2w.run,
+        "note": "Sell2Wales — Welsh notices incl. sub-threshold (OCDS). Upstream list API "
+                "currently unreliable; degrades per-partition rather than failing.",
     },
 }
 

@@ -3,6 +3,65 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 20) — F1 more search sources: PCS + Sell2Wales; 4 new user reqs recorded
+
+**Context.** Resumed from session 19 (C-series Compliance shipped, committed). User asked "what's next?",
+then raised four requirement ideas to check/record (public framework-data APIs, hide-closed-by-default in
+Search, a GCA agreements-to-pursue radar, an in-app how-to-supply reference) — all checked against the
+codebase (none existed), recorded as scoped backlog items (F6, G1–G3), nothing built yet. User then asked to
+work on **F1** (more search-source connectors).
+
+**Work done.**
+- Researched the UK devolved-nation procurement API landscape (Find a Tender/Contracts Finder OCDS award
+  packages for G1; Public Contracts Scotland + Sell2Wales both on the Proactis/"klickstream" platform;
+  eTendersNI on a different platform — Jaggaer).
+- **Built `src/public_contracts_scotland.py`** (3rd search connector): month-granular OCDS paging,
+  OJEU+sub-threshold notice-type split per stage, bespoke buyer/region/URL mapping (`ft.cpvs_in` reused
+  verbatim for CPV extraction). Registered in `src/sources.py`. `tests/test_pcs.py` (6 tests, offline).
+  **Live-verified**: a 45-day `--no-db` run returned real Scottish IT opportunities (ICT Managed Services,
+  HR/Payroll, a decarbonisation framework, a DPS) with correct fields.
+- **TLS finding + fix:** PCS's server omits its intermediate cert; no trust store (incl. certifi) can verify
+  it. Rather than disable verification, **pinned the public Sectigo intermediate**
+  (`src/certs/sectigo_dv_r36_intermediate.pem`, fetched from the leaf cert's AIA URL, valid to 2036 — not a
+  secret) and kept full verification (`verify_mode=CERT_REQUIRED`). Proved: a default context rejects the
+  connection, the pinned context accepts it.
+- **Built `src/sell2wales.py`** (4th connector). Probing the documented query (incl. the exact params the
+  user supplied mid-session: `dateFrom`, `noticeType`, `outputType`, `locale=2057/1106`) consistently returned
+  **HTTP 500 "Error converting data type nvarchar to float"** — reproduced on every month/notice-type/output
+  combination, including Sell2Wales's own documented 2019 example. Cross-tested PCS (same platform) to
+  confirm it's Sell2Wales's bug, not ours. User supplied a resilient-ingestion design (partition by
+  month×noticeType, bounded retry, structured error record, fall back to bulk download, don't silently drop
+  the source) — implemented the connector-side portion: per-partition retry+backoff, a structured error
+  record (`{source, partition, httpStatus, error, retryable, fallback}`), and graceful degradation (0 kept +
+  recorded errors, never raises). Reuses PCS's shared helpers + the same pinned cert (same CA).
+  `tests/test_sell2wales.py` (5 tests: mapping, poisoned-partition, healthy-ingest, partial-outage). **Live
+  check against the real broken API**: 4 partition errors recorded, 0 kept, no crash — will resume ingesting
+  automatically once Sell2Wales fixes their endpoint.
+- `make check`: **74 backend tests** (63 + 6 PCS + 5 Sell2Wales) green, doc-consistency green, vite build
+  clean. `bids.db` left untouched (24 opps, tracked baseline) — both connectors proved via `--no-db`.
+- Docs updated: `CLAUDE.md`, `README.md` (connector list), `state.yaml`, `todo.md` (F-series expanded, new
+  deferred items for the bulk-download fallback, FTS cross-publish recovery, and surfacing partition errors
+  in the UI).
+
+**Decisions.**
+- First F1 deliverable is **Public Contracts Scotland + Sell2Wales together** (not just one source) since
+  both came from the same platform-probing work.
+- TLS: **pin the public intermediate cert, keep full verification** — rejected both "disable verification"
+  and "fail until they fix it" as the default posture. User confirmed this recommendation explicitly.
+- Sell2Wales: built as a **resilient per-partition adapter** rather than skipping it or hard-failing — the
+  connector is correct and ready; only the upstream is broken.
+- Did not build the bulk-download fallback this session — it's an aspx-postback form, not a clean GET, and
+  is a materially bigger effort than the API-adapter work; scoped as a follow-on instead of rushed.
+
+**Open questions raised.**
+- Should `api.py`'s `/api/search` surface `partition_errors`/`incomplete` to the UI? Today Sell2Wales's
+  degraded state is invisible to the user — the connector reports it, the API drops it.
+- When (if) Sell2Wales's list API is fixed, worth a quick live re-check before assuming it's still down.
+- G1–G3 and F6 (recorded this session, not built) — no decision yet on which to pick up next.
+
+**Next.** User's choice: commit this session's work, surface `partition_errors` in the search UI (small),
+chase the Sell2Wales bulk-download fallback (bigger), or start F6/G1–G3 instead.
+
 ## 2026-07-12 (session 19) — C-series "Compliance & Renewals" view shipped
 
 **Context.** Opened on a terse status line ("still no rg in az") that I first mis-read as a task — the user

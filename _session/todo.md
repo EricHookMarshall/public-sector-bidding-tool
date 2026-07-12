@@ -20,9 +20,52 @@
       "already answered by CQ #n".
 - [ ] **C2 — per-bid workspace + slim per-bid KB** — opportunity visible, edits saved, a bid-specific KB the
       AI grounds on. Net-new; aligns with the `skills/` 3-library design. Needs a design pass.
-- [ ] **F-series — more sources / search** — F1: Public Contracts Scotland, Sell2Wales, eTendersNI, G-Cloud
-      behind the normalise→`bids.db` seam. F2: multi-criteria search. **F5: ITT ingestion → auto-build the
-      compliance matrix** (biggest; matrix schema is already per-bid dynamic, just no parser).
+- [ ] **F-series — more sources / search** — F1: **Public Contracts Scotland ✅ + Sell2Wales ✅ built
+      (session 20)** — 4 connectors now behind the `sources.py` seam. **PCS** (`public_contracts_scotland.py`)
+      live-verified, returns real Scottish IT opps; TLS resolved securely (server omits its intermediate cert
+      → pinned the public Sectigo intermediate `src/certs/sectigo_dv_r36_intermediate.pem`, kept FULL
+      verification — `verify_mode=CERT_REQUIRED`, no `verify=False`; proven default ctx rejects / pinned ctx
+      accepts; cert valid to 2036; refresh note in the `_ctx` comment). **Sell2Wales** (`sell2wales.py`) built
+      as a **resilient per-partition adapter** (month×noticeType partitions, bounded retry+backoff, structured
+      error record, degrades not-drops) — **its upstream `/Notices` list API is currently broken (HTTP 500
+      "nvarchar to float" on every query incl. their own doc example — confirmed their bug, not ours), so it
+      ingests 0 live but recovers automatically when they fix it**. Shares the same pinned cert (same CA).
+      **Not committed; DB not repopulated (proved with `--no-db`).**
+      F1 remainder / follow-ons: **Sell2Wales bulk-download fallback** (their official monthly JSON — an
+      aspx-postback form, needs reverse-engineering) + **Find a Tender cross-publish recovery**; **surface
+      `partition_errors`/`incomplete` in the search run-summary** (connector returns them; `api.py` currently
+      drops them); **extract a shared Proactis base** once a 3rd Proactis source lands (PCS+S2W are ~twins
+      today — see the dedup note below); **eTendersNI** (different platform — Jaggaer, separate effort),
+      G-Cloud. F2: multi-criteria search. **F5: ITT ingestion → auto-build the compliance matrix** (biggest;
+      matrix schema is already per-bid dynamic, just no parser).
+- [ ] **F6 — Search: hide closed opps by default unless picked** (user req, 2026-07-12) — Search currently
+      shows every stored opp (`SearchStage.jsx` default filter = "All"; `bid_status` is derived post-query in
+      `_query_opportunities`, `api.py`). Change: **default-exclude `bid_status == "closed"`** *unless* the opp
+      is in `triage_selections` OR has a qualification/bid — i.e. mirror the Triage pull-gate carve-out
+      (`api.py:644`) so a closed-but-in-flight opp never vanishes. Keep it a user-toggleable default; the
+      explicit `bid_status` filter still overrides. Small: one filter default + one query clause.
+
+## G-series — GCA / Frameworks intelligence (user reqs, 2026-07-12)
+
+> All net-new. Together these turn the static framework prose in `knowledge/VERIFIED_FACTS.md` into a live,
+> app-owned Frameworks capability. Natural home is the deferred **C4 Frameworks** compliance category
+> (`compliance.py` already lists `Frameworks`; `db.py:76` `opportunity_type` already knows DPS/Framework).
+
+- [ ] **G1 — Collect public data on OUR frameworks / agreements / awarded contracts** — pull FWF's *own*
+      memberships & call-offs from public procurement data, not just biddable opportunities. **Concrete API
+      path (verified via api.gov.uk):** the **Find a Tender OCDS API** exposes *award* + *record* packages
+      (`/api/1.0/ocdsReleasePackages`, filterable by procurement stage), and Contracts Finder has the same
+      (OCDS + v2 API) — so awards where FWF is the winning supplier are retrievable. New connector behind the
+      existing normalise→`bids.db` seam (or a sibling table), keyed on FWF as supplier. GCA's own site
+      (`gca.gov.uk/agreements`, `/suppliers`) has **no documented JSON API** — treat as scrape/reference only.
+- [ ] **G2 — Framework opportunity radar: which agreements should FWF join** — surface GCA agreements
+      (~100 live, `gca.gov.uk/agreements`) relevant to FWF's CPV/IT-services scope and score "should we
+      pursue" (live vs expiring, re-entry window open, fit). Today this reasoning is static prose in
+      `VERIFIED_FACTS.md` (RM1557.15 / RM6190 / RM6263→DOS7); make it a live view. Depends on G1's data pull;
+      no clean GCA API, so likely a curated list + periodic re-verify (facts decay — don't hardcode statuses).
+- [ ] **G3 — "How to supply" reference / help** — in-app reference for Frameworks, Dynamic Markets, DPS,
+      Catalogues + help resources, sourced from `gca.gov.uk/how-to-supply`. Reference content (links +
+      distilled summaries), not a connector. Lowest-effort of the three; helps the "even a novice" goal.
 
 > **Noted (already built — no action):** Modern Slavery is already a Manage pre-flight item + a library
 > credential ("Anti-Bribery & Modern Slavery Policies") — don't re-add.
@@ -62,7 +105,8 @@
 - [ ] **Triage ✕ semantics (session 18 follow-on)** — Triage board is now explicit-pull (`triage_selections`);
       the board's ✕ still `dismiss`es (reversible hide) rather than de-selecting. In a pull model these
       overlap — decide whether ✕ should remove the selection outright. Cosmetic/UX, scope with user.
-- [ ] **Connector `to_record`/`run`/`main` dedup** (deferred from Wave 5) — the two connectors are near-verbatim;
-      extract the shared body **when a 3rd source lands** (doing it against 2 sources is speculative).
+- [ ] **Connector `to_record`/`run`/`main` dedup** (deferred from Wave 5; revisit — now 4 connectors) — FTS/CF
+      are near-verbatim, and PCS/Sell2Wales are near-verbatim *with each other* (same Proactis platform);
+      extract a shared base per family rather than one dedup across all four.
 - [ ] **Parked polish** — CPV label badge on cards · lifecycle (`stale`/`closed`) badge on cards · widen CPV
-      scope beyond IT/software (`TARGET_CPV` + `src/cpv_catalog.py`) · a 3rd source via `src/sources.py`.
+      scope beyond IT/software (`TARGET_CPV` + `src/cpv_catalog.py`).

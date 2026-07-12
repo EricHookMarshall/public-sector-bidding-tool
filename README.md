@@ -24,7 +24,7 @@ Built for **FWF (Future WorkForce UK Ltd)**, a UK subsidiary of Arobs Group. See
 
 | Stage | What the user does | Lives in | State |
 |---|---|---|---|
-| **1. Search** | Find relevant opportunities across sources | [`src/`](src/) + [`web/`](web/) | ✅ Live — Find a Tender + Contracts Finder |
+| **1. Search** | Find relevant opportunities across sources | [`src/`](src/) + [`web/`](web/) | ✅ Live — Find a Tender + Contracts Finder + Public Contracts Scotland + Sell2Wales (upstream API recovering) |
 | **2. Triage** | Bid / no-bid with clear reasons | [`src/`](src/) + [`web/`](web/) | ✅ Live — real FOR001 form + AI pre-fill |
 | **3. Plan** | Which bids, when, with what capacity | [`src/`](src/) + [`web/`](web/) | ✅ Live — pipeline board + capacity + FOR002 timeline |
 | **4. Complete** | Matrix → retrieve → draft → review → preflight | [`src/`](src/) + [`web/`](web/) | ✅ Live — FOR006 matrix + AI pre-fill over the real bid library (`LocalMirror`) |

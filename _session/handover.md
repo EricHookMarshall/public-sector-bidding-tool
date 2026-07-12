@@ -7,82 +7,75 @@
 
 ## Status
 
-`2026-07-12` (session 19) — **Shipped the C-series "Compliance & Renewals" view — the highest
-founding-purpose payoff.** The tool now has an **org-level, app-OWNED compliance-asset register**: every
-credential / policy / framework and its renewal status in one screen, lifting the "expired cert at bid time"
-failure (the reason this project exists) out of per-bid burial. Key design call the user reframed mid-scope:
-this is the *system of record*, **not** a read of the bid library — assets are **uploaded** (bytes → a
-gitignored store) or registered as references, are **updatable**, and expiry is **derived** to drive alerts.
+`2026-07-12` (session 20) — **Started F1 (more search sources) at the user's request, plus three new
+requirements the user asked to have checked/recorded.** Two connectors shipped this session:
 
-Built (all live-verified against the real `bids.db` + a running server):
-- **`src/db.py`** — new `compliance_assets` table + CRUD helpers (`insert/get/list/update/delete` +
-  idempotent `seed_compliance_assets`). Expiry STATUS is never stored — derived live (facts decay).
-- **`src/compliance_store.py`** (new) — the file-store seam, mirroring `library.py`: **`LocalFileStore`**
-  now (gitignored `src/compliance_store/`), **`SharePointStore`** later behind the same interface. Stored
-  paths are generated (uuid+ext), never the client filename → **path traversal blocked** (verified).
-- **`src/compliance.py`** (new) — expiry derivation (reuses `library.py` date maths), board sort
-  (urgency-first), summary counts, and seed-from-library.
-- **`src/api.py`** — `GET /api/compliance/board|reference`, `POST /assets` (multipart upload),
-  `PUT /assets/{id}`, `DELETE /assets/{id}`, `GET /assets/{id}/file` (attachment-only), `POST
-  /import-from-library`; startup one-time seed; **CORS gained DELETE**.
-- **Frontend** — new top-level **`ComplianceView.jsx`** (`#compliance` route, open to all — TopBar "🛡
-  Compliance" button), `api.js` helpers, KPI banner + urgency-sorted register + upload/edit/delete.
-- **`python-multipart`** added to `requirements.txt`; `src/compliance_store/` added to `.gitignore`.
+- **Public Contracts Scotland** (`src/public_contracts_scotland.py`) — the 3rd search connector, live-verified:
+  a `--no-db` run returned real, relevant Scottish IT opportunities. TLS note below.
+- **Sell2Wales** (`src/sell2wales.py`) — the 4th, built as a **resilient per-partition adapter** after
+  discovering its upstream `/Notices` list API is currently **broken server-side** (HTTP 500 "nvarchar to
+  float" SQL fault on every query, including Sell2Wales's own documented example — confirmed their bug, not
+  ours, by cross-testing against PCS on the same platform). The connector partitions by month×noticeType,
+  retries once with backoff, records a structured error per poisoned partition, and **never aborts the whole
+  source** — live it currently records 4 partition failures and ingests 0, but will resume ingesting the
+  moment Sell2Wales fixes their endpoint, with zero code change needed.
+- **TLS, both connectors:** PCS and Sell2Wales (same Proactis platform, same CA) omit their intermediate
+  cert, so no default trust store can verify them. Rather than disabling verification, the **public Sectigo
+  intermediate is pinned** (`src/certs/sectigo_dv_r36_intermediate.pem` — not a secret, safe to commit; valid
+  to 2036). Proven: a default context REJECTS the connection, the pinned context ACCEPTS with
+  `verify_mode=CERT_REQUIRED` — full verification, no `verify=False` anywhere.
+- **`make check` green: 74 backend tests** (63 baseline + 6 PCS + 5 Sell2Wales), doc-consistency, vite build.
+  `bids.db` untouched (24 opps) — both connectors proved with `--no-db`, not by mutating the tracked baseline.
 
-Verified: **`make check` green — 63 backend tests (+10 new) + doc-consistency + vite build clean.** Live on
-real `bids.db`: startup **seeded 19 assets from the real bid library, incl. the EXPIRED ISO (2025-10-31)**;
-upload → **expiry auto-mined from notes** → attachment download → PUT update → `422` on bad type/date →
-delete removes the file → `404`. **DB now carries a `compliance_assets` table (19 rows).**
+Also this session: checked 4 user-proposed requirements against the codebase (none existed) and recorded
+them as scoped backlog items — **F6** (Search: hide closed opps by default unless triaged) and **G1–G3**
+(GCA/frameworks intelligence: pull FWF's own awards via Find a Tender OCDS award packages, a framework-radar
+view, an in-app how-to-supply reference). Full detail in `todo.md`.
 
-⚠️ **Not committed.** All changes are on disk only (7 modified + 4 new files). Commit when you're ready —
-I did not, since you didn't ask. ⚠️ **Not yet clicked in a live browser** this session (API + build verified;
-the UI is build-clean but I couldn't drive a browser here — worth a manual look).
+⚠️ **Not committed.** All of this session's work is on disk only (5 modified + 6 new files, listed below).
 
 ## Active task
 
-**No task in flight.** C-series C3 MVP is shipped. Natural follow-ons (in `state.yaml → deferred`):
-1. **Commit** this session's work (your call).
-2. **C-series phase 2** — extract expiry from uploaded **PDF/docx bytes** (today it's mined from the
-   name/notes text only); **C4** framework/contract membership tracker (category exists, no data source yet);
-   file-replace in the edit form.
-3. **Structural refactors** — R1 (api.py is now ~1.9k lines — split routers, compliance is a clean seam to
-   carve first), R3 connector dedupe.
-4. **S5 key rotation** — your action (rotate the Anthropic key in `src/.env`).
+**No task in flight — F1's first two sources are done; next step is the user's call.** Natural follow-ons
+(full detail in `todo.md` → F-series):
+
+1. **Commit this session's work** (your call — nothing staged yet).
+2. **Surface `partition_errors`/`incomplete`** in the search run-summary — `sell2wales.run()` already returns
+   them; `api.py`'s `/api/search` currently drops them on the floor, so a live Wales outage is invisible to
+   the user today. Small, high-value.
+3. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
+   aspx-postback form (`__VIEWSTATE` present), not a clean GET. Bigger lift.
+4. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
+5. Or pick up **F6** / **G1–G3** instead (new user reqs, not yet built).
 
 ## Blockers / prerequisites
 
-- **Empty *bid* pipeline is expected** (session-13 cleanse) — Plan/Manage/Complete/Learn read 0 bids until an
-  opp is triaged to Go. The new **compliance register is separate** and now seeded (19).
-- **Live `GraphSharePoint` / `SharePointStore`** — no MS Graph here; Complete uses `LocalMirror`, Compliance
-  uses `LocalFileStore`. Both drop the live provider in behind the seam later. Don't fake either.
-- **Azure correction:** the **FWF Intern subscription IS live** (verified `az account list` 2026-07-12) but
-  **no resource group for this app exists yet**. The old `needs_subscription` note is stale; Azure Phase D's
-  real gap is now Bicep/IaC (A1) + creating the RG, not access.
+- **Sell2Wales upstream is down**, not us — re-check periodically; no code fix possible on our side.
+- **Empty *bid* pipeline is expected** (session-13 cleanse). Compliance register separate, seeded (19).
+- **Live `GraphSharePoint`/`SharePointStore`** — no MS Graph here; unrelated to this session's work.
+- **Azure:** FWF Intern subscription live; no resource group yet — Bicep/IaC (A1) is the real gap.
 
 ## Open decisions
 
-1. **What next** — commit + C4/phase-2 compliance, vs R1 router split (compliance makes a clean first carve),
-   vs Azure IaC now that the sub is confirmed. Not decided.
-2. **Compliance write-gating** — asset create/update/delete are open to any authenticated user (like bid
-   saves), not Admin-only. Revisit if compliance should be ops-restricted.
-3. **File-content expiry extraction** — parse dates out of the PDF/docx itself (needs a parser dep), vs the
-   current text-field mining. Deferred.
+1. **What next** — commit F1, surface partition errors, chase the bulk-download fallback, or start on
+   F6/G1–G3. Not decided.
+2. **Cert pin maintenance** — `src/certs/sectigo_dv_r36_intermediate.pem` is shared by PCS + Sell2Wales;
+   refresh instructions live in the module docstrings + `src/certs/README.md` if either site changes CA.
+3. Carried from session 19 (untouched this session): compliance write-gating, file-content expiry
+   extraction — see `progress.md` session-19 entry.
 
 ## Auth quick-reference
 
-Local dev default is `LOCAL_AUTH_BYPASS=1` (API unauthenticated, synthetic Admin) + `VITE_AAD_*` unset →
-runs like sessions 1–9. To exercise role-gating add `LOCAL_AUTH_ROLE=User`. Full config: `src/.env.example`
-(API) + `web/.env.example` (SPA). New env knobs: `COMPLIANCE_STORE` (default `local_file`),
-`COMPLIANCE_STORE_ROOT` (override the store dir, used by tests).
+Unchanged this session. Local dev default `LOCAL_AUTH_BYPASS=1`. Full config: `src/.env.example` +
+`web/.env.example`.
 
 ## Start-of-session checklist
 
 1. Read [`state.yaml`](state.yaml), [`CLAUDE.md`](../CLAUDE.md), this file, and [`todo.md`](todo.md).
-2. Confirm DB: `python3 src/db.py` → `opportunities: 24`, empty *bid* pipeline; the compliance register holds
-   19 seeded assets (separate from the bid pipeline).
-3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev` → <http://localhost:5173>.
-   The **"🛡 Compliance"** button (top bar) opens the new `#compliance` view.
-4. Complete's library reads the gitignored export; Compliance's files live in gitignored `src/compliance_store/`.
+2. Confirm DB: `python3 src/db.py` → `opportunities: 24` (unchanged — PCS/Sell2Wales proved with `--no-db`).
+3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev`. The Search
+   panel's source checkboxes now include Public Contracts Scotland + Sell2Wales automatically (registry-driven).
+4. `git status` will show 5 modified + 6 new files from this session, uncommitted.
 
 ## End-of-session checklist
 
