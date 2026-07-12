@@ -11,8 +11,10 @@ next_action: user_choose_commit_session21_or_next_backlog_item
 
 git:
   branch: main
-  clean: false                         # session-21 work is on disk, NOT committed: src/api.py, web/src/stages/SearchStage.jsx, web/src/styles.css modified; tests/test_search_surfacing.py + tests/test_search_hide_closed.py new
-  last_commit: 7c954e2                 # session-20 state.yaml sync, pushed to origin/main — session 21 has no commit yet
+  clean: true                          # session-21 (partition-surfacing + F6) committed at 1a8f7ae; this state.yaml sync lands one ahead
+  # The bookkeeping commit that saves this file necessarily lands one ahead of the
+  # feature commit — that single step is by design, not drift; verify against `git log`.
+  last_commit: 1a8f7ae                 # session-21 feature + docs, pushed to origin/main
 
 db:                                    # expected on resume
   opportunities: 24
