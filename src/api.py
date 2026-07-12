@@ -601,15 +601,21 @@ def _qualification_payload(conn, opp_id):
 
 @app.get("/api/triage/board")
 def triage_board(conn=Depends(get_conn)):
-    """Every pickable opportunity with its triage state — the same set the old
-    dropdown offered, now enriched so a card can show where each one stands:
-    untriaged, decided (Go / No go / needs-review), and whether it's a live bid.
-    Ordered by submission deadline (soonest first), plus a funnel summary."""
+    """The opportunities pulled into Triage, each with its state — enriched so a
+    card can show where it stands: untriaged, decided (Go / No go / needs-review),
+    and whether it's a live bid. Ordered by submission deadline (soonest first),
+    plus a funnel summary.
+
+    Membership is an explicit pull: Search is the full universe, and an opp only
+    lands here once the user picks it (triage_selections) — OR once it's already
+    been worked (has a qualification or a bid), so this gate never hides an
+    existing decision."""
     opps = _query_opportunities(
         conn, q=None, source=None, status=None, bid_status=None, lifecycle=None,
         country=None, region=None, currency=None, notice_type=None,
         min_value=None, max_value=None, sort="deadline_date", order="asc")
     states, bid_stage = db.list_triage_states(conn)
+    selected = db.selected_opportunity_ids(conn)
     dismissed = db.dismissed_opportunity_ids(conn)
 
     def state_key(triaged, decision, has_bid):
@@ -632,6 +638,11 @@ def triage_board(conn=Depends(get_conn)):
         triaged = st is not None
         decision = (st or {}).get("decision", "")
         has_bid = o["id"] in bid_stage
+        # The pull gate: show only opps the user selected into Triage, plus any
+        # already worked (qualification saved or bid promoted) so decisions never
+        # vanish. Everything else stays in Search until explicitly picked.
+        if o["id"] not in selected and not triaged and not has_bid:
+            continue
         items.append({
             **o,
             "triaged": triaged,
@@ -655,6 +666,20 @@ def triage_board(conn=Depends(get_conn)):
             summary["total"] += 1
             summary[i["state"]] += 1
     return {"items": items, "summary": summary}
+
+
+class TriageSelectUpdate(BaseModel):
+    selected: bool
+
+
+@app.put("/api/opportunities/{opp_id}/triage-select")
+def set_triage_select(opp_id: int, body: TriageSelectUpdate, conn=Depends(get_conn)):
+    """Pull an opportunity into the Triage board (the "Triage this →" handoff from
+    Search), or remove it. Selection only controls Triage membership — the opp
+    stays in Search and the DB either way. 404 if the opportunity doesn't exist."""
+    _require_opp(conn, opp_id)
+    state = db.set_triage_selected(conn, opp_id, body.selected)
+    return {"opportunity_id": opp_id, "selected": state}
 
 
 class TriageDismissUpdate(BaseModel):

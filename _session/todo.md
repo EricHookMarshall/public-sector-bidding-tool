@@ -52,6 +52,9 @@
 - [ ] **Cross-source dedupe** — `(source, ocid)` dedupes within a source; cross-source matching (same notice
       on FTS + CF) not yet handled. Low priority given the value-band split.
 - [ ] **AI-draft provenance persistence** — win-themes/evidence shown in the UI but not saved with the answer.
+- [ ] **Triage ✕ semantics (session 18 follow-on)** — Triage board is now explicit-pull (`triage_selections`);
+      the board's ✕ still `dismiss`es (reversible hide) rather than de-selecting. In a pull model these
+      overlap — decide whether ✕ should remove the selection outright. Cosmetic/UX, scope with user.
 - [ ] **Connector `to_record`/`run`/`main` dedup** (deferred from Wave 5) — the two connectors are near-verbatim;
       extract the shared body **when a 3rd source lands** (doing it against 2 sources is speculative).
 - [ ] **Parked polish** — CPV label badge on cards · lifecycle (`stale`/`closed`) badge on cards · widen CPV

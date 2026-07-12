@@ -7,27 +7,31 @@
 
 ## Status
 
-`2026-07-11` (session 17) — **Local/Azure hybrid review (58 findings) — security gate + tests + hygiene
-cleared and committed.** Scope chosen with the user: fix the security gate, add the two missing test suites,
-and sweep the ~35 mechanical hygiene findings; defer the big refactors + Azure infra. **Net −461 lines**
-across 32 files, 4 commits (`5d5e317` backend · `33512fa` frontend · `b73a23f` skills/config · `43ed07a`
-review docs). Highlights: CSV-injection neutraliser (S1); search-input bounds → 422 (S2); generic client
-errors + server logging (S3); DEV-gated browser logs (S4); urlencoded + stage-validated connector queries
-(S6); prompt-injection data fences (S7); provisional AI-date + unsupported-evidence flags surfaced in the UI
-(S8/S9); clean non-JSON handling (S10). New `tests/test_outcome.py` + `tests/test_response.py` take the suite
-**29 → 53**. Real behaviour fixes beyond cosmetics: `--stage` in preflight.py now genuinely differs
-(readiness advisory vs final blocking); `_require_bid`/`_require_opp` helpers replace ~10 duplicated 404
-guards; `IMMINENT_DAYS` shared from bidplan. Verified: `make check` green (53 tests + doc-consistency + vite),
-plus a TestClient security smoke (S1/S2/S3/S6/S10 + the 404 paths). **DB unchanged: 24 opportunities, empty
-pipeline.** Full narrative + the deferred list: `progress.md` and the review's remediation-status header.
+`2026-07-12` (session 18) — **Triage is now an explicit "pull" gate — only opps the user picks reach the
+board.** Bug the user spotted: the Triage board ran the *same unfiltered query as Search*, so all 24 stored
+opportunities showed up as "Untriaged" by default. Fix (mirrors the existing `triage_dismissals` side-table
+pattern so Search stays untouched): new **`triage_selections`** table + `selected_opportunity_ids()` /
+`set_triage_selected()` helpers ([src/db.py](../src/db.py)); the board now skips any opp that isn't
+selected **and** isn't already worked (`triage_board` in [src/api.py](../src/api.py) — the OR-worked clause
+keeps existing Go/No-go decisions from vanishing); new `PUT /api/opportunities/{id}/triage-select`; the
+Search "Triage this →" button now actually pulls the opp in before navigating
+([SearchStage.jsx](../web/src/stages/SearchStage.jsx)); Triage empty-state copy updated
+([TriageStage.jsx](../web/src/stages/TriageStage.jsx)). Verified: `make check` green (53 tests + doc + vite);
+TestClient select→board→deselect round-trip, worked-item backward-compat, and 404 on missing opp; **live
+`/api/triage/board` on the real `bids.db` now returns 0 items (was 24).** DB gains an empty `triage_selections`
+table; **still 24 opportunities, empty pipeline.**
 
-⚠️ **User action — S5 (High):** the real Anthropic key in gitignored `src/.env` must be **rotated/revoked**
-by a human — I can't rotate a credential. `.env.example` + `.gitignore` are already correct.
+⚠️ **Gotcha that wasted the first pass:** the running `uvicorn` had been started **without `--reload`**, so
+it kept serving pre-change code and the user's browser still showed 24. Restarted with `--reload`; endpoint
+now correct. If a code change "doesn't take", check the server was started with `--reload` first.
+
+⚠️ **User action — S5 (High, still open):** the real Anthropic key in gitignored `src/.env` must be
+**rotated/revoked** by a human — I can't rotate a credential. `.env.example` + `.gitignore` are already correct.
 
 ## Active task
 
-**No task in flight.** The review's in-scope work is done + committed. Remaining, explicitly deferred
-(now tracked in `state.yaml → deferred` and the review header):
+**No task in flight.** The pull-gate is shipped + committed. Remaining, explicitly deferred
+(tracked in `state.yaml → deferred`):
 
 1. **S5 key rotation** — user action, do this first (security).
 2. **Structural refactors** — R1 (split ~1.6k-line `api.py` into routers), R3 (dedupe connector
@@ -37,6 +41,10 @@ by a human — I can't rotate a credential. `.env.example` + `.gitignore` are al
    net-new and A3 is blocked without MS Graph. Ties into the parallel Azure track (Phases B+C done).
 4. **C-series "Compliance & Renewals" view** ⭐ — still the highest founding-purpose payoff (`todo.md`);
    scope with the user first.
+
+*(Follow-on the user may want next: the board's ✕ still `dismiss`es (reversible hide) rather than
+de-selecting; in a pull model these overlap. Left as-is deliberately — flag if you want ✕ to remove the
+selection outright.)*
 
 `make check` / `make check-fast` (`scripts/check.sh`) is the canonical health baseline — run before
 committing nontrivial changes.

@@ -521,7 +521,7 @@ function TriageBoard({ board, q, setQ, stateFilter, setStateFilter, onPick, onDi
           {showingDismissed
             ? "Nothing dismissed — dismissed opportunities show here to restore."
             : board.items.length === 0
-              ? "No opportunities stored yet — run a search in Stage 1 first."
+              ? "Nothing in Triage yet — open a result in Search (Stage 1) and pick “Triage this →” to pull it in."
               : "No opportunities match this filter."}
         </p>
       )}

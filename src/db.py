@@ -371,6 +371,19 @@ app_settings = Table(
     Column("updated_at", UnicodeText),
 )
 
+# Triage selections — the "pull" gate for the Triage board. Search is the full
+# universe of stored opportunities; an opp only reaches Triage once the user
+# explicitly picks it ("Triage this →"). Kept OUT of the opportunities table for
+# the same reason as dismissals: Search stays untouched and the shared record
+# shape doesn't change. A row present = selected into Triage; delete it to remove.
+# (Opps already worked — with a qualification or bid — are treated as in-triage
+# regardless, so this gate never hides existing decisions.)
+triage_selections = Table(
+    "triage_selections", metadata,
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id"), primary_key=True),
+    Column("selected_at", UnicodeText),
+)
+
 # Triage dismissals — a reversible "not pursuing this" flag, kept OUT of the
 # opportunities table on purpose: Search stays untouched (a dismissal only hides
 # the opp from the Triage board) and the shared record shape doesn't change. A
@@ -938,6 +951,32 @@ def list_triage_states(conn):
     }
     bid_stage = {b["opportunity_id"]: b["stage"] for b in bid_rows}
     return states, bid_stage
+
+
+def selected_opportunity_ids(conn):
+    """The set of opportunity ids explicitly pulled into the Triage board."""
+    rows = conn.execute("SELECT opportunity_id FROM triage_selections").fetchall()
+    return {r["opportunity_id"] for r in rows}
+
+
+def set_triage_selected(conn, opp_id, selected):
+    """Pull an opportunity into the Triage board (or remove it). Idempotent:
+    selecting an already-selected opp (or removing an absent one) is a no-op.
+    Returns the resulting selected state."""
+    exists = conn.execute(
+        "SELECT 1 FROM triage_selections WHERE opportunity_id = ?", (opp_id,)
+    ).fetchone()
+    if selected and not exists:
+        conn.execute(
+            "INSERT INTO triage_selections (opportunity_id, selected_at) VALUES (?, ?)",
+            (opp_id, now_iso()),
+        )
+    elif not selected and exists:
+        conn.execute(
+            "DELETE FROM triage_selections WHERE opportunity_id = ?", (opp_id,)
+        )
+    conn.commit()
+    return bool(selected)
 
 
 def dismissed_opportunity_ids(conn):

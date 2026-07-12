@@ -2,34 +2,37 @@
 # Update this every session BEFORE the prose in handover.md — it is the cheap, unambiguous
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
-updated: 2026-07-11
-session: 17
+updated: 2026-07-12
+session: 18
 
 phase: feature_complete_local        # all 6 stages real, wired to bids.db, live-verified
-active_workstream: local_azure_hybrid_review_security_hygiene  # S1-S10 + T1-T2 + ~35 hygiene done; refactors + Azure deferred
+active_workstream: triage_pull_gate  # Search->Triage is now explicit-pull (only picked opps reach Triage); shipped
 next_action: user_rotate_anthropic_key_then_scope_R1_R3_and_azure_A_series
 
 git:
   branch: main
-  clean: true                        # session-17 remediation committed; tree clean (triad commit lands one ahead)
+  clean: true                        # session-18 pull-gate committed; tree clean (triad commit lands one ahead)
   # Points at the tip as of this write. The bookkeeping commit that saves this
   # file necessarily lands one ahead — that single step is by design, not drift;
   # verify against `git log` if in doubt (higher authority than this file).
-  last_commit: 43ed07a               # docs(reviews): remediation disposition + archive (this bookkeeping commit lands one ahead)
+  last_commit: cd0a75d               # session-17 triad; session-18 feature + triad commits land ahead
 
 db:                                  # expected on resume (session-13 demo cleanse)
   opportunities: 24
   pipeline: empty                    # 0 quals/bids/plans/manage/responses/outcomes — intentional
+  triage_selections: 0               # NEW table (pull gate) — empty, so Triage board shows 0 until an opp is picked
+
   app_settings: 2
 
 verified:
-  make_check: 2026-07-11             # session 17: full make check green — 53 backend tests + doc-consistency + vite build
+  make_check: 2026-07-12             # session 18: full make check green — 53 backend tests + doc-consistency + vite build
+  triage_gate_live: 2026-07-12       # session 18: live /api/triage/board on real bids.db -> 0 items (was 24); TestClient select/deselect round-trip + worked-item backward-compat + 404
   backend_import: 2026-07-11         # session 17: api/connectors/triage_ai/complete_ai import clean after remediation
   security_smoke: 2026-07-11         # session 17: TestClient — S1 CSV neutralise, S2 -> 422, S3 generic, S6 urlencode, S10 clean decode, _require_* 404s
   upsert_roundtrip: 2026-07-11       # session 16: _upsert_one insert/update/blank-update/no-smuggle/JSON verified on temp db
-  frontend_build: 2026-07-11         # session 17: vite build clean after S4/S8/S9 UI + fmtDate extraction + dead-CSS removal
+  frontend_build: 2026-07-12         # session 18: vite build clean after SearchStage select-wire + TriageStage empty-state copy
   seeder_roundtrip: 2026-07-11       # session 14: all 4 seeders seed->clear against bids.db, empty pipeline restored
-  live_browser: 2026-07-10           # earlier: S5/S3/U1 user-confirmed in browser (session-17 changes not re-driven in-browser)
+  live_browser: 2026-07-12           # session 18: user screenshot showed old (unfiltered) board — was a no-reload server; restarted, endpoint now 0. Browser refresh not re-confirmed by user post-restart
 
 external_blockers:
   graph_sharepoint: credentials_and_provisioning   # LocalMirror seam covers Complete meanwhile

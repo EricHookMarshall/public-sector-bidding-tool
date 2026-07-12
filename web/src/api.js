@@ -134,6 +134,11 @@ export const getTriageReference = () => getJSON("/api/triage/reference");
 // (untriaged / decided / bid live) + a funnel summary.
 export const getTriageBoard = () => getJSON("/api/triage/board");
 
+// Pull an opportunity into the Triage board (the "Triage this →" handoff), or
+// remove it. Selection controls Triage membership only — it stays in Search.
+export const setTriageSelected = (oppId, selected) =>
+  sendJSON(`/api/opportunities/${oppId}/triage-select`, "PUT", { selected });
+
 // Reversibly dismiss an opportunity from the Triage board (or restore it).
 // Dismissal only hides it from Triage — it stays in Search and the DB.
 export const setTriageDismissed = (oppId, dismissed) =>

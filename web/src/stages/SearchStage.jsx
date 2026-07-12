@@ -3,7 +3,7 @@
 // stages. Logic is unchanged; only the outer page chrome (moved to App.jsx as
 // the shared top bar) was removed.
 import { useEffect, useState } from "react";
-import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport } from "../api.js";
+import { getMeta, getOpportunities, getOpportunity, runSearch, downloadExport, setTriageSelected } from "../api.js";
 import { fmtMoney, fmtDate } from "../format.js";
 
 const EMPTY_FILTERS = {
@@ -505,12 +505,20 @@ function Detail({ opp, onClose }) {
               View original notice ↗
             </a>
           )}
-          {/* The Search → Triage handoff: hand this opportunity to Stage 2. The
-              id rides in sessionStorage so it survives the hash navigation; the
-              Triage stage picks it up on mount. */}
+          {/* The Search → Triage handoff: pull this opportunity into Stage 2.
+              The select call is the pull gate (only picked opps appear on the
+              Triage board); the id also rides in sessionStorage so Triage opens
+              straight onto it after the hash navigation. Navigate even if the
+              select call fails — the board reload on mount will retry membership,
+              and the user still lands on the opportunity. */}
           <button
             className="cta cta-triage"
-            onClick={() => {
+            onClick={async () => {
+              try {
+                await setTriageSelected(opp.id, true);
+              } catch {
+                /* non-fatal: still hand off; board membership self-heals on load */
+              }
               sessionStorage.setItem("bidpath.triage.opp", String(opp.id));
               window.location.hash = "triage";
             }}

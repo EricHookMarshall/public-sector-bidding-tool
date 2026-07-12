@@ -3,6 +3,49 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 18) — Triage becomes an explicit "pull" gate
+
+**Context.** User observed that the Triage board (Stage 2) showed *every* stored opportunity by default —
+all 24, as "Untriaged" — and flagged it as unintended: only opps explicitly selected for triage should appear.
+Investigation confirmed the board endpoint ran the *same unfiltered query as Search*, and there was no
+"selected for triage" concept in the schema at all (state was computed from qualifications/bids; the only
+opt-out was a reversible dismissal). User chose the **explicit-pull** model (over "keep funnel, hide
+untriaged" or "keep as-is").
+
+**Work done.**
+
+- **`src/db.py`** — new `triage_selections` side-table (mirrors `triage_dismissals`, kept OUT of the
+  `opportunities` table so Search stays untouched; auto-creates via startup `create_all(checkfirst=True)`),
+  plus `selected_opportunity_ids()` / `set_triage_selected()` helpers.
+- **`src/api.py`** — `triage_board` now skips any opp that isn't selected **and** isn't already worked
+  (the OR-worked clause = `triaged or has_bid`, so existing Go/No-go decisions never vanish); new
+  `PUT /api/opportunities/{id}/triage-select` + `TriageSelectUpdate` model.
+- **`web/src/api.js`** — `setTriageSelected()`.
+- **`web/src/stages/SearchStage.jsx`** — the "Triage this →" button now calls `setTriageSelected(id, true)`
+  (the pull action) before the hash-navigation handoff; navigates even if the select call fails
+  (board membership self-heals on load).
+- **`web/src/stages/TriageStage.jsx`** — empty-state copy now points the user to Search's "Triage this →".
+- **Verification (honest):** `make check` green — **53 backend tests + doc-consistency + vite build clean**.
+  TestClient round-trip on a temp DB: board `0` before selection → select opp → board shows exactly that one
+  as `untriaged` → deselect → `0`; missing opp → `404`; and a *worked-but-unselected* opp (qualification
+  saved via `PUT …/qualification`) **still** appears (`no_go`) — backward-compat confirmed. **Live**
+  `GET /api/triage/board` against the real `bids.db` now returns **0 items (was 24)**.
+
+**Decisions.** (1) Side-table over a column on `opportunities` — matches the codebase's own dismissals
+precedent and keeps the shared record shape / Search untouched. (2) Admit already-worked opps (qual or bid)
+so the gate never hides an existing decision. (3) Left the board's ✕ as `dismiss` (reversible hide) rather
+than merging it with de-select — non-breaking, and only the pull gate was asked for.
+
+**Open questions raised.** Should the board ✕ de-select (remove from Triage) instead of / in addition to
+dismiss? They overlap in a pull model. Deferred — flagged in handover.
+
+**Gotcha.** The first attempt *looked* like it hadn't worked: the user's browser still showed 24. Root cause
+was a stale server — the running `uvicorn` had been started **without `--reload`**, so it served pre-change
+code. Restarted with `--reload`; the live endpoint then returned 0. (The code was correct all along.)
+
+**Next.** No task in flight. Deferred queue unchanged (S5 key rotation = user action; R1/R3/C3 refactors;
+Azure A1–A9; C-series compliance view — scope with user).
+
 ## 2026-07-11 (session 17) — Local/Azure hybrid review: security gate + tests + hygiene cleared
 
 **Context.** A new merged code review landed (`docs/code_reviews/2026-07-11-local-azure-hybrid-review-
