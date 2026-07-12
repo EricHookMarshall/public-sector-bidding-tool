@@ -1136,6 +1136,19 @@ def list_awards(conn):
     return [_row_dict(r) for r in rows]
 
 
+def delete_award(conn, award_pk):
+    """Delete one award by primary key. Returns its `source` (so the caller can
+    tell a hand-entered record from an OCDS-pulled one) or None if the id didn't
+    exist. Used to correct a manual entry; an OCDS-sourced award simply returns
+    on the next refresh, so deletion is only meaningful for manual records."""
+    row = conn.execute("SELECT source FROM awards WHERE id = ?", (award_pk,)).fetchone()
+    if row is None:
+        return None
+    conn.execute("DELETE FROM awards WHERE id = ?", (award_pk,))
+    conn.commit()
+    return row["source"]
+
+
 # --- Compliance-asset register CRUD (C-series) -----------------------------
 
 def list_compliance_assets(conn):

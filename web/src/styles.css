@@ -824,8 +824,19 @@ header.top {
 .award-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; font-size: 0.86rem; color: var(--muted); }
 .award-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px; }
 .award-src { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+/* Manual (hand-recorded) award — the "unverified" provenance badge + delete control */
+.award-badge { margin-left: 8px; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; vertical-align: middle;
+  background: var(--warn-bg, #fdf1d6); color: var(--warn, #8a5a00); }
+.award-del { color: var(--bad, #b23); }
+/* Record-a-known-award form */
+.awards-manual { max-width: none; margin-bottom: 14px; }
+.settings-head-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.awards-manual-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin: 10px 0 2px; }
+.awards-manual-wide { grid-column: 1 / -1; }
 @media (max-width: 720px) {
   .awards-org-grid { grid-template-columns: 1fr; }
+  .awards-manual-grid { grid-template-columns: 1fr; }
 }
 
 /* Framework radar (G2) */

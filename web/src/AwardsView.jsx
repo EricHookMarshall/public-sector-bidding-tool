@@ -5,8 +5,17 @@
 // isn't ours. The CH number is app config (never hardcoded); until it's set the
 // view prompts for it. "Refresh" re-pulls from the live APIs (Admin).
 import { useEffect, useState } from "react";
-import { getAwardsBoard, saveOwnOrg, refreshAwards } from "./api.js";
+import { getAwardsBoard, saveOwnOrg, refreshAwards, addManualAward, deleteAward } from "./api.js";
 import { fmtMoney, fmtDate } from "./format.js";
+
+// Awards recorded by hand (a genuine win public OCDS can't surface) carry this
+// source — kept in step with api.py MANUAL_AWARD_SOURCE. Used to badge the card
+// honestly and to show the delete/correct control only on manual entries.
+const MANUAL_SOURCE = "Internal record (manual)";
+const EMPTY_MANUAL = {
+  title: "", buyer_name: "", supplier_name: "", award_date: "",
+  contract_start: "", contract_end: "", value_amount: "", note: "",
+};
 
 export default function AwardsView() {
   const [board, setBoard] = useState(null);
@@ -15,6 +24,8 @@ export default function AwardsView() {
   const [busy, setBusy] = useState(false);
   const [chNumber, setChNumber] = useState("");
   const [legalName, setLegalName] = useState("");
+  const [showManual, setShowManual] = useState(false);
+  const [manual, setManual] = useState(EMPTY_MANUAL);
 
   const load = () =>
     getAwardsBoard()
@@ -47,6 +58,33 @@ export default function AwardsView() {
       await load();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
+
+  const onAddManual = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(""); setNote("");
+    try {
+      const body = { ...manual };
+      // value_amount is a text input — send a number or omit it entirely.
+      body.value_amount = manual.value_amount === "" ? null : Number(manual.value_amount);
+      await addManualAward(body);
+      setNote("Recorded as an internal award. Marked ‘unverified’ — it isn't a public OCDS match.");
+      setManual(EMPTY_MANUAL);
+      setShowManual(false);
+      await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const onDeleteAward = async (id) => {
+    if (!window.confirm("Remove this recorded award?")) return;
+    setBusy(true); setError(""); setNote("");
+    try {
+      await deleteAward(id);
+      setNote("Award removed.");
+      await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const setM = (k) => (e) => setManual((m) => ({ ...m, [k]: e.target.value }));
 
   const s = board?.summary;
   const configured = board?.configured;
@@ -97,8 +135,66 @@ export default function AwardsView() {
             </div>
           </form>
 
+          {/* Add a known award by hand — for a genuine win public OCDS can't
+              surface (named-only notice / sub-threshold / subcontract). */}
+          <div className="settings-card awards-manual">
+            <div className="settings-head-row">
+              <h3 className="settings-section">Record a known award</h3>
+              <button className="mini-btn" type="button"
+                onClick={() => { setShowManual((v) => !v); setError(""); setNote(""); }}>
+                {showManual ? "Cancel" : "+ Add by hand"}
+              </button>
+            </div>
+            <p className="fld-help">
+              For a contract we won that the public award notices don’t show — recorded as an
+              internal record and marked <b>unverified</b>, never dressed up as a public match.
+              Capture what’s known; leave the rest blank.
+            </p>
+            {showManual && (
+              <form className="awards-manual-grid" onSubmit={onAddManual}>
+                <label className="fld awards-manual-wide">Title / service
+                  <input value={manual.title} onChange={setM("title")}
+                    placeholder="e.g. Workforce transformation support" />
+                </label>
+                <label className="fld">Buyer
+                  <input value={manual.buyer_name} onChange={setM("buyer_name")}
+                    placeholder="e.g. NHS Barnsley" />
+                </label>
+                <label className="fld">Supplier
+                  <input value={manual.supplier_name} onChange={setM("supplier_name")}
+                    placeholder={legalName || "Future Work Force Limited"} />
+                </label>
+                <label className="fld">Award date
+                  <input value={manual.award_date} onChange={setM("award_date")}
+                    placeholder="YYYY-MM-DD (approx ok)" />
+                </label>
+                <label className="fld">Value (£)
+                  <input value={manual.value_amount} onChange={setM("value_amount")}
+                    inputMode="decimal" placeholder="e.g. 45000" />
+                </label>
+                <label className="fld">Contract start
+                  <input value={manual.contract_start} onChange={setM("contract_start")}
+                    placeholder="YYYY-MM-DD" />
+                </label>
+                <label className="fld">Contract end
+                  <input value={manual.contract_end} onChange={setM("contract_end")}
+                    placeholder="YYYY-MM-DD" />
+                </label>
+                <label className="fld awards-manual-wide">Note (where this came from)
+                  <input value={manual.note} onChange={setM("note")}
+                    placeholder="e.g. original notice not locatable; from internal records" />
+                </label>
+                <div className="settings-actions awards-manual-wide">
+                  <button className="run-btn" type="submit" disabled={busy}>
+                    {busy ? "Saving…" : "Record award"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
           {/* Summary KPIs */}
-          {configured && (
+          {(configured || board.awards.length > 0) && (
             <div className="pd-facts awards-stats">
               <div className="stat"><span className="k">Awards</span><span className="v">{s.total}</span></div>
               <div className="stat"><span className="k">Total value</span><span className="v">{fmtMoney(s.total_value)}</span></div>
@@ -116,10 +212,14 @@ export default function AwardsView() {
             </div>
           ) : (
             <div className="awards-list">
-              {board.awards.map((a) => (
+              {board.awards.map((a) => {
+                const isManual = a.source === MANUAL_SOURCE;
+                return (
                 <article className="settings-card award-card" key={`${a.source}:${a.award_id}`}>
                   <div className="award-top">
-                    <h4>{a.title}</h4>
+                    <h4>{a.title}
+                      {isManual && <span className="award-badge" title="Recorded by hand — not a verified public OCDS match">unverified</span>}
+                    </h4>
                     <span className="award-value">{fmtMoney(a.value_amount, a.currency)}</span>
                   </div>
                   <div className="award-meta">
@@ -132,9 +232,13 @@ export default function AwardsView() {
                   <div className="award-foot">
                     <span className="award-src">{a.source}</span>
                     {a.url && <a className="link" href={a.url} target="_blank" rel="noreferrer">View notice ↗</a>}
+                    {isManual && (
+                      <button className="link award-del" type="button"
+                        onClick={() => onDeleteAward(a.id)} disabled={busy}>Remove</button>
+                    )}
                   </div>
                 </article>
-              ))}
+              );})}
             </div>
           )}
         </>

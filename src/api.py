@@ -25,6 +25,7 @@ import logging
 import math
 import os
 import re
+import uuid
 from contextlib import asynccontextmanager
 
 log = logging.getLogger("api")
@@ -1898,6 +1899,76 @@ def awards_refresh(days: int = Query(365, ge=1, le=3650), conn=Depends(get_conn)
         "failed_sources": len(res["source_errors"]),
         "board": awards_board(conn),
     }
+
+
+# Some real awards can't be recovered from public OCDS at all: the notice named the
+# supplier by name only (no Companies House identifier for the CH-matcher to catch),
+# or the award was below the publication threshold, or FWF was a subcontractor rather
+# than the named prime. Those genuinely-won contracts still belong on the track record,
+# so we let an Admin record one by hand — tagged with a DISTINCT source so it reads
+# honestly as an internal record (never dressed up as a public OCDS match) and is never
+# touched by the OCDS refresh. Precedent: the NHS Barnsley win, whose original award
+# notice can't be located publicly (see _session/award_refresh_log.md).
+MANUAL_AWARD_SOURCE = "Internal record (manual)"
+
+
+class ManualAwardCreate(BaseModel):
+    title: str = ""
+    buyer_name: str = ""
+    supplier_name: str = ""
+    award_date: str = ""        # tolerant: TEXT like the OCDS-mapped fields
+    contract_start: str = ""
+    contract_end: str = ""
+    value_amount: float | None = None
+    currency: str = ""
+    cpv_codes: str = ""
+    url: str = ""
+    note: str = ""              # free-text provenance ("where this came from")
+
+
+@app.post("/api/awards/manual", dependencies=[Depends(require_roles("Admin"))])
+def add_manual_award(body: ManualAwardCreate, conn=Depends(get_conn)):
+    """Record a known award that public OCDS can't surface. Stored under
+    MANUAL_AWARD_SOURCE with a generated award_id; supplier_scheme is 'MANUAL'
+    (NOT GB-COH) so the provenance never masquerades as a verified public match.
+    Every field is optional — capture what's known, leave the rest blank."""
+    if not (body.title or body.buyer_name or body.supplier_name):
+        raise HTTPException(
+            status_code=422,
+            detail="Give at least a title, buyer, or supplier — an empty award can't be recorded.",
+        )
+    rec = {
+        "source": MANUAL_AWARD_SOURCE,
+        "award_id": f"manual-{uuid.uuid4().hex[:12]}",
+        "title": body.title.strip() or "(untitled award)",
+        "buyer_name": body.buyer_name.strip() or None,
+        "supplier_name": body.supplier_name.strip() or _own_org(conn)["legal_name"] or None,
+        "supplier_scheme": "MANUAL",
+        "supplier_id": None,
+        "cpv_codes": body.cpv_codes.strip() or None,
+        "value_amount": body.value_amount,
+        "currency": (body.currency.strip() or ("GBP" if body.value_amount else "")) or None,
+        "award_date": body.award_date.strip() or None,
+        "contract_start": body.contract_start.strip() or None,
+        "contract_end": body.contract_end.strip() or None,
+        "status": "unverified",   # honest: not a confirmed public award record
+        "url": body.url.strip() or None,
+        "raw_json": {"manual": True, "note": body.note.strip()},
+    }
+    db.upsert_award(conn, rec)
+    conn.commit()  # upsert_award doesn't commit (callers do), and get_conn won't
+    return {"added": True, "award_id": rec["award_id"], "board": awards_board(conn)}
+
+
+@app.delete("/api/awards/{award_pk}", dependencies=[Depends(require_roles("Admin"))])
+def delete_award(award_pk: int, conn=Depends(get_conn)):
+    """Delete an award by primary key — for correcting a manual entry. (An
+    OCDS-sourced award would just return on the next refresh; only manual records
+    are meaningfully removable, and only those carry a delete control in the UI.)"""
+    src = db.delete_award(conn, award_pk)
+    if src is None:
+        raise HTTPException(status_code=404, detail="Award not found.")
+    return {"deleted": True, "id": award_pk, "source": src, "board": awards_board(conn)}
 
 
 # G2 — framework radar: which GCA agreements FWF should join. Curated agreements,

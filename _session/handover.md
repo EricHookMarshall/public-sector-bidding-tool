@@ -7,31 +7,31 @@
 
 ## Status
 
-`2026-07-12` (session 22) — **G-series (GCA/frameworks intelligence) shipped — G3, G1, G2, in that order:**
+`2026-07-12` (session 23) — **Award-refresh diagnosed + G1 manual award capture shipped:**
 
-- **G3 — How to supply** (`#supply`, 📘): curated read-only reference — 5 routes to market (Frameworks,
-  Dynamic Markets, DPS, Catalogues, finding notices) + novice getting-started + help links. Source link per
-  route + a `verified` date + re-verify disclaimer. `src/supply_reference.py`, `GET /api/supply/reference`.
-- **G1 — Our contracts** (`#awards`, 🏆): FWF's OWN awards from the OCDS **award** packages (FTS + CF), matched
-  by **Companies House number** (GB-COH) so no false records. New `awards` sibling table +
-  `upsert_award`/`list_awards`. CH number is app config (`own_org` = `11934102`, lives in the gitignored
-  bids.db), never hardcoded. `src/own_awards.py`; `GET/PUT /api/settings/own-org`, `/api/awards/board`, `/api/awards/refresh`.
-- **G2 — Framework radar** (`#frameworks`, 📡): curated GCA agreements, but **lifecycle + recommendation
-  computed LIVE against today** (act/pursue/prepare/maintain/watch/skip) — guards the RM6263 stale-listing
-  failure. `src/frameworks_radar.py`, `GET /api/frameworks/radar`.
-- **`make check` green: 98 backend tests** (was 80; +4 supply, +8 own-awards, +6 radar), doc-consistency, vite
-  build (135.92 kB). Live via uvicorn: all endpoints OK; **G1 matcher fired on real live FTS data** (Softcat Plc).
+- **The award-refresh 429s were the VPN's shared exit IP** — not our hammering. With the VPN off (residential
+  IP), a 7-day probe walked **930 award notices with zero 429s**. The earlier RATE_LIMITED verdict is resolved.
+- **BUT FWF's real NHS Barnsley win is not recoverable from public OCDS.** CH `11934102` verified correct
+  (= "FUTURE WORK FORCE LIMITED"), yet no award to FWF appears in Contracts Finder's supplier search or web
+  search under either spelling. Likely the notice named FWF without a CH id (so the GB-COH matcher correctly
+  won't catch it), was sub-threshold, or FWF was a subcontractor. Full trail in `award_refresh_log.md`.
+- **G1 manual award capture (new).** `POST /api/awards/manual` + `DELETE /api/awards/{id}` (Admin),
+  `db.delete_award`. Stored under source `Internal record (manual)`, scheme `MANUAL` (never GB-COH), status
+  `unverified` — honest provenance, and the OCDS refresh never overwrites it. `AwardsView` "Record a known
+  award" form + `unverified` badge + Remove. **The NHS Barnsley record is seeded into bids.db.**
+- **`make check` green: 103 backend tests** (was 98; +5 manual-awards, incl. a "survives OCDS refresh" guard),
+  doc-consistency, vite build. Live-verified via uvicorn: POST → board=1, empty → 422, persisted to disk.
 
 ## Active task
 
-**No task in flight — G3/G1/G2 all shipped and committed to main. Two open threads:**
+**Next task — continue searching the APIs for the NHS Barnsley award's details.** The contract is real and now
+recorded manually (unverified stub), but its public notice hasn't been located. Keep hunting via API search
+(FTS/CF OCDS award feeds date-boxed to 3–4yr ago; buyer-name/keyword angles) to find the notice or enough
+detail (title, date, value, contract term) to **enrich the seeded manual record**. If it genuinely isn't
+published, that's a definitive finding — record it and move on. Coverage caveat: `own_awards._fetch_source`
+caps at `max_pages=200` (~5 months of feed volume), so a full-window walk needs date-chunking to be exhaustive.
 
-1. **A clean award refresh** — the first refresh 429'd (I'd hammered FTS in the smokes); backoff added to both
-   sources + page pacing; a **4-year retry was running** at session close (check its output + `awards` count).
-   FWF's real awards (likely NHS, 3–4yr back) only populate once a run completes un-rate-limited.
-2. **"Bids we lost" (user req)** — NOT available from public OCDS (award notices name only the winner). Source
-   it from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector — new work.
-3. **Click the 3 new views in a live browser** — API + build verified only so far.
+Also still open (unchanged): **click the 3 new views (G1/G2/G3) in a live browser** (API + build verified only).
 
 ## Blockers / prerequisites
 

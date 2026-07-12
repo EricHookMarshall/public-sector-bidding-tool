@@ -54,11 +54,21 @@
 
 **G-series follow-ons (open):**
 
-- [ ] **G1 clean award refresh** — the awards table is empty because refreshes 429'd (rate-limited), not
-      because FWF has no awards. Backoff + page pacing added; get one un-rate-limited 4-year dual-source run to
-      actually populate FWF's own (likely NHS, 3–4yr back) awards.
+- [x] **G1 clean award refresh** (session 23) — RESOLVED, but not as hoped. The 429s were the **VPN's shared
+      exit IP** (a clean 930-notice probe ran with zero 429s once the VPN was off). BUT FWF's real NHS Barnsley
+      win is **not in public OCDS under CH 11934102** (CH verified = "FUTURE WORK FORCE LIMITED"; no award found
+      via Contracts Finder supplier search or web under either spelling — the notice likely named FWF without a
+      CH id, was sub-threshold, or FWF was a subcontractor). The website search and OCDS feed read the same data,
+      so more scanning won't change it. Full retrospective in `_session/award_refresh_log.md`.
+- [x] **G1 manual award capture** (session 23) — SHIPPED. `POST /api/awards/manual` + `DELETE /api/awards/{id}`
+      (Admin), `db.delete_award`; source `Internal record (manual)`, scheme `MANUAL` (never GB-COH), status
+      `unverified` — honest provenance, untouched by the OCDS refresh. `AwardsView` "Record a known award" form +
+      badge + remove control. NHS Barnsley record seeded into bids.db. `tests/test_manual_awards.py` (5).
+- [ ] **G1 manual-award edit** (follow-on) — the form does create + delete; no in-place edit yet (delete+re-add).
+      Refine the seeded NHS Barnsley record (title/date/value) when FWF's internal records surface.
 - [ ] **G1 "bids we lost" (user req)** — NOT in public OCDS (award notices name only the winner). Source lost
-      bids from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector.
+      bids from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector. (Same
+      internal-sourcing pattern the manual-award capture above now establishes.)
 - [ ] **G2 membership from G1 data** — corroborate the radar's `fwf_status` (member/not) from real own-awards
       data once populated, instead of the curated VERIFIED_FACTS claim (currently flagged "confirm").
 - [ ] **Click the 3 new views in a live browser** — API + build verified only so far.

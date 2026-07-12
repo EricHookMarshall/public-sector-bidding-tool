@@ -3,18 +3,18 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 22
+session: 23
 
-phase: feature_complete_local          # 6 journey stages + Compliance + 4 search connectors + G-series (G1/G2/G3) intelligence views
-active_workstream: g_series_frameworks_intelligence  # session 22: G3 how-to-supply + G1 own-awards + G2 framework radar
-next_action: await_4yr_award_refresh_then_browser_click_new_views
+phase: feature_complete_local          # 6 journey stages + Compliance + 4 search connectors + G-series (G1/G2/G3) intelligence views + G1 manual award capture
+active_workstream: g1_own_awards_detail  # session 23: award-refresh diagnosis (VPN was the throttle) + manual award capture for the NHS Barnsley win
+next_action: continue_api_search_for_nhs_barnsley_award_details  # the contract is real but not yet located in public OCDS — keep searching the APIs for its notice/details to enrich the manual record
 
 git:
   branch: main
-  clean: false                         # session-22 (G1/G2/G3) committed to main this pass; verify with `git log`
-  # The bookkeeping/doc-sync content travels IN the same commit as the features this
-  # session (user asked to commit to main directly), so there is no +1 split here.
-  last_commit: 1a8f7ae                 # PRIOR tip (session-21); session-22 commit lands on top — read `git log` for its hash
+  clean: false                         # session-23 (manual award capture) committed to main this pass; verify with `git log`
+  # The bookkeeping/doc-sync content travels IN the same commit as the feature this
+  # session (user asked to commit + push to main directly), so there is no +1 split here.
+  last_commit: 699bbd4                 # PRIOR tip (session-22, G-series); session-23 commit lands on top — read `git log` for its hash
 
 db:                                    # expected on resume
   opportunities: 24
@@ -22,10 +22,11 @@ db:                                    # expected on resume
   triage_selections: 0                 # pull gate — empty until an opp is picked
   compliance_assets: 19                # seeded from the real bid library on first server start (incl. EXPIRED ISO). 18 no-date + 1 expired
   app_settings: 3                      # +own_org (G1): FWF CH number 11934102 set in the gitignored bids.db
-  awards: 0                            # NEW table (G1) — FWF's own OCDS awards; empty pending a successful refresh (see verified.awards_refresh)
+  awards: 1                            # G1 — 1 MANUAL record (NHS Barnsley, unverified). 0 from OCDS: FWF's real award is not surfaceable in public OCDS under its CH number (see verified.awards_barnsley_manual). Refresh path works but returns 0 for FWF.
 
 verified:
-  make_check: 2026-07-12               # session 22: full make check green — 98 backend tests (80 + 4 supply-ref + 8 own-awards + 6 framework-radar) + doc-consistency + vite build (135.92 kB)
+  make_check: 2026-07-12               # session 23: full make check green — 103 backend tests (98 + 5 manual-awards) + doc-consistency + vite build
+  awards_barnsley_manual: 2026-07-12   # session 23: award refresh confirmed VPN was the rate limiter (clean 930-notice probe after VPN off). But FWF's NHS Barnsley win is NOT in public OCDS under CH 11934102 (verified: CH=FUTURE WORK FORCE LIMITED, correct; no award found via CF supplier search or web under either spelling). Built manual-award capture (POST /api/awards/manual + DELETE, source='Internal record (manual)', scheme='MANUAL' not GB-COH, status='unverified'); AwardsView "Record a known award" form + badge + remove. Seeded the NHS Barnsley record into bids.db. Live-verified: POST→board=1, 422 on empty, persisted. See _session/award_refresh_log.md.
   g3_supply_ref_live: 2026-07-12       # session 22 (G3): GET /api/supply/reference live via uvicorn — 5 routes, 5 steps, 5 links. Curated reference, verified-date + source per route. tests/test_supply_reference.py (4)
   g1_own_awards_match_live: 2026-07-12 # session 22 (G1): matcher fired on LIVE FTS award data — real supplier Softcat Plc (CH 02174990) correctly matched + normalised; FWF (11934102) matched 0 in a random 5-day window (expected). 209 live notices parsed cleanly. tests/test_own_awards.py (8)
   g1_endpoints_live: 2026-07-12        # session 22: /api/awards/board (configured=true, own_org set, 0 awards), /api/settings/own-org, POST /api/awards/refresh all live via uvicorn

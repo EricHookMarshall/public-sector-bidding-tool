@@ -305,6 +305,13 @@ export const getAwardsBoard = () => getJSON("/api/awards/board");
 export const refreshAwards = (days = 365) =>
   sendJSON(`/api/awards/refresh?days=${days}`, "POST");
 
+// Record a known award public OCDS can't surface (named-only / sub-threshold /
+// subcontract). Stored as an internal record, never a faked public match (Admin).
+export const addManualAward = (body) => sendJSON("/api/awards/manual", "POST", body);
+
+// Remove an award by primary key — for correcting a manual entry (Admin).
+export const deleteAward = (id) => sendJSON(`/api/awards/${id}`, "DELETE");
+
 // ---- Framework radar (G2) ----
 
 // Candidate GCA agreements relevant to FWF, each scored (act/pursue/prepare/

@@ -3,6 +3,45 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 23) — Award-refresh diagnosis (VPN) + G1 manual award capture (NHS Barnsley)
+
+**Context.** Resumed from session 22 (G-series, `699bbd4`). User asked "what's next?" → chased the open
+session-22 thread: get a clean award refresh so FWF's own awards populate. The specific target emerged in
+conversation: FWF has won exactly **one** public-sector contract — with **NHS Barnsley, ~3–4 years ago**.
+
+**Diagnosis (the refresh 429s).**
+
+- **It was the VPN.** The session-22 RATE_LIMITED verdict blamed our own smoke-test hammering; wrong. The user
+  had a VPN running whose **shared exit IP** was the throttled one. With it off (a normal residential IP),
+  a 7-day `--no-db` probe walked **930 award notices with zero 429s**. A subsequent full 4-yr run still took
+  42 min (killed) — the full-feed walk is impractical AND `_fetch_source` caps at `max_pages=200` (~5 months of
+  feed volume), so "4-yr window" ≠ "4 yrs scanned". A durable timestamped attempt log now lives at
+  `_session/award_refresh_log.md` (start/end BST, window, exit code, output) so retries have a real clock.
+- **The NHS Barnsley award is NOT in public OCDS under FWF.** Verified CH `11934102` = "FUTURE WORK FORCE
+  LIMITED" (active, SIC 62020) — the matcher key is correct. But Contracts Finder supplier search + web search
+  under both spellings ("Future Workforce" / "Future Work Force") surface **no** NHS Barnsley award to FWF (only
+  the unrelated national NHSBSA/Infosys ESR deal). Website search and the OCDS feed read the same data, so more
+  scanning won't change it. Likely the notice named FWF **without a CH identifier** (the GB-COH matcher then
+  correctly won't record it — no false record), was **sub-threshold**, or FWF was a **subcontractor**.
+
+**Work done — G1 manual award capture** (public OCDS can't surface a real win → let an Admin record it by hand).
+
+- **Backend.** `POST /api/awards/manual` + `DELETE /api/awards/{id}` (Admin), new `db.delete_award`. Stored
+  under a DISTINCT source `Internal record (manual)`, `supplier_scheme = "MANUAL"` (never GB-COH), `status =
+  "unverified"` — honest provenance, never dressed up as a public match, and **untouched by the OCDS refresh**
+  (different source key). At-least-one-of title/buyer/supplier required (422 otherwise). Bug caught + fixed:
+  `upsert_award` doesn't self-commit (callers do), so the endpoint commits explicitly like `own_awards.run`.
+- **Frontend.** `AwardsView` "Record a known award" collapsible form (title/buyer/supplier/date/value/term/note),
+  `unverified` badge on manual cards, Remove control; KPIs now show when any award exists (not only when CH-set).
+- **Data.** Seeded the NHS Barnsley record into `bids.db` (buyer + supplier + provenance note; blanks elsewhere).
+- **Tests.** `tests/test_manual_awards.py` (5) incl. a "manual record survives an OCDS refresh" guard. Full
+  `make check` green: **103 backend tests** (was 98), doc-consistency, vite build. Live-verified via uvicorn:
+  POST → board total 1, empty → 422, DELETE-missing → 404, persisted to disk.
+
+**Next task.** Continue searching the APIs for the NHS Barnsley award's details (date-boxed 3–4yr OCDS walk with
+date-chunking to beat the 200-page cap; buyer/keyword angles) to enrich the manual stub — or confirm definitively
+it isn't published. Also: click G1/G2/G3 in a live browser (still API+build-verified only).
+
 ## 2026-07-12 (session 22) — G-series: how-to-supply reference (G3) + own-awards (G1) + framework radar (G2)
 
 **Context.** Resumed from session 21 (F-series polish, `1a8f7ae`). User asked "what's next?"; agreed to work
