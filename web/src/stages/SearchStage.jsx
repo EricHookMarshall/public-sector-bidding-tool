@@ -10,6 +10,9 @@ const EMPTY_FILTERS = {
   q: "",
   source: "",
   bid_status: "",
+  // Default view hides closed opps unless they're in the pipeline; an explicit
+  // Bid-status filter (below) overrides this server-side.
+  hide_closed: true,
   lifecycle: "",
   country: "",
   region: "",
@@ -110,6 +113,15 @@ export default function SearchStage() {
             onChange={set("bid_status")}
             options={["open", "closed", "unknown"]}
           />
+          <label className="check-row" title="Closed opps in your pipeline (picked into Triage, or with a qualification/bid) always stay visible.">
+            <input
+              type="checkbox"
+              checked={filters.hide_closed}
+              disabled={filters.bid_status !== ""}
+              onChange={(e) => setFilters((f) => ({ ...f, hide_closed: e.target.checked }))}
+            />
+            Hide closed (unless in pipeline)
+          </label>
           <Select
             label="Lifecycle"
             value={filters.lifecycle}
@@ -422,11 +434,18 @@ function SearchPanel({ meta, onSearched }) {
             {summary && (
               <span className="run-summary">
                 {summary.runs.map((r) => (
-                  <span key={r.key} className={r.ok ? "ok" : "bad"}>
+                  <span key={r.key} className={r.ok ? (r.incomplete ? "warn" : "ok") : "bad"}>
                     {r.source}:{" "}
                     {r.ok
                       ? `scanned ${r.scanned}, kept ${r.kept} (${r.inserted} new, ${r.updated} updated)`
                       : `failed — ${r.error}`}
+                    {r.ok && r.incomplete && (
+                      <>
+                        {" "}
+                        ⚠ partial — {r.failed_partitions} partition
+                        {r.failed_partitions === 1 ? "" : "s"} unavailable upstream
+                      </>
+                    )}
                   </span>
                 ))}
               </span>

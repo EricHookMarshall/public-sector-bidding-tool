@@ -7,46 +7,36 @@
 
 ## Status
 
-`2026-07-12` (session 20) — **Started F1 (more search sources) at the user's request, plus three new
-requirements the user asked to have checked/recorded.** Two connectors shipped this session:
+`2026-07-12` (session 21) — **Two small F-series follow-ons shipped, both from session 20's punch list:**
 
-- **Public Contracts Scotland** (`src/public_contracts_scotland.py`) — the 3rd search connector, live-verified:
-  a `--no-db` run returned real, relevant Scottish IT opportunities. TLS note below.
-- **Sell2Wales** (`src/sell2wales.py`) — the 4th, built as a **resilient per-partition adapter** after
-  discovering its upstream `/Notices` list API is currently **broken server-side** (HTTP 500 "nvarchar to
-  float" SQL fault on every query, including Sell2Wales's own documented example — confirmed their bug, not
-  ours, by cross-testing against PCS on the same platform). The connector partitions by month×noticeType,
-  retries once with backoff, records a structured error per poisoned partition, and **never aborts the whole
-  source** — live it currently records 4 partition failures and ingests 0, but will resume ingesting the
-  moment Sell2Wales fixes their endpoint, with zero code change needed.
-- **TLS, both connectors:** PCS and Sell2Wales (same Proactis platform, same CA) omit their intermediate
-  cert, so no default trust store can verify them. Rather than disabling verification, the **public Sectigo
-  intermediate is pinned** (`src/certs/sectigo_dv_r36_intermediate.pem` — not a secret, safe to commit; valid
-  to 2036). Proven: a default context REJECTS the connection, the pinned context ACCEPTS with
-  `verify_mode=CERT_REQUIRED` — full verification, no `verify=False` anywhere.
-- **`make check` green: 74 backend tests** (63 baseline + 6 PCS + 5 Sell2Wales), doc-consistency, vite build.
-  `bids.db` untouched (24 opps) — both connectors proved with `--no-db`, not by mutating the tracked baseline.
+- **Search partition-error surfacing** — `/api/search` now passes `incomplete: true` + a `failed_partitions`
+  count through on a partial source run (e.g. Sell2Wales's per-partition degrade), so a live Wales outage is
+  visible instead of masquerading as "kept 0". Raw `partition_errors` (upstream detail) are deliberately kept
+  server-side-only, matching the endpoint's existing don't-leak-internals policy. UI: an amber "⚠ partial —
+  N partition(s) unavailable upstream" note in the Search run-summary (`SearchStage.jsx`), new `.warn` style.
+- **F6 — hide closed opps by default** — `_query_opportunities` now drops `bid_status == "closed"` by default
+  unless the opp is "in flight" (in `triage_selections`, has a qualification, or has a bid) — new
+  `_inflight_opportunity_ids()` helper mirrors the Triage pull-gate carve-out. An explicit `bid_status` filter
+  always overrides. Applies to both the list view and CSV export (same query). UI: a "Hide closed (unless in
+  pipeline)" checkbox, checked by default, auto-disabled when Bid-status is explicitly filtered.
+- **Live-verified against real `bids.db`** (24 opps, read-only): `hide_closed=false` → 24 (14 open/6 unknown/4
+  closed); default → 20 (the 4 closed dropped); `bid_status=closed` override → 4, correctly bypassing the hide.
+- **`make check` green: 80 backend tests** (74 + 2 partition-surfacing + 4 hide-closed), doc-consistency, vite
+  build (133.49 kB). `bids.db` untouched — verification was GET-only, no live search run.
 
-Also this session: checked 4 user-proposed requirements against the codebase (none existed) and recorded
-them as scoped backlog items — **F6** (Search: hide closed opps by default unless triaged) and **G1–G3**
-(GCA/frameworks intelligence: pull FWF's own awards via Find a Tender OCDS award packages, a framework-radar
-view, an in-app how-to-supply reference). Full detail in `todo.md`.
-
-⚠️ **Not committed.** All of this session's work is on disk only (5 modified + 6 new files, listed below).
+⚠️ **Not committed.** 3 modified (`src/api.py`, `web/src/stages/SearchStage.jsx`, `web/src/styles.css`) + 2
+new test files (`tests/test_search_surfacing.py`, `tests/test_search_hide_closed.py`), all on disk only.
 
 ## Active task
 
-**No task in flight — F1's first two sources are done; next step is the user's call.** Natural follow-ons
-(full detail in `todo.md` → F-series):
+**No task in flight — both punch-list items are done; next step is the user's call.**
 
-1. **Commit this session's work** (your call — nothing staged yet).
-2. **Surface `partition_errors`/`incomplete`** in the search run-summary — `sell2wales.run()` already returns
-   them; `api.py`'s `/api/search` currently drops them on the floor, so a live Wales outage is invisible to
-   the user today. Small, high-value.
-3. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
+1. **Commit this session's work** (your call — nothing staged yet; session 20's F1 connectors are already
+   committed/pushed at `7c954e2`, so this would be a clean, separate commit).
+2. **Sell2Wales bulk-download fallback** — their official monthly JSON/XML/CSV, but it's behind an
    aspx-postback form (`__VIEWSTATE` present), not a clean GET. Bigger lift.
-4. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
-5. Or pick up **F6** / **G1–G3** instead (new user reqs, not yet built).
+3. **F1 remainder** — eTendersNI (different platform, Jaggaer), G-Cloud as a source.
+4. Or pick up **G1–G3** (GCA/frameworks intelligence — user reqs from session 19, not yet built).
 
 ## Blockers / prerequisites
 
@@ -57,8 +47,8 @@ view, an in-app how-to-supply reference). Full detail in `todo.md`.
 
 ## Open decisions
 
-1. **What next** — commit F1, surface partition errors, chase the bulk-download fallback, or start on
-   F6/G1–G3. Not decided.
+1. **What next** — commit this session's work, chase the Sell2Wales bulk-download fallback, do F1
+   remainder (eTendersNI/G-Cloud), or start on G1–G3. Not decided.
 2. **Cert pin maintenance** — `src/certs/sectigo_dv_r36_intermediate.pem` is shared by PCS + Sell2Wales;
    refresh instructions live in the module docstrings + `src/certs/README.md` if either site changes CA.
 3. Carried from session 19 (untouched this session): compliance write-gating, file-content expiry
@@ -72,10 +62,11 @@ Unchanged this session. Local dev default `LOCAL_AUTH_BYPASS=1`. Full config: `s
 ## Start-of-session checklist
 
 1. Read [`state.yaml`](state.yaml), [`CLAUDE.md`](../CLAUDE.md), this file, and [`todo.md`](todo.md).
-2. Confirm DB: `python3 src/db.py` → `opportunities: 24` (unchanged — PCS/Sell2Wales proved with `--no-db`).
-3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev`. The Search
-   panel's source checkboxes now include Public Contracts Scotland + Sell2Wales automatically (registry-driven).
-4. `git status` will show 5 modified + 6 new files from this session, uncommitted.
+2. Confirm DB: `python3 src/db.py` → `opportunities: 24` (unchanged this session — verification was GET-only).
+3. Spin up: `uvicorn api:app --app-dir src --reload --port 8000` + `cd web && npm run dev`. Search now
+   default-hides closed opps (toggle in the Filters panel) and shows a partial-results warning if a source
+   (e.g. Sell2Wales) returns `incomplete`.
+4. `git status` will show 3 modified + 2 new files from this session, uncommitted.
 
 ## End-of-session checklist
 

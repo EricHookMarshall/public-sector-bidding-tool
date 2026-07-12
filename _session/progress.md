@@ -3,6 +3,47 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 21) — F-series polish: search partition-error surfacing + F6 hide-closed default
+
+**Context.** Resumed from session 20 (F1: PCS + Sell2Wales connectors, committed/pushed at `7c954e2`). User
+asked "what's next?"; agreed to work through session 20's punch list — item 1 (surface partition errors),
+then F6 (hide closed opps by default).
+
+**Work done.**
+- **Search partition-error surfacing** (`src/api.py` `/api/search`): a source run that returns
+  `incomplete: true` (e.g. Sell2Wales's per-partition degrade) now surfaces `incomplete` + a
+  `failed_partitions` count on that run's summary, with a server-side warning log. Raw `partition_errors`
+  (upstream SQL/HTTP detail) are deliberately NOT passed to the client — matches the endpoint's existing
+  generic-error policy. UI (`web/src/stages/SearchStage.jsx`): an amber "⚠ partial — N partition(s)
+  unavailable upstream" note in the run-summary; new `.run-summary .warn` style (`web/src/styles.css`) using
+  the existing `--warn` token.
+- **F6 — Search default-hides closed opps unless in the pipeline** (`src/api.py`): new
+  `_inflight_opportunity_ids()` helper (selected into Triage, has a qualification, or has a bid) mirrors the
+  Triage pull-gate carve-out. `_query_opportunities` gained a `hide_closed` param (default `True` via
+  `_list_params`) that drops `bid_status == "closed"` rows unless in-flight; an explicit `bid_status` filter
+  always overrides. Applies to both `/api/opportunities` and `/api/export` (shared query). UI: a "Hide closed
+  (unless in pipeline)" checkbox in the Filters panel, checked by default, disabled when Bid-status is
+  explicitly set (with a tooltip explaining why); new `.filters .check-row` style.
+- Two new test files: `tests/test_search_surfacing.py` (2 tests — incomplete flag/count surfaced, raw errors
+  not leaked, healthy runs stay quiet) and `tests/test_search_hide_closed.py` (4 tests — default hides
+  closed, in-flight closed stays visible, toggle-off shows all, explicit filter overrides), both exercising
+  the real code paths (`TestClient` route / `api._query_opportunities` against a temp DB).
+
+**Decisions.** None new — both items were already scoped in session 20's punch list and todo.md's F6 entry;
+implemented as specified.
+
+**Verification (honest).** `make check`: **80 backend tests** passed (74 baseline + 2 + 4 new), doc-state
+consistency ok, Vite build clean (133.49 kB). Live-verified `hide_closed` against the real `bids.db` (24
+opps, GET-only, no mutation): `hide_closed=false` → 24 (14 open/6 unknown/4 closed); default → 20 (4 closed
+dropped, unknown kept); `bid_status=closed` explicit → 4 (override confirmed). Did not run a live search this
+session, so partition-error surfacing was verified via the unit test's fake source, not a real Sell2Wales
+call — reasonable given Sell2Wales's outage is already confirmed upstream, not connector-side.
+
+**Open questions raised.** None new.
+
+**Next.** User's call: commit this session's work, or continue the backlog (Sell2Wales bulk-download
+fallback, F1 remainder — eTendersNI/G-Cloud — or G1–G3 GCA/frameworks intelligence).
+
 ## 2026-07-12 (session 20) — F1 more search sources: PCS + Sell2Wales; 4 new user reqs recorded
 
 **Context.** Resumed from session 19 (C-series Compliance shipped, committed). User asked "what's next?",

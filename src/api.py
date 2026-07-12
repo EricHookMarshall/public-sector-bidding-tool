@@ -239,11 +239,27 @@ def meta(conn=Depends(get_conn)):
     return payload
 
 
+def _inflight_opportunity_ids(conn):
+    """Opportunities that are 'in flight' — pulled into Triage (triage_selections)
+    or already worked (a qualification saved, or promoted to a bid). Mirrors the
+    Triage pull-gate carve-out (see triage_board) so the Search default-hide never
+    makes an opportunity the user is actively chasing disappear just because its
+    deadline passed."""
+    selected = db.selected_opportunity_ids(conn)
+    states, bid_stage = db.list_triage_states(conn)
+    return selected | set(states) | set(bid_stage)
+
+
 def _query_opportunities(conn, *, q, source, status, bid_status, lifecycle,
                          country, region, currency, notice_type,
-                         min_value, max_value, sort, order):
+                         min_value, max_value, sort, order, hide_closed=False):
     """Shared filter/search query used by both the list view and CSV export, so
-    'export' always matches exactly what the user is looking at."""
+    'export' always matches exactly what the user is looking at.
+
+    `hide_closed` (Search default) drops opportunities whose derived bid_status is
+    'closed', *unless* they're in flight (see _inflight_opportunity_ids). An
+    explicit `bid_status` filter always wins — asking for 'closed' overrides the
+    default hide — so the toggle only shapes the unfiltered default view."""
     where, params = [], []
     if q:
         like = f"%{q}%"
@@ -277,6 +293,11 @@ def _query_opportunities(conn, *, q, source, status, bid_status, lifecycle,
     # Derived bid_status is computed post-query, so filter it here.
     if bid_status:
         results = [r for r in results if r["bid_status"] == bid_status]
+    elif hide_closed:
+        # Default Search view: hide closed opps unless the user is chasing them.
+        inflight = _inflight_opportunity_ids(conn)
+        results = [r for r in results
+                   if r["bid_status"] != "closed" or r["id"] in inflight]
     return results
 
 
@@ -295,11 +316,15 @@ def _list_params(
     max_value: float | None = None,
     sort: str = Query("deadline_date", description="any list field"),
     order: str = Query("asc", pattern="^(asc|desc)$"),
+    hide_closed: bool = Query(
+        True, description="hide closed opps unless in flight (Search default); "
+                          "an explicit bid_status filter overrides this"),
 ):
     return dict(
         q=q, source=source, status=status, bid_status=bid_status, lifecycle=lifecycle,
         country=country, region=region, currency=currency, notice_type=notice_type,
         min_value=min_value, max_value=max_value, sort=sort, order=order,
+        hide_closed=hide_closed,
     )
 
 
@@ -430,11 +455,25 @@ def search(req: SearchRequest):
                 published_to=req.published_to,
                 use_db=True,
             )
-            runs.append({
+            run = {
                 "key": key, "source": entry["name"], "ok": True,
                 "scanned": res["scanned"], "kept": res["kept"],
                 "inserted": res["inserted"], "updated": res["updated"],
-            })
+            }
+            # A source may return only partial results — e.g. Sell2Wales runs one
+            # partition per month × noticeType and records (rather than aborts on)
+            # any that fail upstream. Surface that so a live outage is visible to
+            # the user instead of masquerading as "kept 0". We pass the flag + a
+            # count only, not the raw partition errors: those carry upstream SQL
+            # detail we log server-side but keep out of the client response.
+            if res.get("incomplete"):
+                run["incomplete"] = True
+                run["failed_partitions"] = len(res.get("partition_errors") or [])
+                log.warning(
+                    "source %s returned incomplete results: %d partition(s) failed",
+                    key, run["failed_partitions"],
+                )
+            runs.append(run)
         except Exception:  # noqa: BLE001 — surface any source failure, keep going
             # Log the full exception context server-side (type, message, traceback,
             # which could carry upstream URLs/paths/request data) but return only a

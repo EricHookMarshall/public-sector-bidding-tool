@@ -3,18 +3,16 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 20
+session: 21
 
 phase: feature_complete_local          # 6 journey stages + org-level Compliance view + 4 search connectors (PCS, Sell2Wales added)
-active_workstream: f1_more_sources     # F1: Public Contracts Scotland + Sell2Wales connectors built this session
-next_action: user_choose_commit_F1_or_surface_partition_errors_or_next
+active_workstream: f_series_polish     # session 21: surfaced partition errors in Search UI + F6 (hide-closed default)
+next_action: user_choose_commit_session21_or_next_backlog_item
 
 git:
   branch: main
-  clean: true                          # session-20 F1 (PCS + Sell2Wales) committed + pushed (b211bd9); this state.yaml sync lands one ahead
-  # The bookkeeping commit that saves this file necessarily lands one ahead of the
-  # feature commit — that single step is by design, not drift; verify against `git log`.
-  last_commit: b211bd9                  # session-20 F1 connectors + docs, pushed to origin/main
+  clean: false                         # session-21 work is on disk, NOT committed: src/api.py, web/src/stages/SearchStage.jsx, web/src/styles.css modified; tests/test_search_surfacing.py + tests/test_search_hide_closed.py new
+  last_commit: 7c954e2                 # session-20 state.yaml sync, pushed to origin/main — session 21 has no commit yet
 
 db:                                    # expected on resume
   opportunities: 24
@@ -24,7 +22,9 @@ db:                                    # expected on resume
   app_settings: 2
 
 verified:
-  make_check: 2026-07-12               # session 20: full make check green — 74 backend tests (+6 PCS, +5 Sell2Wales) + doc-consistency + vite build
+  make_check: 2026-07-12               # session 21: full make check green — 80 backend tests (74 + 2 partition-error-surfacing + 4 hide-closed) + doc-consistency + vite build (133.49 kB)
+  search_partition_errors_surfaced: 2026-07-12  # session 21: /api/search now passes incomplete + failed_partitions through on a partial source run (raw partition_errors deliberately NOT leaked to client); tests/test_search_surfacing.py (2 tests, via real TestClient route)
+  search_hide_closed_live: 2026-07-12  # session 21 (F6): live-verified against real bids.db (24 opps) — hide_closed=false: 24 (14 open/6 unknown/4 closed); default hide_closed=true: 20 (4 closed dropped); bid_status=closed override: 4. tests/test_search_hide_closed.py (4 tests)
   pcs_connector_live: 2026-07-12       # session 20 (F1): Public Contracts Scotland connector live — --no-db run returned real Scottish IT opps; 6 offline unit tests pass. NOT committed; bids.db NOT repopulated.
   pcs_tls_pinned: 2026-07-12           # session 20: PCS omits its intermediate cert → pinned the public Sectigo intermediate (src/certs/sectigo_dv_r36_intermediate.pem, shared with Sell2Wales), FULL verification kept (verify_mode=CERT_REQUIRED, no verify=False). Proven: default ctx rejects, pinned accepts. Cert valid to 2036.
   sell2wales_degrades: 2026-07-12      # session 20 (F1): Sell2Wales connector built as resilient per-partition adapter. Live check: upstream /Notices API BROKEN (HTTP 500 nvarchar->float on all partitions — their bug) → connector records 4 partition errors, keeps 0, does NOT raise/poison the source. 5 offline unit tests incl. partial-outage + poisoned-partition. Recovers automatically when upstream fixed.
@@ -43,7 +43,6 @@ external_blockers:
 
 deferred:
   # User reqs captured 2026-07-12 (session 19; full scope in todo.md)
-  - search_hide_closed_default          # F6: Search default-excludes closed opps unless picked (triage_selections carve-out)
   - gca_g1_own_frameworks_data          # G1: pull FWF's own awards/memberships via Find a Tender / Contracts Finder OCDS award packages
   - gca_g2_framework_radar              # G2: score which GCA agreements FWF should join (live view over today's static VERIFIED_FACTS prose)
   - gca_g3_how_to_supply_reference      # G3: in-app reference for Frameworks/Dynamic Markets/DPS/Catalogues from gca.gov.uk/how-to-supply
@@ -55,7 +54,6 @@ deferred:
   # F1 follow-ons (PCS + Sell2Wales shipped session 20)
   - sell2wales_bulk_download_fallback  # official monthly JSON/XML — an aspx-postback form, needs reverse-engineering
   - sell2wales_fts_crosspublish_recovery # recover Welsh notices via their Find a Tender cross-publish while S2W list API is down
-  - surface_partition_errors_in_ui     # sell2wales.run() returns partition_errors/incomplete; api.py's /api/search currently drops them
   # Pre-existing
   - connector_to_record_dedup          # R3: to_record/run/main near-verbatim across 4 connectors now (PCS+S2W are ~twins) — extract shared Proactis base
   - api_router_split                   # R1: ~1.9k-line api.py; split stage/settings/compliance/search routers

@@ -30,20 +30,14 @@
       error record, degrades not-drops) — **its upstream `/Notices` list API is currently broken (HTTP 500
       "nvarchar to float" on every query incl. their own doc example — confirmed their bug, not ours), so it
       ingests 0 live but recovers automatically when they fix it**. Shares the same pinned cert (same CA).
-      **Not committed; DB not repopulated (proved with `--no-db`).**
+      **Partition-error surfacing shipped (session 21)** — `/api/search` now passes `incomplete` +
+      `failed_partitions` through to the UI (raw errors stay server-side-only).
       F1 remainder / follow-ons: **Sell2Wales bulk-download fallback** (their official monthly JSON — an
-      aspx-postback form, needs reverse-engineering) + **Find a Tender cross-publish recovery**; **surface
-      `partition_errors`/`incomplete` in the search run-summary** (connector returns them; `api.py` currently
-      drops them); **extract a shared Proactis base** once a 3rd Proactis source lands (PCS+S2W are ~twins
-      today — see the dedup note below); **eTendersNI** (different platform — Jaggaer, separate effort),
-      G-Cloud. F2: multi-criteria search. **F5: ITT ingestion → auto-build the compliance matrix** (biggest;
-      matrix schema is already per-bid dynamic, just no parser).
-- [ ] **F6 — Search: hide closed opps by default unless picked** (user req, 2026-07-12) — Search currently
-      shows every stored opp (`SearchStage.jsx` default filter = "All"; `bid_status` is derived post-query in
-      `_query_opportunities`, `api.py`). Change: **default-exclude `bid_status == "closed"`** *unless* the opp
-      is in `triage_selections` OR has a qualification/bid — i.e. mirror the Triage pull-gate carve-out
-      (`api.py:644`) so a closed-but-in-flight opp never vanishes. Keep it a user-toggleable default; the
-      explicit `bid_status` filter still overrides. Small: one filter default + one query clause.
+      aspx-postback form, needs reverse-engineering) + **Find a Tender cross-publish recovery**; **extract a
+      shared Proactis base** once a 3rd Proactis source lands (PCS+S2W are ~twins today — see the dedup note
+      below); **eTendersNI** (different platform — Jaggaer, separate effort), G-Cloud. F2: multi-criteria
+      search. **F5: ITT ingestion → auto-build the compliance matrix** (biggest; matrix schema is already
+      per-bid dynamic, just no parser).
 
 ## G-series — GCA / Frameworks intelligence (user reqs, 2026-07-12)
 
