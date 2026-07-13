@@ -4,6 +4,52 @@
 > (most-recent-first, full dated retrospective per session). Everything through **session 13 is
 > committed** (`9c31fa8`). When an item ships, note it in `progress.md` and delete it here.
 
+## 🔴 ESCALATE — business-urgent, cannot be fixed in code (session 25)
+
+> Surfaced by the deep read of the bid library ([`docs/bid-library-deep-review.md`](../docs/bid-library-deep-review.md)).
+> **These outrank every code item below.**
+
+- [ ] **🔴 The ISO certificates belong to a different legal entity.** ISO 9001 *and* ISO 27001 are issued to
+      **Future Work Force SRL** (Romania) — **not** Future Work Force **Limited** (UK, CH 11934102) — and both
+      are **also expired**. The files are named `FUTURE WORK FORCE - ISO 9001.pdf` in FWF's own credentials
+      folder, so they read as *ours*. **Attaching one to a UK selection question is a misrepresentation.**
+      FWF Ltd holds **no ISO cert of its own**. For 27001 the honest answer is the **Arobs *group*** position
+      (BV letter `L/BUH/06.11.2025/423/BCT`, ISO 27001:2022, Oct 2025) — stated as *group* certification.
+      **Decide the standing answer, then reconcile every portal to it.**
+- [ ] **🔴 CCS MI returns — possible live breach.** The portal tracker says *"must submit MI **monthly**,
+      AI DPS RM6200, SPARK DPS RM6094"*; `07 CCS MI Reports/` holds **only a blank template**. Monthly MI
+      (**incl. nil returns**) is mandatory — non-submission attracts charges and can **suspend an appointment**.
+      **Verify whether returns are being filed elsewhere.**
+- [ ] **🟠 Rotate the portal passwords.** Cleartext in `Portal Registration Tracker.xlsx`, **reused across
+      portals**, on a **departed employee's** accounts. Rotating — not re-filing — is the fix.
+- [ ] **Cyber Essentials has lapsed** (due 06/06/2026). Renew, then update the **AI DPS + Spark** Q155 answers
+      (they still say *No* while RM6173 says *Yes*).
+- [ ] **Reconcile the four `KNOWN_CONFLICTS`** (turnover £100m vs <£36m · PI £10m declared vs £2m actual ·
+      Cyber Essentials · the three company-name variants) **and the reference-contract mismatch** (Close
+      Brothers: library £1m/Jag Bassi vs portal £2m/Steve Durnin). **Delete each entry from `answers.py` once
+      reconciled** — a stale conflict flag is its own kind of lie.
+
+## A-series — the standard-answer bank (session 25)
+
+- [x] **A1 — deterministic answer bank** (session 25) — SHIPPED. `src/answers.py` + `standard_answers` table +
+      `/api/answers/{reference,board,lookup}` + `PUT /api/answers/{key}` + `POST /api/answers/sync-from-library`
+      + `tests/test_answers.py` (24). Docs: [`docs/standard-answers.md`](../docs/standard-answers.md).
+      **A lookup, never a generator** — answers from record with provenance, or refuses. Question definitions
+      committed; **values live only in the gitignored `bids.db`**, re-seeded from the library on every startup
+      (never overwriting a human-verified value). Readiness gate: only `ready` is auto-fillable.
+      **33 answers: 16 ready · 7 gap · 4 conflict · 4 confirm-per-bid · 2 wrong-entity.**
+- [ ] **A2 — the Answers UI** ⭐ **NEXT CODE TASK.** The bank is **API-only**. Build a panel that takes a
+      buyer's question *in their own words*, shows the answer + **the file to attach**, and **refuses loudly**
+      on `wrong_entity` / `conflict` / `gap`. Wire it into Complete (Stage 4) beside the compliance matrix.
+- [ ] **A3 — fill the 7 gaps.** No document exists for: **Modern Slavery policy** (the user's own example —
+      the honest answer today is *No*), **Anti-Bribery**, **Environmental & Sustainability**, **Carbon
+      Reduction Plan (PPN 06/21** — often *mandatory* on central-gov work**)**. Plus **CDP identifier**, **SME
+      status**, **parent-company guarantee** — all answered on the portals but nowhere in the library; confirm
+      once via `PUT /api/answers/{key}` and they stick.
+- [ ] **A4 — answer the "narrative" questions properly.** The bank deliberately excludes anything needing
+      judgement (H&S arrangements, GDPR technical measures, technical ability). Those belong to Complete's AI
+      pre-fill, grounded on the library — **not** the bank. Keep the boundary.
+
 ## Feature backlog (needs scoping with the user)
 
 - [x] **C3 — "Compliance & Renewals" view** ⭐ (session 19) — SHIPPED. App-owned `compliance_assets`
@@ -105,8 +151,9 @@
       data once populated, instead of the curated VERIFIED_FACTS claim (currently flagged "confirm").
 - [ ] **Click the 3 new views in a live browser** — API + build verified only so far.
 
-> **Noted (already built — no action):** Modern Slavery is already a Manage pre-flight item + a library
-> credential ("Anti-Bribery & Modern Slavery Policies") — don't re-add.
+> **⚠️ CORRECTION (session 25):** the note below was a **false record**. The library credential
+> *"Anti-Bribery & Modern Slavery Policies"* is a **tracker row with no owner, no date and no file** — the
+> policy **does not exist**. A tracker row is an intention, not a policy. See the A3 gap list above.
 
 ## Harness follow-ups (from the 2026-07-10 harness-design review — `docs/harness_design/`)
 
@@ -128,9 +175,15 @@
 
 ## Surfaced / open (parallel tracks + polish)
 
-- [ ] **⚠️ Plaintext portal passwords in the bid library** (surfaced session 24) — `04 Portal Registrations/
-      Portal Registration Tracker.xlsx` stores live portal credentials in clear text. The folder is gitignored,
-      so nothing reached git, but it needs raising with Emma. Not a code fix — a credential-hygiene issue.
+- [ ] **Structural rot in `03 FWF Bids/`** (session 25) — three names for one folder (`02 Response
+      Docs`/`Drafts`/`Documents` = 13/7/6), an index collision (`05` used twice: GCloud14 + Scottish Water), a
+      botched duplicate tree in `11 Efficiency East Midlands`, a stray `.claude/` in `26 Office for Students`,
+      two empty bid folders, `AI DPS RM62000` (typo for RM6200). **Any automation walking this structure
+      silently misses a third of it.** Also: only **2 of 27** bids have anything in `07 Post Submission` —
+      and both are **loss letters with full scoresheets** (Stage-6 data going to waste).
+- [ ] **Pipedrive vs HubSpot** (session 25) — the bid-management handover names the CRM as **Pipedrive** (and
+      **BidStats** as the discovery source); `CLAUDE.md`'s deferred roadmap says **HubSpot**. One is wrong —
+      ask the user before building either integration.
 - [ ] **Azure Phase C tail — live MSAL browser sign-in** — redirect round-trip needs a real dev-tenant app
       reg (no emulator). Supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`, set `LOCAL_AUTH_BYPASS=0`,
       sign in, confirm the Bearer reaches the API and role-gating works.

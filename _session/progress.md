@@ -3,6 +3,138 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-13 (session 25) — A-series answer bank + a full deep read of the bid library (504 files)
+
+**Context.** Resumed from session 24 (`4cbd18d`). The user's ask was not on the backlog: *"analyse the data in
+the findings and build data stores for consistent responses to questions that do not require reasoning — e.g.
+do you have a modern day slavery policy, yes, location of file to upload."* They then asked for a deep,
+batched read of the whole SharePoint export.
+
+### What shipped — the standard-answer bank (A-series)
+
+`src/answers.py` + `standard_answers` table (`db.py`) + 4 endpoints (`api.py`) + `tests/test_answers.py` (24).
+Docs: [`docs/standard-answers.md`](../docs/standard-answers.md).
+
+The design decision that matters: **it is a lookup, not a generator.** Each of these questions has exactly one
+correct answer, it is a matter of record, and a model can only add the chance of getting it wrong. So the bank
+answers **from record, with provenance — or it refuses.** Anything needing judgement (the H&S narrative, GDPR
+technical measures) stays with Complete/AI pre-fill and is deliberately *not* in the bank.
+
+**Question definitions are committed; values are not** — values are company data, seeded into the gitignored
+`bids.db` from the gitignored library export at startup, through the existing `LocalMirror` seam. Re-seeds on
+**every** start (the library moves: a policy gets filed, a cert renewed), keyed on `answer_key`, and **never
+overwrites a human-verified value**.
+
+**The readiness gate** is what makes it safe to auto-fill from. Status is derived live against today, never
+stored. Only `ready` may be auto-filled. Ordered so nothing can route around a problem to reach it:
+`wrong_entity` → `conflict` → `confirm_per_bid` → `gap` → `evidence_missing` → `evidence_expired` →
+`unverified` → `ready`.
+
+**Seeding against the REAL library (not a fixture) exposed six ways a "simple lookup" produces a confident
+wrong answer.** Each now has a regression test. Every one of them failed *toward* a confident yes:
+
+1. **The buyer's own form answered as ours.** Evidence search reached into `03 FWF Bids/`, found Scottish
+   Water's blank `Supplier Modern Slavery Declaration.docx` — *a form the BUYER sent us to fill in* — and
+   answered "Do you have a Modern Slavery policy?" with **Yes, here's the file.** Evidence is now confined to
+   `02 Bid Library/`. A correctness boundary, not tidiness.
+2. A greedy `\S+` ate the separator between two expiry dates in one tracker note (`09/01/2026 2700`),
+   swallowing the `27001` marker — so a **lapsed ISO 27001 came back with no expiry, and read as fine**.
+3. A certificate the library itself named `..._Expired.pdf` resolved to `ready`.
+4. "Most recent audited accounts" picked **2022** over 2024.
+5. A cert with **no expiry on record** read as `ready` — silence is not evidence of validity (`unverified`).
+6. **The stale tracker (a FALSE alarm)** — see the correction below.
+
+**The answer to the user's literal question: FWF does NOT have a Modern Slavery policy.** No such document
+exists in the library. The Bid Library Tracker lists *"Anti-Bribery & Modern Slavery Policies — aligned to
+Public Contracts Regulations"* with no owner, no date, no file. **A tracker row is an intention, not a
+policy** — which is exactly why the bank checks the filesystem rather than trusting the tracker.
+
+**Then `docs/gca_findings/` reframed the task.** The GCA review proves FWF has answered *the same
+no-reasoning questions three different ways across three live portals* (Cyber Essentials Yes on RM6173 / No on
+AI DPS + Spark; PI declared £10m against a £2m policy; turnover £100m on the MSA vs "<£36m" on all three SQs;
+three variants of the legal name). **That is the disease the bank exists to cure** — and a bank that silently
+picked a side would *industrialise* the inconsistency. Hence `conflict`: never auto-fillable, cites the
+finding, stays flagged until a human reconciles it.
+
+### The deep read — all 504 files / 812 MB, in 4 batches
+
+Full write-up: [`docs/bid-library-deep-review.md`](../docs/bid-library-deep-review.md). It **corrects two
+earlier conclusions** (one of them mine) and surfaces **three business-urgent items**.
+
+**🔴 The ISO certificates belong to a different legal person.** ISO 9001 (BV `RO23.4749175Q`, exp 08/01/2026)
+and ISO 27001**:2013** (BV `IND.23.2004/IS/U`, exp 31/10/2025) are both issued to **FUTURE WORK FORCE SRL** —
+the **Romanian** sister company in Cluj-Napoca; the 9001 even annotates its head-office address *"no
+activity"*. **Not** Future Work Force **Limited** (UK, CH 11934102), the entity that bids. Both are also
+expired. This is the most dangerous thing in the library and the least visible: the files are named
+`FUTURE WORK FORCE - ISO 9001.pdf` and sit in FWF's own credentials folder, so they read as *ours* to every
+automated check and every hurried human. **Answering a UK selection question with another legal person's
+expired certificate is a misrepresentation** — the kind that gets a bid *disregarded*, not merely marked down.
+Truth: **FWF Ltd holds no ISO certification of its own.** For 27001 there is a genuine group mitigation — BV
+letter `L/BUH/06.11.2025/423/BCT` confirms **Arobs Group, explicitly naming "Future Work Force"**, passed the
+**ISO 27001:2022** transition audit (09–17 Oct 2025) — but that is **group** certification evidenced by a
+**letter**, not an FWF Ltd certificate, and the group certificate is not in the library. New `wrong_entity`
+status: outranks everything, because it is not a data-quality problem, it is a misrepresentation. The certs
+are **image scans with no text layer**, so no parser can see this — recorded declaratively in
+`WRONG_ENTITY_EVIDENCE` with a verified date. **Re-check if reissued.**
+
+**🔴 CCS MI returns look unfiled.** The portal tracker states plainly: *"Crown Commercial MI — **must submit MI
+monthly**, AI DPS RM6200, SPARK DPS RM6094"*. But `07 CCS MI Reports/` contains **only the blank RM6200
+template** — no submitted returns, any month, any agreement. CCS DPS appointments carry a monthly MI
+obligation **including nil returns**; non-submission attracts charges and can **suspend an appointment**.
+Verify whether they are filed elsewhere; if not, this is a live breach on all three appointments.
+
+**🟠 Portal passwords.** Known since session 24, but worse than filed: **reused across portals**, on a
+**departed employee's** accounts. They need **rotating**. (My own redaction filter caught the `Password`
+column but missed the `PW` columns on two other sheets, so some printed into the session transcript — another
+reason to rotate.)
+
+**CORRECTION — the insurance has NOT lapsed; the tracker is stale.** Both the GCA review *and* the first cut
+of the answer bank concluded cover expired 27/05/2026. It did not. The Hiscox **certificates** show policy
+`PL-PSC10002770678/11` running **28/05/2026 → 27/05/2027**: EL £5m, Public **and Products** Liability £10m,
+PI £2m, Cyber £1m — confirmed by policy schedule `DC546` (annual premium £7,561.05). `Insurance
+Tracker.xlsx` was simply never updated at renewal. **Reading it made the bank raise a false alarm that cover
+had lapsed — every bit as damaging as a missed expiry**, and it would have sent someone scrambling to re-buy
+insurance they already hold. **Fix: `answers.py` now reads the certificates (`insurance_from_certificates`,
+pypdf); the tracker is only a fallback.** *A document issued by the insurer beats a spreadsheet row typed by
+someone who has since left.* Knock-on: **Product Liability is not a gap** — it is the same "public **and
+products** liability" certificate at £10m, and the tracker simply has no products row.
+
+**Cyber Essentials HAS lapsed.** Cert `7887de7c-…`, issued to Future Work Force **Limited** (correct entity),
+whole-org scope, certified 06/06/2025. CE runs 12 months → **due 06/06/2026**, so ~5 weeks past. Expiry is
+**derived** (cert date + 12 months) because nothing in the library ever writes it down.
+
+**The founding failure, in files.** `04 Portal Registrations/Frameworks/G Cloud 15/` holds **108 files** — a
+full Submission Master for Lots 2b and 3 — corroborating `knowledge/01-current-position.md` (disregarded
+17/03/2026 at Stage 3 on the FVRA: *"failed to provide financial statements; failed to clarify"*). And
+`03 Pricing/FVRA/AROBS/` contains **the Arobs 2023 + 2024 annual reports and the completed FVRA Gold
+workbook**. **The parent-company financials that would have answered the FVRA were prepared and sitting in the
+folder — they just never got submitted, and the clarification went unanswered.**
+
+**Other findings.** Only **2 of 27** bid folders have anything in `07 Post Submission` — and both are **loss
+letters with full scoresheets** (Northumberland CC lost to **Roboyo** on *price*: 28.23/35 vs 33.13, with
+Social Value 6/10; Cardiff Uni missed the top five). That is Stage-6 data sitting unused. Structural rot:
+three names for one folder (`02 Response Docs`/`Drafts`/`Documents`), an index collision (`05` used twice), a
+botched duplicate tree in `11 Efficiency East Midlands`, a stray `.claude/` inside `26 Office for Students`,
+two empty bid folders, `AI DPS RM62000` (typo for RM6200). The reference contracts **disagree** between the
+library and the portal (Close Brothers: £1m/Jag Bassi vs £2m/Steve Durnin). The handover names the CRM as
+**Pipedrive** (CLAUDE.md's roadmap says HubSpot — one is wrong) and lists an outstanding action on Emma to
+*"upload question library and case studies"* — **that question library was never delivered.** It is precisely
+the gap this session's bank fills.
+
+### Verification
+
+`make check` **green: 142 backend tests** (118 + 24 answers) + doc-consistency + vite build. `ruff` clean on
+all new/touched files (`api.py`'s E402s are pre-existing and deliberate — it calls `_load_dotenv()` before
+imports). Live end-to-end via uvicorn on a **fresh DB**: the bank auto-seeded 33 answers from the real library,
+and `GET /api/answers/lookup?q="do you have a modern day slavery policy"` returned **`status=gap`, match 1.0**,
+*"the honest answer is No"* — while Health & Safety returned `ready` with the file path to attach.
+
+### Carried forward
+
+Escalate the three findings (they outrank any code task). Then build the **Answers UI** — the bank is
+API-only. Session-24 items (GCA overlay into `framework_positions`; mine tender refs from inside bid docs)
+remain open and cheap.
+
 ## 2026-07-12 (session 24) — G1 "bids we lost": bulk-feed unlock + lost-bid resolver (2 real losses)
 
 **Context.** Resumed from session 23 (`83c91f8`). The queued next action was "keep API-searching for the NHS

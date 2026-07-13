@@ -296,6 +296,30 @@ COMPLIANCE_ASSET_FIELDS = [
     "source",           # "upload" | "seed:library" | "reference"
 ]
 
+# The standard-answer bank (answers.py). `answer_key` is the natural key — it's a
+# BANK entry's stable handle, so re-seeding updates in place instead of duplicating.
+# As with compliance assets, readiness (ready / expired / gap) is NEVER stored: it's
+# derived live on read against today, because an answer backed by an expired
+# certificate silently rots from correct to bid-losing.
+STANDARD_ANSWER_FIELDS = [
+    "answer_key",       # stable handle, e.g. "modern_slavery_policy"
+    "category",         # Company Identity / Insurance / Policies / ...
+    "question",         # the canonical wording
+    "answer_type",      # fact | yes_no | evidence
+    "answer_value",     # the response to give ("" = we don't have one → a gap)
+    "evidence_path",    # the document to attach, relative to the library root
+    "expiry_date",      # ISO expiry of that evidence, or ""
+    "needs_evidence",   # "1" if a Yes here must come with a document
+    "dated",            # "1" if the evidence expires (insurance/certs) — no date on
+                        #     record then means "can't prove it's current", not "fine"
+    "per_bid",          # "1" if it's a declaration that must be re-confirmed each bid
+    "conflict",         # a recorded contradiction (we've answered this 2 ways) — blocks use
+    "entity_issue",     # the evidence belongs to a DIFFERENT legal person — blocks use
+    "source",           # provenance: the file the value was read out of
+    "notes",
+    "verified_on",      # when a human last confirmed it (facts decay)
+]
+
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -473,6 +497,17 @@ compliance_assets = Table(
     Column("id", Integer, primary_key=True),
     Column("asset_uid", Unicode(64), unique=True),
     *_text_cols(COMPLIANCE_ASSET_FIELDS),
+    Column("created_at", UnicodeText),
+    Column("updated_at", UnicodeText),
+)
+
+# The standard-answer bank (see STANDARD_ANSWER_FIELDS). Unlike compliance_assets
+# this has a natural key — `answer_key` — so it needs no generated uid.
+standard_answers = Table(
+    "standard_answers", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("answer_key", Unicode(64), unique=True),
+    *_text_cols([f for f in STANDARD_ANSWER_FIELDS if f != "answer_key"]),
     Column("created_at", UnicodeText),
     Column("updated_at", UnicodeText),
 )
@@ -1223,6 +1258,92 @@ def seed_compliance_assets(conn, assets):
     for a in assets:
         insert_compliance_asset(conn, a)
     return len(assets)
+
+
+# --- Standard-answer bank CRUD (A-series) ----------------------------------
+
+def list_standard_answers(conn):
+    """Every standard answer, by category then question. Readiness is derived by
+    answers.py on read, never stored here."""
+    rows = conn.execute(
+        "SELECT * FROM standard_answers ORDER BY category ASC, question ASC"
+    ).fetchall()
+    return [_row_dict(r) for r in rows]
+
+
+def get_standard_answer(conn, answer_key):
+    """One standard answer by its key, or None."""
+    row = conn.execute(
+        "SELECT * FROM standard_answers WHERE answer_key = ?", (answer_key,)
+    ).fetchone()
+    return _row_dict(row)
+
+
+# Fields the library owns: a re-seed always refreshes these, so a newly-filed policy
+# or a renewed certificate is picked up. `answer_value`, `notes` and `verified_on`
+# are NOT here — they're the human's, and a re-seed must never overwrite them.
+_ANSWER_LIBRARY_FIELDS = [
+    "category", "question", "answer_type", "evidence_path",
+    "expiry_date", "needs_evidence", "per_bid", "source",
+]
+
+
+def upsert_standard_answers(conn, rows):
+    """Seed/refresh the answer bank from the library. Keyed on `answer_key`, so this
+    is safe to re-run: new questions are inserted, and library-derived fields are
+    refreshed on the ones already there.
+
+    The one subtlety worth stating: a stored `answer_value` is overwritten ONLY when
+    the row has never been human-verified (`verified_on` empty). Once someone has
+    confirmed an answer, the library stops being authoritative over it — otherwise a
+    re-seed would silently wipe the CDP identifier a user typed in by hand. Returns
+    (inserted, updated)."""
+    inserted = updated = 0
+    now = now_iso()
+    for row in rows:
+        rec = {f: row[f] for f in STANDARD_ANSWER_FIELDS if f in row}
+        key = rec.get("answer_key")
+        if not key:
+            continue
+        existing = get_standard_answer(conn, key)
+        if existing is None:
+            cols = ["created_at", "updated_at", *rec.keys()]
+            placeholders = ", ".join("?" for _ in cols)
+            conn.execute(
+                f"INSERT INTO standard_answers ({', '.join(cols)}) VALUES ({placeholders})",
+                [now, now, *rec.values()],
+            )
+            inserted += 1
+            continue
+
+        fields = {f: rec[f] for f in _ANSWER_LIBRARY_FIELDS if f in rec}
+        if not (existing.get("verified_on") or "").strip():
+            fields["answer_value"] = rec.get("answer_value", "")
+            fields["notes"] = rec.get("notes", "")
+        assignments = ", ".join(f"{c} = ?" for c in fields)
+        conn.execute(
+            f"UPDATE standard_answers SET {assignments}, updated_at = ? WHERE answer_key = ?",
+            [*fields.values(), now, key],
+        )
+        updated += 1
+    conn.commit()
+    return inserted, updated
+
+
+def update_standard_answer(conn, answer_key, fields):
+    """A human edits/confirms one answer. Only keys in STANDARD_ANSWER_FIELDS are
+    written; bumps updated_at. Returns the number of fields written (0 if the key is
+    unknown or nothing was recognised)."""
+    rec = {f: fields[f] for f in STANDARD_ANSWER_FIELDS if f in fields and f != "answer_key"}
+    if not rec or get_standard_answer(conn, answer_key) is None:
+        return 0
+    assignments = ", ".join(f"{c} = ?" for c in rec)
+    conn.execute(
+        f"UPDATE standard_answers SET {assignments}, updated_at = ? WHERE answer_key = ?",
+        [*rec.values(), now_iso(), answer_key],
+    )
+    conn.commit()
+    return len(rec)
 
 
 def get_setting(conn, key, default=None):

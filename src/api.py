@@ -54,6 +54,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+import answers as ANS
 import bidplan as P
 import clarification as M
 import compliance as CMP
@@ -85,6 +86,7 @@ async def lifespan(app):
     try:
         db.init_db(conn)
         _bootstrap_compliance_register(conn)
+        _bootstrap_standard_answers(conn)
     finally:
         conn.close()
     yield
@@ -1782,6 +1784,28 @@ def _bootstrap_compliance_register(conn):
         log.warning("compliance seed-from-library skipped", exc_info=True)
 
 
+def _bootstrap_standard_answers(conn):
+    """Seed/refresh the standard-answer bank (answers.py) from the bid library on
+    startup. Unlike the compliance register this runs on EVERY start, not only on an
+    empty table: the library is the moving part (a policy gets filed, a certificate is
+    renewed) and the bank must track it, or it would keep answering from a snapshot
+    taken the first time the app ever ran. `upsert_standard_answers` is keyed and
+    preserves human-verified values, so re-running is safe.
+
+    If the library isn't present, the bank stays as-is rather than being wiped —
+    absence of the export is not evidence the company has no policies."""
+    try:
+        prov = LIB.get_provider()
+        if not prov.available():
+            return
+        ins, upd = db.upsert_standard_answers(conn, ANS.seed_answers(prov.items()))
+        if ins or upd:
+            log.info("standard-answer bank synced from bid library: %d new, %d refreshed",
+                     ins, upd)
+    except Exception:  # bootstrap must never block startup
+        log.warning("standard-answer seed-from-library skipped", exc_info=True)
+
+
 # "How to supply" reference (G3): curated, read-only help on the UK routes to
 # market. Static content (no DB, no live fetch) — served verbatim from
 # supply_reference.py. Its own routed view (#supply) outside the journey.
@@ -2142,6 +2166,85 @@ def import_compliance_from_library(conn=Depends(get_conn)):
                             detail=f"bid library not available: {prov.unavailable_reason()}")
     n = db.seed_compliance_assets(conn, CMP.seed_assets_from_library(prov.items()))
     return {"imported": n}
+
+
+# The standard-answer bank (answers.py): the questions every bid asks that need no
+# reasoning to answer. A lookup with a readiness gate — never a generator.
+
+class StandardAnswerUpdate(BaseModel):
+    """A human editing or confirming one answer. Setting `verified_on` is what makes
+    the value stick: from then on a library re-seed will not overwrite it."""
+    answer_value: str | None = None
+    evidence_path: str | None = None
+    expiry_date: str | None = None
+    notes: str | None = None
+    verified_on: str | None = None
+
+
+@app.get("/api/answers/reference")
+def answers_reference():
+    """Vocabulary for the Answers view (categories, answer types, statuses)."""
+    return ANS.reference()
+
+
+@app.get("/api/answers/board")
+def answers_board(conn=Depends(get_conn)):
+    """The whole bank, resolved live and sorted worst-first — gaps and expired
+    evidence at the top, because those are what lose bids. `library_available` tells
+    the UI whether a re-sync is offerable."""
+    rows = ANS.board(db.list_standard_answers(conn))
+    return {
+        "count": len(rows),
+        "answers": rows,
+        "summary": ANS.summary(rows),
+        "reference": ANS.reference(),
+        "library_available": LIB.get_provider().available(),
+    }
+
+
+@app.get("/api/answers/lookup")
+def answers_lookup(q: str = Query(..., min_length=2), limit: int = Query(5, ge=1, le=20),
+                   conn=Depends(get_conn)):
+    """Ask the bank a question in the buyer's own words: "do you have a modern day
+    slavery policy?". Returns the best answer (resolved, with the file to attach) plus
+    the runners-up.
+
+    `answer` is null when nothing matches confidently. That is the correct output, not
+    a failure — a lookup that guesses is worse than one that says "I don't know", and
+    this store exists precisely so the novice is never told a confident wrong thing."""
+    rows = db.list_standard_answers(conn)
+    best = ANS.answer(q, rows)
+    return {
+        "query": q,
+        "answer": best,
+        "matches": [dict(ANS.resolve(row), match_score=score)
+                    for score, row in ANS.match(q, rows, limit=limit)],
+    }
+
+
+@app.put("/api/answers/{answer_key}")
+def update_answer(answer_key: str, payload: StandardAnswerUpdate,
+                  conn=Depends(get_conn)):
+    """Edit or confirm one answer (fills a gap, records an expiry, verifies a value)."""
+    fields = payload.model_dump(exclude_none=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    if not db.update_standard_answer(conn, answer_key, fields):
+        raise HTTPException(status_code=404, detail="standard answer not found")
+    return ANS.resolve(db.get_standard_answer(conn, answer_key))
+
+
+@app.post("/api/answers/sync-from-library")
+def sync_answers_from_library(conn=Depends(get_conn)):
+    """Re-read the bid library and refresh the bank (new policy filed, cert renewed).
+    Human-verified values are preserved. 409 if the library isn't available, rather
+    than silently reporting a sync that read nothing."""
+    prov = LIB.get_provider()
+    if not prov.available():
+        raise HTTPException(status_code=409,
+                            detail=f"bid library not available: {prov.unavailable_reason()}")
+    inserted, updated = db.upsert_standard_answers(conn, ANS.seed_answers(prov.items()))
+    return {"inserted": inserted, "updated": updated}
 
 
 @app.get("/api/opportunities/{opp_id}")

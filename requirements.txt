@@ -19,6 +19,14 @@ SQLAlchemy>=2.0
 # code degrades to fallback questions / "library unavailable" without it, but the
 # real library needs it — so it's a hard dependency of Complete (Stage 4).
 openpyxl>=3.1
+# Reads the company facts out of Basic Company Information.docx (src/answers.py).
+# Soft: without it those answers seed as gaps rather than the app failing to start.
+python-docx>=1.1
+# Reads the Hiscox insurance CERTIFICATES (src/answers.py). These are authoritative
+# over the hand-kept Insurance Tracker.xlsx, which went stale at the 2026 renewal and
+# made current cover look lapsed — so the bank prefers the PDF the insurer issued.
+# Soft: without it the insurance answers fall back to the tracker.
+pypdf>=4.0
 # Entra ID (Azure AD) auth (src/auth.py, Azure-migration Phase C). Validates the
 # API's Bearer tokens against the tenant JWKS; [crypto] pulls `cryptography` for
 # RS256. Not exercised when LOCAL_AUTH_BYPASS=1 (offline/local single-user dev).

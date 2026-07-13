@@ -98,6 +98,13 @@ def _root():
     return os.environ.get("BID_LIBRARY_ROOT", _DEFAULT_ROOT)
 
 
+def root():
+    """The bid-store root, public. Sibling modules (answers.py) locate evidence
+    documents inside the export and must not re-derive the path — one definition of
+    where the library lives, so BID_LIBRARY_ROOT keeps working for all of them."""
+    return _root()
+
+
 def tracker_path():
     return os.path.join(_root(), _TRACKER_REL)
 
