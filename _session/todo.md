@@ -66,9 +66,41 @@
       badge + remove control. NHS Barnsley record seeded into bids.db. `tests/test_manual_awards.py` (5).
 - [ ] **G1 manual-award edit** (follow-on) — the form does create + delete; no in-place edit yet (delete+re-add).
       Refine the seeded NHS Barnsley record (title/date/value) when FWF's internal records surface.
-- [ ] **G1 "bids we lost" (user req)** — NOT in public OCDS (award notices name only the winner). Source lost
-      bids from the app's internal **Learn/outcome capture (Stage 6) + bid library**, not the connector. (Same
-      internal-sourcing pattern the manual-award capture above now establishes.)
+- [x] **G1 "bids we lost" (user req)** — **PARTLY SOLVED (session 24), and the earlier premise was wrong.** It
+      *is* recoverable from public data — not by searching for FWF (award notices name only the winner), but by
+      finding the **buyer's award notice for a procurement we bid on** and reading off who won. New:
+      `src/cf_bulk.py` (daily bulk OCDS CSVs from the CDP S3 feed — **47,797 notices in 12 min**, because the
+      OCDS *APIs* have no text search and 429 under any parallelism) + `src/bid_outcomes.py` (folder → notice →
+      verdict; **proposes, never asserts**) + `src/bid_manifest.json` + `tests/test_bid_outcomes.py` (7).
+      **Confirmed loss: `22 UK BS (ACAS)` → Informed Solutions Ltd, £100k.** Probable: `25 Home Office PPPT` →
+      Police Digital Services, £426,873 *(confirm)*. See `progress.md` session-24.
+- [ ] **G1 — mine tender refs/titles from INSIDE the bid documents** ⭐ **NEXT ACTION.** 20 of 27 bids stall at
+      "buyer seen, bid not identifiable": folder names (`18 DWP`) carry no subject words, and only 6 folders
+      yield a tender ref from *filenames*. `ref` is the only tier that produced a clean result. The refs + real
+      titles are inside `00 Bid Admin/FOR001 …xlsx` and `01 Customer Documents/` ITT files. **The feed is
+      already cached (`src/.cache/`) — this needs no crawling.**
+- [ ] **G1 — human confirm step → Stage 6 (Learn)** — `bid_outcomes.py` deliberately only proposes. Design the
+      accept/reject UI that writes a confirmed verdict through outcome capture so the win-rate loop is fed.
+      **Never auto-import** (see the `D365 Awards.xlsx` near-miss below).
+- [ ] **G1 — devolved coverage gap** — the bulk feed is CF/CDP only. Scottish (Forestry and Land Scotland,
+      Scottish Water) and Welsh (Cardiff Uni) bids may never appear. A `NO MATCH` there is a **coverage gap,
+      not a loss**. Needs a PCS/Sell2Wales bulk equivalent before those can be resolved either way.
+- [ ] **Market-intel ingest (NOT our awards)** — `D365 Awards.xlsx` and Tender Pipeline → *Contracts Ending* /
+      *Upcoming Tenders* in the bid library are **awards to OTHER companies** + expiring incumbent contracts.
+      Genuinely valuable (a re-compete pipeline), but they belong next to **Search/G2, labelled MARKET** —
+      **never** in the `awards` table. An importer pointed at the filename would have written 10 false FWF
+      records.
+- [x] **G2 — FWF's real framework/DPS position** (session 24) — SHIPPED. `src/framework_positions.py` reads
+      FWF's own framework folders from the bid-library export (LocalMirror seam; `available: false` without it)
+      and annotates the radar. **The two disagreed:** radar said *"prepare"* for G-Cloud 15 while the library
+      held **108 files + a drafted response** → now flagged `⚠ Already in flight`. **Six agreements FWF is
+      working on were invisible to the radar** (Bluelight, DDaT-NSW, KCC, Spark RM6094, AI DPS RM6200,
+      Automation Marketplace RM6173) → *"Also in flight"* section. Two empty scaffolds (MOD AI & Edge, RM6396)
+      = intent, not work. `GET /api/frameworks/positions` + `tests/test_framework_positions.py` (8).
+      **Honesty ceiling:** a folder proves WORK, never MEMBERSHIP — the ladder stops at `response_drafted`.
+- [ ] **G2 — framework outcomes + true membership** — the export tops out at "response drafted": it cannot tell
+      us a response was *submitted*, let alone accepted onto the framework. Real membership needs the Digital
+      Marketplace listing (or G1 own-awards data). Same human-confirm step as the G1 outcomes item above.
 - [ ] **G2 membership from G1 data** — corroborate the radar's `fwf_status` (member/not) from real own-awards
       data once populated, instead of the curated VERIFIED_FACTS claim (currently flagged "confirm").
 - [ ] **Click the 3 new views in a live browser** — API + build verified only so far.
@@ -96,6 +128,9 @@
 
 ## Surfaced / open (parallel tracks + polish)
 
+- [ ] **⚠️ Plaintext portal passwords in the bid library** (surfaced session 24) — `04 Portal Registrations/
+      Portal Registration Tracker.xlsx` stores live portal credentials in clear text. The folder is gitignored,
+      so nothing reached git, but it needs raising with Emma. Not a code fix — a credential-hygiene issue.
 - [ ] **Azure Phase C tail — live MSAL browser sign-in** — redirect round-trip needs a real dev-tenant app
       reg (no emulator). Supply `VITE_AAD_*` + `AAD_TENANT_ID`/`AAD_API_CLIENT_ID`, set `LOCAL_AUTH_BYPASS=0`,
       sign in, confirm the Bearer reaches the API and role-gating works.

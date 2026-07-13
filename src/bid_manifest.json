@@ -1,0 +1,128 @@
+{
+  "_note": "Maps each SharePoint bid folder to the buyer's PUBLISHED name(s) so we can match it against the OCDS award feed. Folder names are internal shorthand ('22 UK BS (ACAS)'), publishers use legal names, so this alias layer is unavoidable — but it is CURATED JUDGEMENT, not fact. Every alias is a guess until a match confirms it. 'confidence' flags the ones a human should check. 'expected_source' notes where the notice SHOULD live (a Scottish/Welsh buyer may never appear on FTS/CF at all, which is a coverage gap, not a loss).",
+  "_folder_evidence": "submitted = has files under '06 Final Submission'. Known-unreliable: WM5G shows no final-submission files yet the Tender Pipeline 'Review' sheet records it as Not Won, so it WAS submitted. Treat as a prior, never as truth.",
+  "bids": [
+    {"folder": "00 Forestry and Land Scotland", "buyer": "Forestry and Land Scotland",
+     "aliases": ["forestry and land scotland", "forestry land scotland", "fls"],
+     "submitted": false, "expected_source": "PCS", "confidence": "high"},
+
+    {"folder": "01 HMRC - Digital Delivery Partner", "buyer": "HM Revenue and Customs",
+     "aliases": ["hm revenue", "hmrc", "revenue and customs"],
+     "submitted": false, "expected_source": "FTS", "confidence": "high"},
+
+    {"folder": "02 Northumberland CC", "buyer": "Northumberland County Council",
+     "aliases": ["northumberland county council", "northumberland"],
+     "refs": ["NCC1547"], "submitted": true, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "03 The Insolvency Agency", "buyer": "The Insolvency Service",
+     "aliases": ["insolvency service", "insolvency agency"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "low",
+     "note": "Folder says 'Agency', Tender Pipeline says 'Insolvency Sevice' [sic]. Folder is EMPTY (0 files) — may never have been a real bid."},
+
+    {"folder": "04 UK BorderForce", "buyer": "Home Office (Border Force)",
+     "aliases": ["border force", "borderforce", "home office"],
+     "submitted": false, "expected_source": "FTS", "confidence": "medium"},
+
+    {"folder": "05 GCloud14", "buyer": "Crown Commercial Service",
+     "aliases": ["crown commercial"], "submitted": false, "expected_source": "N/A",
+     "confidence": "high", "exclude": true,
+     "note": "EXCLUDED from win/loss: this is a FRAMEWORK application (G-Cloud 14 / RM1557.14), not a tender for a contract. Framework outcomes don't appear as award notices against FWF."},
+
+    {"folder": "05 Scottish Water", "buyer": "Scottish Water",
+     "aliases": ["scottish water"], "refs": ["SW25DIG1515"],
+     "submitted": false, "expected_source": "PCS", "confidence": "high",
+     "note": "Scottish Water is a PCS publisher — may be absent from FTS/CF entirely."},
+
+    {"folder": "06 Cardiff Uni", "buyer": "Cardiff University",
+     "aliases": ["cardiff university", "prifysgol caerdydd"], "refs": ["CU.1982.TH", "CU.1982"],
+     "submitted": false, "expected_source": "Sell2Wales/FTS", "confidence": "high",
+     "note": "Welsh buyer — Sell2Wales is DOWN upstream, so a miss here is a coverage gap."},
+
+    {"folder": "07 Curo Systems", "buyer": "Curo Group",
+     "aliases": ["curo group", "curo places", "curo"],
+     "submitted": true, "expected_source": "CF", "confidence": "medium",
+     "note": "Housing association — publishes patchily, and RFIs often aren't published at all."},
+
+    {"folder": "08 Student Loan", "buyer": "Student Loans Company",
+     "aliases": ["student loans company", "student loan"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "medium",
+     "note": "Folder is EMPTY (0 files). Tender Pipeline lists an SLC UiPath licences pre-tender."},
+
+    {"folder": "09 Sea Fish Industry Authority (Seafish)", "buyer": "Sea Fish Industry Authority",
+     "aliases": ["sea fish industry authority", "seafish"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "10 WYCA PIMS", "buyer": "West Yorkshire Combined Authority",
+     "aliases": ["west yorkshire combined authority", "wyca"],
+     "submitted": true, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "11 Efficiency East Midlands", "buyer": "Efficiency East Midlands",
+     "aliases": ["efficiency east midlands", "eem"], "refs": ["EEM0081", "EEM 0081"],
+     "submitted": true, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "12 Health Innovation North East and North Cumbria (HI NENC)",
+     "buyer": "Health Innovation North East and North Cumbria",
+     "aliases": ["health innovation north east", "hi nenc", "ahsn"],
+     "submitted": false, "expected_source": "CF", "confidence": "medium"},
+
+    {"folder": "13 Imperial College Healthcare", "buyer": "Imperial College Healthcare NHS Trust",
+     "aliases": ["imperial college healthcare", "imperial college"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high",
+     "note": "Response docs reference 'NWL RPA' — North West London, so the buyer may publish as an NWL ICB collaborative rather than Imperial itself."},
+
+    {"folder": "14 DSIT", "buyer": "Department for Science, Innovation and Technology",
+     "aliases": ["science, innovation and technology", "dsit"],
+     "submitted": false, "expected_source": "FTS", "confidence": "high"},
+
+    {"folder": "15 Stoke On Trent Council", "buyer": "Stoke-on-Trent City Council",
+     "aliases": ["stoke-on-trent", "stoke on trent"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "16 John Moore Liverpool University", "buyer": "Liverpool John Moores University",
+     "aliases": ["liverpool john moores", "john moores"],
+     "submitted": true, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "17 MHRA", "buyer": "Medicines and Healthcare products Regulatory Agency",
+     "aliases": ["medicines and healthcare", "mhra"], "refs": ["C393441"],
+     "submitted": true, "expected_source": "FTS", "confidence": "high"},
+
+    {"folder": "18 DWP", "buyer": "Department for Work and Pensions",
+     "aliases": ["work and pensions", "dwp"],
+     "submitted": false, "expected_source": "FTS", "confidence": "high"},
+
+    {"folder": "19 Cottsway Housing", "buyer": "Cottsway Housing Association",
+     "aliases": ["cottsway"], "submitted": false, "expected_source": "CF", "confidence": "high"},
+
+    {"folder": "20 West Midlands WM5G", "buyer": "WM5G Limited",
+     "aliases": ["wm5g", "west midlands combined authority", "west midlands 5g"],
+     "submitted": false, "expected_source": "CF", "confidence": "medium",
+     "note": "KNOWN OUTCOME: Tender Pipeline 'Review' sheet records 'WM5G AI Proposition Development' as NOT WON. So it WAS submitted despite no final-submission files. Use as a matcher ground-truth check."},
+
+    {"folder": "21 Leasehold Advisory", "buyer": "Leasehold Advisory Service",
+     "aliases": ["leasehold advisory", "lease"], "submitted": false,
+     "expected_source": "CF", "confidence": "medium"},
+
+    {"folder": "22 UK BS (ACAS)", "buyer": "UK Shared Business Services (for Acas)",
+     "aliases": ["uk shared business services", "uksbs", "acas",
+                 "advisory, conciliation and arbitration"],
+     "refs": ["PS25317"], "submitted": false, "expected_source": "FTS", "confidence": "medium",
+     "note": "'UK BS' = UK Shared Business Services, the buying agent; Acas is the end customer. The notice may name EITHER."},
+
+    {"folder": "23 London Borough of Merton (PME)", "buyer": "London Borough of Merton",
+     "aliases": ["london borough of merton", "merton"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "24 Westminster City Council", "buyer": "Westminster City Council",
+     "aliases": ["westminster city council", "city of westminster"], "refs": ["BT412"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high"},
+
+    {"folder": "25 Home Office PPPT", "buyer": "Home Office",
+     "aliases": ["home office"], "submitted": false, "expected_source": "FTS",
+     "confidence": "medium",
+     "note": "PPPT = Police Powers/Protective Tech programme; the notice may name a Home Office directorate."},
+
+    {"folder": "26 Office for Students", "buyer": "Office for Students",
+     "aliases": ["office for students", "ofs"],
+     "submitted": false, "expected_source": "FTS/CF", "confidence": "high"}
+  ]
+}

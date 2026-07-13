@@ -29,6 +29,10 @@ npm-debug.log*
 # hard rule in CLAUDE.md: this belongs in SharePoint, never committed here.
 knowledge/SharePoint Folder/
 
+# Bulk notice cache (cf_bulk.py) — ~440 daily OCDS extracts, rebuildable in ~12 min
+# from the public S3 feed. Same rule as bids.db: derived data, not source.
+src/.cache/
+
 # SQLite PoC database is rebuildable from the connectors; keep it out of git.
 src/bids.db
 src/bids.db-wal

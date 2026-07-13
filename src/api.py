@@ -61,6 +61,7 @@ import compliance_store as CSTORE
 import config as app_config
 import complete_ai
 import cpv_catalog
+import framework_positions as FPOS
 import frameworks_radar as FRAD
 import db
 import library as LIB
@@ -1976,8 +1977,31 @@ def delete_award(award_pk: int, conn=Depends(get_conn)):
 @app.get("/api/frameworks/radar")
 def frameworks_radar():
     """The framework radar: candidate agreements scored (act/pursue/prepare/
-    maintain/watch/skip) against today, plus a recommendation summary."""
-    return FRAD.radar()
+    maintain/watch/skip) against today, plus a recommendation summary.
+
+    Each agreement is annotated with FWF's REAL position from the bid library
+    (`framework_positions`), so the radar can't tell you to "prepare" for something you
+    already have a drafted response for — it flags that as `contradicts_radar` instead.
+    `not_on_radar` carries the agreements FWF is working on that the curated list has
+    never heard of (Bluelight, DDaT-NSW, KCC, the DPSs). Degrades cleanly when the
+    export isn't present: the radar still serves, positions come back unavailable.
+    """
+    res = FRAD.radar()
+    pos = FPOS.annotate(res.get("agreements") or [])
+    res["agreements"] = pos["agreements"]
+    res["not_on_radar"] = pos["not_on_radar"]
+    res["positions_available"] = pos["available"]
+    res["positions_caveat"] = pos.get("caveat")
+    return res
+
+
+@app.get("/api/frameworks/positions")
+def frameworks_positions():
+    """FWF's own position on each framework/DPS, derived from the bid-library export.
+
+    A folder proves WORK, never MEMBERSHIP — the status ladder stops at
+    `response_drafted` for exactly that reason (see framework_positions.py)."""
+    return FPOS.positions()
 
 
 @app.get("/api/compliance/reference")

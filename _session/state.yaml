@@ -3,18 +3,18 @@
 # answer to the questions every new session asks. Keep it small; narrative lives in handover.md.
 schema_version: 1
 updated: 2026-07-12
-session: 23
+session: 24
 
-phase: feature_complete_local          # 6 journey stages + Compliance + 4 search connectors + G-series (G1/G2/G3) intelligence views + G1 manual award capture
-active_workstream: g1_own_awards_detail  # session 23: award-refresh diagnosis (VPN was the throttle) + manual award capture for the NHS Barnsley win
-next_action: continue_api_search_for_nhs_barnsley_award_details  # the contract is real but not yet located in public OCDS — keep searching the APIs for its notice/details to enrich the manual record
+phase: feature_complete_local          # 6 journey stages + Compliance + 4 search connectors + G-series (G1/G2/G3) intelligence views + G1 manual award capture + G1 lost-bid resolver
+active_workstream: g1_lost_bids        # session 24: resolve FWF's 27 real bid folders against the public feed — did we win or lose, and to whom?
+next_action: mine_tender_refs_from_bid_documents  # 20 of 27 bids are stuck at "buyer seen, bid not identifiable" because folder names carry no subject words. The feed is ALREADY on disk — the unlock is mining the real tender title/ref from INSIDE the bid docs (FOR001 questionnaires, customer ITT files), which turns buyer-leads into ref-grade matches. No more crawling needed.
+nhs_barnsley: CLOSED_NOT_PUBLIC       # session 23 verdict stands (not in public OCDS under CH 11934102). Session 24 did NOT reopen it — user explicitly dropped the thread.
 
 git:
   branch: main
-  clean: false                         # session-23 (manual award capture) committed to main this pass; verify with `git log`
-  # The bookkeeping/doc-sync content travels IN the same commit as the feature this
-  # session (user asked to commit + push to main directly), so there is no +1 split here.
-  last_commit: 699bbd4                 # PRIOR tip (session-22, G-series); session-23 commit lands on top — read `git log` for its hash
+  # Commit state is git's, not this file's — run `git status` / `git log`. This hash is the
+  # only commit reference the session docs carry, because a hash never flips to false.
+  last_commit: 83c91f8                 # session-23 tip (manual award capture); session-24 work lands on top
 
 db:                                    # expected on resume
   opportunities: 24
@@ -25,7 +25,11 @@ db:                                    # expected on resume
   awards: 1                            # G1 — 1 MANUAL record (NHS Barnsley, unverified). 0 from OCDS: FWF's real award is not surfaceable in public OCDS under its CH number (see verified.awards_barnsley_manual). Refresh path works but returns 0 for FWF.
 
 verified:
-  make_check: 2026-07-12               # session 23: full make check green — 103 backend tests (98 + 5 manual-awards) + doc-consistency + vite build
+  make_check: 2026-07-13               # session 24: full make check green — 118 backend tests (103 + 7 bid-outcomes + 8 framework-positions) + doc-consistency + vite build
+  framework_positions_live: 2026-07-13 # session 24 (G2 companion): src/framework_positions.py reads FWF's REAL framework/DPS position from the bid-library export (LocalMirror seam, degrades to available=false without it). Live via TestClient: G-Cloud 15 = response_drafted (108 files) while the radar's curated fact says not_member/"prepare" -> flagged contradicts_radar. SIX agreements FWF is actively working on were INVISIBLE to the radar (Bluelight, DDaT-NSW, KCC, Spark RM6094, AI DPS RM6200, Automation Marketplace RM6173) + 2 empty scaffolds = intent only (MOD AI & Edge, RM6396). HONESTY CEILING pinned in tests: a folder proves WORK, never MEMBERSHIP — the ladder stops at response_drafted (never 'submitted'/'member'). GET /api/frameworks/positions + radar annotation + FrameworksView "Also in flight" section.
+  bulk_feed_live: 2026-07-12           # session 24: THE unlock. The OCDS *APIs* cannot answer "who won?" — FTS allows only stages/limit/cursor/updatedFrom/updatedTo (it says so in its own 400) and CF SILENTLY IGNORES unknown params (a nonsense keyword returns the same rows as a real one — verified). So the window must be read whole. Walking the API 429'd on 126/126 shards the moment it was parallelised (~10h serially). data.gov.uk publishes the same notices as DAILY CSVs on S3 (cdp-sirsi bucket = Central Digital Platform): src/cf_bulk.py pulled 2025-05-01 -> 2026-07-12 = 47,797 unique notices in 12.3 min, 0 failed days. Covers central gov (Home Office/UK SBS/OfS all present). Does NOT cover PCS (Scotland) or Sell2Wales (Wales).
+  bid_outcomes_live: 2026-07-12        # session 24: src/bid_outcomes.py matched the 27 real bid folders against that feed. CONFIRMED LOSS: '22 UK BS (ACAS)' — tender-ref PS25317 matched exactly -> "Ai Discovery for Early Conciliation & Helpline" -> won by INFORMED SOLUTIONS LTD, GBP100,000, 2026-02-13. PROBABLE LOSS: '25 Home Office PPPT' -> "PPPT Protective Monitoring" -> Police Digital Services, GBP426,873 (needs human confirm — PPPT is a programme, may be a sibling procurement). Rest: 20 buyer-leads, 5 no-match, 1 excluded (G-Cloud = framework, not a tender). NOTHING written to bids.db — proposals only.
+  matcher_false_positives_fixed: 2026-07-12  # session 24: two CONFIDENT-AND-WRONG verdicts were caught and pinned in tests/test_bid_outcomes.py (7). (a) buyer-name leak: '25 Home Office PPPT' shares {home,office} with "Home Office - Strategic Cost Review" -> reported LOST to PwC. (b) geography leak: '20 West Midlands WM5G' shares {west,midlands} with WMCA's rail-fares award -> reported LOST to WSP. The bid library's own 'Not Won' row for WM5G is what caught (b). Fix: subtract buyer + ALL alias tokens before scoring a title match; if nothing distinctive survives, degrade to a buyer lead. LOST count fell 9 -> 2.
   awards_barnsley_manual: 2026-07-12   # session 23: award refresh confirmed VPN was the rate limiter (clean 930-notice probe after VPN off). But FWF's NHS Barnsley win is NOT in public OCDS under CH 11934102 (verified: CH=FUTURE WORK FORCE LIMITED, correct; no award found via CF supplier search or web under either spelling). Built manual-award capture (POST /api/awards/manual + DELETE, source='Internal record (manual)', scheme='MANUAL' not GB-COH, status='unverified'); AwardsView "Record a known award" form + badge + remove. Seeded the NHS Barnsley record into bids.db. Live-verified: POST→board=1, 422 on empty, persisted. See _session/award_refresh_log.md.
   g3_supply_ref_live: 2026-07-12       # session 22 (G3): GET /api/supply/reference live via uvicorn — 5 routes, 5 steps, 5 links. Curated reference, verified-date + source per route. tests/test_supply_reference.py (4)
   g1_own_awards_match_live: 2026-07-12 # session 22 (G1): matcher fired on LIVE FTS award data — real supplier Softcat Plc (CH 02174990) correctly matched + normalised; FWF (11934102) matched 0 in a random 5-day window (expected). 209 live notices parsed cleanly. tests/test_own_awards.py (8)
@@ -53,10 +57,15 @@ external_blockers:
 
 deferred:
   # G1/G2/G3 SHIPPED session 22 (see verified.* + progress). Follow-ons:
+  - g1_mine_refs_from_bid_documents     # THE NEXT ACTION. 20/27 bids stall at "buyer seen, bid not identifiable" — folder names ('18 DWP') carry no subject words to match a title against. Only 6 folders yield a tender ref from FILENAMES, and the ref tier is the only one that produced a clean result. Mine the real title/ref from INSIDE the docs (FOR001 questionnaires, customer ITT files) -> ref-grade matches. The feed is already cached; this needs NO crawling.
+  - g1_outcomes_to_db                   # bid_outcomes.py deliberately only PROPOSES. Once a human confirms a verdict, write it through Stage 6 (Learn/outcome capture) so the win-rate loop is fed. Design the confirm step; do NOT auto-import.
+  - g1_lost_bids_devolved_gap           # the bulk feed is CF/CDP only: Scottish (Forestry and Land Scotland, Scottish Water) and Welsh (Cardiff Uni) bids may never appear. A NO MATCH for them is a coverage gap, NOT a loss. Needs a PCS/Sell2Wales equivalent before those bids can be resolved either way.
+  - g1_market_intel_ingest              # 'D365 Awards.xlsx' + Tender Pipeline 'Contracts Ending'/'Upcoming Tenders' in the bid library are NOT our awards — they are COMPETITOR awards + expiring incumbent contracts (a re-compete pipeline). Genuinely valuable, but belongs next to Search/G2 and clearly labelled MARKET. Never in the awards table.
   - g1_lost_bids_from_internal          # "bids we lost" is NOT in public OCDS (award notices name only the winner) — source it from the app's Learn/outcome capture (Stage 6) + bid library, not the connector. User req 2026-07-12.
   - g1_award_refresh_clean_run          # get a non-rate-limited 4yr dual-source refresh to actually populate FWF's own awards (NHS-related, may go back 3-4yr). Retry when APIs aren't cooling down.
   - g1_g2_g3_browser_click              # click the 3 new views in a live browser (API + build verified only so far)
-  - g2_membership_from_g1               # corroborate G2's fwf_status (member/not) from G1's real own-awards data once populated, instead of the curated VERIFIED_FACTS claim
+  - g2_membership_from_g1               # PARTLY ADDRESSED session 24: framework_positions.py now corroborates the radar from FWF's real bid-library folders (and flags where they DISAGREE). Still open: actual MEMBERSHIP (are we ON G-Cloud 14?) is not derivable from a folder — needs the Digital Marketplace listing or G1 own-awards data.
+  - g2_framework_outcomes               # framework_positions tops out at 'response_drafted' — the export cannot tell us whether a response was SUBMITTED, let alone accepted onto the framework. Sourcing that = the same human-confirm step as g1_outcomes_to_db.
   # Compliance C-series follow-ons (this session shipped C3 MVP)
   - compliance_file_content_extraction # parse expiry from uploaded PDF/docx bytes (today: mined from name/notes text only)
   - compliance_c4_frameworks           # framework/contract membership-period tracker (RM6263-expired precedent) — category exists, no source yet

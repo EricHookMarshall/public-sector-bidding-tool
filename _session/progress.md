@@ -3,6 +3,116 @@
 > **Immutable, newest-first** — prepend a new dated entry per session; never edit or delete old ones.
 > The current hot state lives in [handover.md](handover.md); this is the retrospective trail behind it.
 
+## 2026-07-12 (session 24) — G1 "bids we lost": bulk-feed unlock + lost-bid resolver (2 real losses)
+
+**Context.** Resumed from session 23 (`83c91f8`). The queued next action was "keep API-searching for the NHS
+Barnsley award" — the user **explicitly dropped that thread** ("ok ignore nhs but lets look into the others")
+and redirected to the 27 real bid folders in the SharePoint export. Session 23's verdict (Barnsley is not in
+public OCDS) stands and was not reopened.
+
+**Finding 1 — the bid library does not hold our win/loss history, and one file actively misleads.**
+Surveyed the gitignored export (`knowledge/SharePoint Folder/Bids/`, 512 files, 27 bid folders).
+
+- **`D365 Awards.xlsx` is NOT our awards.** Despite the name, every row is an award to a *different* company —
+  Hitachi Solutions, Ceox, EY, Softcat, AvePoint, HSO. It is **market intelligence**. Same for
+  `Tender Pipeline.xlsx` → *Contracts Ending* (incumbents' contracts expiring — a re-compete prospect list).
+  An importer pointed at either would have written **10 false FWF records** into the `awards` table. The user
+  flagged the risk in advance ("be careful, there is a mix of details") and was right.
+- **The only real FWF outcome data in the entire export is 2 malformed rows** in Tender Pipeline → *Review*:
+  "WM5G AI Proposition" = Not Won, and "Commision Futures Programme" = `Not Won]` (stray bracket, typo'd
+  buyer). Dates in that sheet contradict each other (submission due *after* the closed date).
+- **Folder evidence is a prior, not truth.** `06 Final Submission` populated → submitted (6 bids); drafts only
+  (9); empty (12). But **WM5G shows "drafted-only" while the Review sheet records it as Not Won** — you cannot
+  lose a bid you didn't submit, so it *was* submitted via a portal with no copy saved back. Confirmed false
+  negative; the folder tree cannot be trusted as the record. **FWF has bid ~27 times and recorded the outcome
+  twice.** That is the same admin gap that killed the bid this project exists to prevent.
+
+**Finding 2 — the OCDS APIs structurally cannot answer "who won?".** (Probed, not assumed.)
+
+- **Find a Tender** enumerates its allowed params in its own 400: `stages, limit, cursor, updatedFrom,
+  updatedTo`. No buyer, no supplier, no keyword.
+- **Contracts Finder SILENTLY IGNORES unknown params.** A `keyword=zzzznonsense` control returned *the same
+  rows* as a real keyword. That is worse than a 400 — a keyword search there looks filtered and is not.
+- Therefore the window must be read **whole** and matched client-side. Cost: pages are 20–55s → **~10 hours
+  serially** for 14 months. **Parallelising the API failed completely: 126 of 126 shards, 124 × HTTP 429.**
+  (So session 23's "the 429s were the VPN" was only half the story — *concurrency* triggers them too. The
+  crawler exited 0 while achieving nothing; only its honest error-recording revealed the 100% failure.)
+
+**Finding 3 — the unlock is bulk data (user's steer: "wasn't there something with archive data?").**
+data.gov.uk publishes the same notices as **one CSV per day on S3** — bucket `cdp-sirsi-production-cfs-*`,
+i.e. the **Central Digital Platform**, so under the Procurement Act 2023 it carries central-government notices
+too (empirically: Home Office, UK SBS, Office for Students all present). S3 is not the throttled API, so it
+parallelises safely.
+
+- **`src/cf_bulk.py`** (new) — daily bulk OCDS extracts, 10 workers, cached per-day + resumable, atomic writes,
+  missing days reported (never silently a zero). **2025-05-01 → 2026-07-12 = 47,797 unique notices in 12.3
+  minutes, 0 failed days.** Window derived from the folders' own mtimes (bid activity May 2025 → Jan 2026).
+  Caveat handled in code: the CSV's **column set varies by day** (1372 cols one day, 574 the next), so the
+  parser walks award/supplier/party indices rather than assuming columns exist.
+- **Coverage gap, on the record:** the feed is CF/CDP only. **PCS (Scotland) and Sell2Wales (Wales) are
+  absent** → a `NO MATCH` for Forestry and Land Scotland / Scottish Water / Cardiff Uni is a coverage gap,
+  **never** a loss.
+
+**Finding 4 — `src/bid_outcomes.py` (new) resolves folders → notices → outcome. It PROPOSES, never asserts.**
+Ranked evidence tiers: `ref` (buyer's own tender reference in the notice — near-proof) > `title` (buyer +
+a *distinctive* title word) > `buyer` (a lead, not a match). Nothing is written to `bids.db`.
+
+- **CONFIRMED LOSS — `22 UK BS (ACAS)`:** ref `PS25317` matched exactly → *"Ai Discovery for Early Conciliation
+  & Helpline"*, buyer UK SBS → won by **Informed Solutions Ltd, £100,000, awarded 2026-02-13**.
+- **PROBABLE LOSS — `25 Home Office PPPT`:** → *"PPPT Protective Monitoring"* → **Police Digital Services,
+  £426,873**. Needs human confirm — PPPT is a programme, so this may be a sibling procurement.
+- Remainder: **20 buyer-leads, 5 no-match, 1 excluded** (G-Cloud 14 = a *framework application*, not a tender —
+  it has no award notice naming FWF, so scoring it would only manufacture noise).
+
+**Two false positives — both confident, both wrong, both now pinned in tests.**
+
+- **Buyer-name leak:** folder `25 Home Office PPPT` shares {home, office} with *"Home Office - Strategic Cost
+  Review"* → reported **LOST to PwC**. A buyer-name collision was being laundered into the stronger `title` tier.
+- **Geography leak:** folder `20 West Midlands WM5G` shares {west, midlands} with WMCA's *rail-fares* and *Ring
+  & Ride* awards → reported **LOST to WSP**, a transport consultancy. **The bid library's own "Not Won" row for
+  WM5G is what caught it** — the one piece of ground truth we had, earning its place.
+- Fix: subtract the buyer's name **and every alias's tokens** before scoring a title match; if nothing
+  distinctive survives (WM5G reduces to the empty set) the bid has *no* title signal and degrades to a buyer
+  lead. **`LOST` fell 9 → 2.** `tests/test_bid_outcomes.py` (7 tests) pins both leaks, the ref tier, the
+  CH-number win path, and "unmatched ≠ lost".
+
+**Finding 5 — the framework folders were the other half of the value (`src/framework_positions.py`, new).**
+G-Cloud 14 was excluded from win/loss as "a framework application, not a tender" — correct, but the user
+pushed back that the framework *detail* is useful regardless. It is: G2's radar carried a hand-written
+`fwf_status` caveated "internal fact — confirm on the Digital Marketplace", while FWF's own framework folders
+hold the evidence. Reading them (LocalMirror seam, same as `library.py`; `available: false` when the export
+is absent) shows:
+
+- **The radar and reality disagree.** Radar: G-Cloud 15 = `not_member`, recommendation **"prepare"**. Library:
+  **108 files and a drafted response**, last touched 2026-01-30. Surfaced as `contradicts_radar` / *"⚠ Already
+  in flight"* — a prioritiser that tells you to start what you've half-finished is worse than useless.
+- **Six agreements FWF is actively working on were invisible to the radar:** Bluelight Commercial, DDaT-NSW,
+  KCC Digital Transformation, Spark DPS (RM6094), AI DPS (RM6200), Automation Marketplace DPS (RM6173). Now
+  listed as *"Also in flight — not on the radar"*.
+- **Two are empty scaffolds** — MOD AI & Edge (DDAD) and Public Sector Software (RM6396): 0 files. Intent, not
+  work, and now labelled as such rather than counting as pipeline.
+- **Honesty ceiling, pinned in tests:** a folder proves WORK, never MEMBERSHIP. The ladder is
+  `planned` → `preparing` → `response_drafted` and stops there — the export cannot tell us a response was
+  *submitted*, let alone accepted. No "member" label exists in the UI for that reason.
+- Wired: `GET /api/frameworks/positions`, radar annotated at `GET /api/frameworks/radar`, `FrameworksView`
+  section + badges. `tests/test_framework_positions.py` (8, offline against a fake export tree).
+- Source typo handled on read, not rewritten: the real folder is `AI DPS RM62000` (a typo for RM6200).
+
+**Verification.** `make check` green — **118 backend tests** (103 + 7 bid-outcomes + 8 framework-positions),
+doc-consistency, vite build. `bid_outcomes.py` re-run from the repo reproduces the same 2/20/5/1 split; radar
+annotation live-verified via TestClient. **`bids.db` untouched** (awards still 1 manual NHS Barnsley record).
+
+**Also surfaced (not code).** `04 Portal Registrations/Portal Registration Tracker.xlsx` stores **plaintext
+portal passwords**. Gitignored, so nothing leaked to git — but it needs raising with Emma.
+
+**Next.** 20 of 27 bids stall at "buyer seen, bid not identifiable" because folder names carry no subject
+words, and only 6 folders yield a tender ref from *filenames*. The refs and real titles are **inside** the docs
+(`00 Bid Admin/FOR001 …xlsx`, `01 Customer Documents/` ITT files). Mine those → ref-grade matches for most of
+the 20. **The feed is already cached; this needs no further crawling.** Then design the human confirm step that
+writes an accepted verdict through Stage 6 (Learn) to feed the win-rate loop — never auto-import.
+
+---
+
 ## 2026-07-12 (session 23) — Award-refresh diagnosis (VPN) + G1 manual award capture (NHS Barnsley)
 
 **Context.** Resumed from session 22 (G-series, `699bbd4`). User asked "what's next?" → chased the open

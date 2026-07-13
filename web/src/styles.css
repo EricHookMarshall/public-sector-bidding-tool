@@ -856,5 +856,19 @@ header.top {
 .fr-dates { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; font-size: 0.82rem; color: var(--muted); }
 .fr-reasons { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .fr-reasons li { font-size: 0.84rem; line-height: 1.4; }
+/* FWF's real position from the bid library. fr-position-warn = the library contradicts
+   the radar (e.g. radar says "prepare", a response is already drafted). */
+.fr-position { margin: 6px 0 0; font-size: 0.82rem; color: var(--muted); }
+.fr-position-warn { color: var(--warn); font-weight: 500; }
+
+.fr-offradar { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.fr-offradar h3 { margin: 0 0 4px; font-size: 1rem; }
+.fr-offradar-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fr-offradar-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 0.86rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.fr-pos-badge { font-size: 0.72rem; padding: 2px 7px; border-radius: 10px; border: 1px solid var(--line); white-space: nowrap; }
+.fr-pos-response_drafted { border-color: var(--good); color: var(--good); }
+.fr-pos-preparing { border-color: var(--warn); color: var(--warn); }
+.fr-pos-planned { border-color: var(--faint); color: var(--muted); }
+
 .fr-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .fr-member { font-size: 0.78rem; color: var(--faint); }

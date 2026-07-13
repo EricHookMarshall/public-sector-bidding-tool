@@ -7,47 +7,62 @@
 
 ## Status
 
-`2026-07-12` (session 23) — **Award-refresh diagnosed + G1 manual award capture shipped:**
+`2026-07-12` (session 24) — **G1 "bids we lost": the public feed can now answer it. Two real losses found.**
 
-- **The award-refresh 429s were the VPN's shared exit IP** — not our hammering. With the VPN off (residential
-  IP), a 7-day probe walked **930 award notices with zero 429s**. The earlier RATE_LIMITED verdict is resolved.
-- **BUT FWF's real NHS Barnsley win is not recoverable from public OCDS.** CH `11934102` verified correct
-  (= "FUTURE WORK FORCE LIMITED"), yet no award to FWF appears in Contracts Finder's supplier search or web
-  search under either spelling. Likely the notice named FWF without a CH id (so the GB-COH matcher correctly
-  won't catch it), was sub-threshold, or FWF was a subcontractor. Full trail in `award_refresh_log.md`.
-- **G1 manual award capture (new).** `POST /api/awards/manual` + `DELETE /api/awards/{id}` (Admin),
-  `db.delete_award`. Stored under source `Internal record (manual)`, scheme `MANUAL` (never GB-COH), status
-  `unverified` — honest provenance, and the OCDS refresh never overwrites it. `AwardsView` "Record a known
-  award" form + `unverified` badge + Remove. **The NHS Barnsley record is seeded into bids.db.**
-- **`make check` green: 103 backend tests** (was 98; +5 manual-awards, incl. a "survives OCDS refresh" guard),
-  doc-consistency, vite build. Live-verified via uvicorn: POST → board=1, empty → 422, persisted to disk.
+Full retrospective in [`progress.md`](progress.md) session-24. The load-bearing facts:
+
+- **The bid library can't tell us what we won or lost, and `D365 Awards.xlsx` misleads** — every row is an award
+  to a *different* company. An importer pointed at it writes false records into `awards`. FWF has bid ~27 times
+  and recorded the outcome **twice**.
+- **The OCDS APIs can't answer "who won?"** (no text search; CF *silently ignores* unknown params). Walking the
+  API 429'd on **126/126 shards**. **Unlock = bulk data:** `src/cf_bulk.py` pulls the CDP daily CSVs from S3 —
+  **47,797 notices in 12.3 min, 0 failed days**.
+- **`src/bid_outcomes.py`** resolved the 27 folders. It **proposes, never asserts — nothing written to
+  `bids.db`**. **CONFIRMED LOSS `22 UK BS (ACAS)`** (ref `PS25317`) → **Informed Solutions Ltd, £100k**.
+  **PROBABLE `25 Home Office PPPT`** → Police Digital Services, £426,873 — **needs your eye**. Rest: 20 leads,
+  5 no-match, 1 excluded. Two false positives caught + pinned in tests (`LOST` fell **9 → 2**).
+- **`src/framework_positions.py`** — the radar said *"prepare"* for G-Cloud 15 while the library holds a
+  **drafted response** (`⚠ Already in flight`); 6 agreements FWF works on were invisible to it. Ceiling pinned
+  in tests: **a folder proves work, never membership.**
+- **`docs/gca_findings/` (your GCA portal research) beats the folder guess:** FWF holds **three live DPS
+  appointments** (AI DPS · RM6173 · Spark = APPOINTED). Not yet folded in — see Active task.
+- **`make check` green: 118 backend tests** + doc-consistency + vite build.
 
 ## Active task
 
-**Next task — continue searching the APIs for the NHS Barnsley award's details.** The contract is real and now
-recorded manually (unverified stub), but its public notice hasn't been located. Keep hunting via API search
-(FTS/CF OCDS award feeds date-boxed to 3–4yr ago; buyer-name/keyword angles) to find the notice or enough
-detail (title, date, value, contract term) to **enrich the seeded manual record**. If it genuinely isn't
-published, that's a definitive finding — record it and move on. Coverage caveat: `own_awards._fetch_source`
-caps at `max_pages=200` (~5 months of feed volume), so a full-window walk needs date-chunking to be exhaustive.
+**Pick one — both were opened this session, both are cheap:**
 
-Also still open (unchanged): **click the 3 new views (G1/G2/G3) in a live browser** (API + build verified only).
+1. **Fold the GCA portal facts into `framework_positions` as an authoritative overlay** (portal beats folder).
+   `docs/gca_findings/FINDINGS.md` proves 3 live DPS appointments — the exact fact the folder view honestly
+   refuses to infer. Stops the radar calling FWF "not a member" of DPSs it's appointed to. **Small, high value.**
+2. **Mine tender refs/titles from INSIDE the bid documents** (`00 Bid Admin/FOR001 …xlsx`, `01 Customer
+   Documents/`). 20 of 27 bids stall at "buyer seen, bid not identifiable" because folder names carry no subject
+   words; `ref` is the only tier that works. **Feed is already cached (`src/.cache/`) — no crawling needed.**
+
+Then **design the human confirm step** (see Open decision 1). Still open: **click G1/G2/G3 in a live browser**.
 
 ## Blockers / prerequisites
 
+- **The bulk feed is CF/CDP only — devolved notices are absent.** Scottish (Forestry and Land Scotland,
+  Scottish Water) and Welsh (Cardiff Uni) bids may never appear in it. A `NO MATCH` for those buyers is a
+  **coverage gap, not a loss** — never record it as one.
+- **⚠️ Plaintext portal passwords** in the bid library: `04 Portal Registrations/Portal Registration
+  Tracker.xlsx` holds live portal credentials in clear text. The folder is gitignored so nothing leaked to
+  git, but this needs raising with Emma — it's a credential-hygiene problem, not a code one.
 - **Sell2Wales upstream is down**, not us — re-check periodically; no code fix possible on our side.
 - **Empty *bid* pipeline is expected** (session-13 cleanse). Compliance register separate, seeded (19).
-- **Live `GraphSharePoint`/`SharePointStore`** — no MS Graph here; unrelated to this session's work.
-- **Azure:** FWF Intern subscription live; no resource group yet — Bicep/IaC (A1) is the real gap.
+- **Live `GraphSharePoint`/`SharePointStore`** — no MS Graph here. **Azure:** subscription live, no resource
+  group; Bicep/IaC (A1) is the real gap. Neither blocks the Active task.
 
 ## Open decisions
 
-1. **What next** — chase the Sell2Wales bulk-download fallback, do F1 remainder (eTendersNI/G-Cloud),
-   or start on G1–G3. Not decided.
+1. **How a confirmed outcome gets recorded.** `bid_outcomes.py` only proposes. Does an accepted verdict write
+   to `bids.db` via Stage 6 (Learn) outcome capture, or via the G1 manual-award path (session 23)? Both exist;
+   pick one so there's a single way in. **Never auto-import** — see the `D365 Awards.xlsx` near-miss.
 2. **Cert pin maintenance** — `src/certs/sectigo_dv_r36_intermediate.pem` is shared by PCS + Sell2Wales;
    refresh instructions live in the module docstrings + `src/certs/README.md` if either site changes CA.
-3. Carried from session 19 (untouched this session): compliance write-gating, file-content expiry
-   extraction — see `progress.md` session-19 entry.
+3. Carried from session 19 (untouched): compliance write-gating, file-content expiry extraction —
+   see `progress.md` session-19 entry.
 
 ## Auth quick-reference
 
