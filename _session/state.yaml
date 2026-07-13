@@ -14,7 +14,7 @@ git:
   branch: main
   # Commit state is git's, not this file's — run `git status` / `git log`. This hash is the
   # only commit reference the session docs carry, because a hash never flips to false.
-  last_commit: 1ae583e                 # session-24: lost-bid resolver (cf_bulk + bid_outcomes) + framework positions + GCA user research
+  last_commit: 2bd2ff4                 # session-25: A-series standard-answer bank (answers.py + standard_answers + 4 endpoints + 24 tests) + the deep read of all 504 library files
   # +1 docs-sync commit lands on top of this hash (state.yaml can't record its own commit).
 
 db:                                    # expected on resume
